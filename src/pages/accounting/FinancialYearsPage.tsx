@@ -214,16 +214,8 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
       setIsAddModalOpen(false);
     } else {
       // إضافة
-      // سيتم إضافة السنة من خلال AddFinancialYearModal مباشرة
-      // إذا لم يتم تحديد الحالة، اجعلها 'مفتوحة'
-      if (!yearData.status) {
-        yearData.status = 'مفتوحة';
-      }
-      // إضافة السنة المالية الجديدة
-      const addFinancialYear = (await import('@/services/financialYearsService')).addFinancialYear;
-      await addFinancialYear(yearData);
+      // لا تضف السنة هنا، فقط حدث القائمة بعد الإضافة من المودال
       const updated = await getFinancialYears();
-      // ترتيب تنازلي بعد الإضافة
       setFinancialYears(updated.sort((a, b) => b.year - a.year));
       setIsAddModalOpen(false);
     }
