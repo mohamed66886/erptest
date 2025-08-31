@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import '../../styles/custom-table.css';
 import { useNavigate } from 'react-router-dom';
 import { getFinancialYears, deleteFinancialYear, updateFinancialYear } from '@/services/financialYearsService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import AddFinancialYearModal from "@/components/AddFinancialYearModal";
+import { Select as AntdSelect } from 'antd';
+import { Switch } from 'antd';
+import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { 
   Calendar, 
   Plus, 
@@ -15,14 +19,7 @@ import {
   MoreHorizontal,
   AlertCircle
 } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table as AntdTable } from 'antd';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +34,23 @@ interface FinancialYearsPageProps {
 }
 
 const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
+  // السنة المالية
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
   const navigate = useNavigate();
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
   useEffect(() => {
@@ -138,7 +152,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
 
     const config = statusConfig[status as keyof typeof statusConfig];
     return (
-      <Badge className={`${config.color} hover:${config.color} rounded-md`}>
+      <Badge className={`${config.color} hover:${config.color} rounded-md px-2 py-1 text-xs`}>
         {config.text}
       </Badge>
     );
@@ -154,18 +168,54 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="w-full p-6 space-y-6 min-h-screen bg-gray-50 dark:bg-gray-900" dir="rtl">
+    <div className="w-full p-6 space-y-6 min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800" dir="rtl">
       {/* Header */}
- 
-            <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-              <div className="flex items-center">
-              <Calendar className="h-6 w-6 text-purple-600 dark:text-purple-300" />
-                <h1 className="text-2xl font-bold text-gray-800">  السنوات المالية</h1>
-              </div>
-              <p className="text-gray-600 mt-2">إدارة السنوات المالية للشركة</p>
-              <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+      <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center gap-6">
+        <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+          <Calendar className="h-8 w-8 text-blue-600 dark:text-blue-300" />
+        </div>
+        <div className="flex flex-col ">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">اعدادات السنوات المالية</h1>
+          <p className="text-gray-600 dark:text-gray-400">إدارة السنوات المالية والحالة المالية</p>
+        </div>
+      </div>
+          
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+            <span className="flex items-center gap-2">
+            <Calendar className="text-purple-600 dark:text-purple-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
+            </span>
+            <div className="min-w-[160px]">
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
+                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                size="middle"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
             </div>
-      {/* Actions Bar removed, buttons moved to table card header */}
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+      </div>
+      
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
@@ -173,27 +223,27 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
           { label: "السنوات المالية" }
         ]}
       />
-      {/* Financial Years Table */}
-      <Card className="border border-gray-200 dark:border-gray-700">
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      
+      <Card className="border border-gray-200 dark:border-gray-700 shadow-lg bg-white rounded-xl overflow-hidden">
+        <CardHeader className="bg-white dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-xl font-semibold text-gray-800 dark:text-white">قائمة السنوات المالية</CardTitle>
               <CardDescription className="text-gray-600 dark:text-gray-400">
                 عرض وتعديل السنوات المالية المسجلة في النظام
               </CardDescription>
             </div>
-            <div className="flex items-center space-x-2 space-x-reverse mt-2 sm:mt-0">
+            <div className="flex items-center space-x-2 space-x-reverse">
               <Button 
                 onClick={handleAddYear}
-                className="flex items-center space-x-2 space-x-reverse bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800"
+                className="flex items-center space-x-2 space-x-reverse bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800 transition-all duration-200 shadow-md hover:shadow-lg"
               >
                 <Plus className="h-4 w-4" />
                 <span>إضافة سنة مالية</span>
               </Button>
               <Button 
                 onClick={handleExport}
-                className="flex items-center space-x-2 space-x-reverse bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white"
+                className="flex items-center space-x-2 space-x-reverse bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white transition-all duration-200 shadow-md hover:shadow-lg"
               >
                 <FileDown className="h-4 w-4" />
                 <span>تصدير</span>
@@ -201,76 +251,122 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
             </div>
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-            إجمالي السنوات المالية: <span className="font-medium">{financialYears.length}</span>
+            إجمالي السنوات المالية: <span className="font-medium text-purple-600 dark:text-purple-400">{financialYears.length}</span>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-full border border-gray-300 dark:border-gray-700">
-              <TableHeader className="bg-blue-100 dark:bg-blue-900">
-                <TableRow className="border-b border-gray-300 dark:border-gray-700">
-                  <TableHead className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">السنة الميلادية</TableHead>
-                  <TableHead className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">بداية السنة</TableHead>
-                  <TableHead className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">نهاية السنة</TableHead>
-                  <TableHead className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">الحالة</TableHead>
-                  <TableHead className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">تاريخ الإنشاء</TableHead>
-                  <TableHead className="text-right text-gray-700 dark:text-gray-300">الإجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {financialYears.map((year) => (
-                  <TableRow key={year.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-300 dark:border-gray-700">
-                    <TableCell className="font-medium text-right text-gray-900 dark:text-white border-l border-gray-300 dark:border-gray-700">
-                      {year.year}
-                    </TableCell>
-                    <TableCell className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">
-                      {formatDate(year.startDate)}
-                    </TableCell>
-                    <TableCell className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">
-                      {formatDate(year.endDate)}
-                    </TableCell>
-                    <TableCell className="text-right border-l border-gray-300 dark:border-gray-700">
-                      {getStatusBadge(year.status)}
-                    </TableCell>
-                    <TableCell className="text-right text-gray-700 dark:text-gray-300 border-l border-gray-300 dark:border-gray-700">
-                      {formatDate(year.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-center gap-2">
-                        <Button size="icon" variant="ghost" onClick={() => handleEdit(year)} aria-label="تعديل">
-                          <Edit className="h-5 w-5 text-blue-600" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={() => handleDelete(year.id)} aria-label="حذف">
-                          <Trash2 className="h-5 w-5 text-red-600" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <AntdTable
+              dataSource={financialYears}
+              rowKey="id"
+              pagination={false}
+              locale={{ emptyText: (
+                <div className="text-center py-12">
+                  <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-4">
+                    <Calendar className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">لا توجد سنوات مالية</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    لم يتم إضافة أي سنوات مالية بعد.
+                  </p>
+                  <div className="mt-6">
+                    <Button 
+                      onClick={handleAddYear}
+                      className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800 transition-all duration-200 shadow-md hover:shadow-lg"
+                    >
+                      <Plus className="h-4 w-4 ml-2" />
+                      إضافة سنة مالية
+                    </Button>
+                  </div>
+                </div>
+              )}}
+              columns={[
+                {
+                  title: 'السنة الميلادية',
+                  dataIndex: 'year',
+                  key: 'year',
+                  align: 'right',
+                  render: (text: number) => <span className="font-medium text-right text-gray-900 dark:text-white">{text}</span>
+                },
+                {
+                  title: 'بداية السنة',
+                  dataIndex: 'startDate',
+                  key: 'startDate',
+                  align: 'right',
+                  render: (date: string) => <span className="text-right text-gray-700 dark:text-gray-300">{formatDate(date)}</span>
+                },
+                {
+                  title: 'نهاية السنة',
+                  dataIndex: 'endDate',
+                  key: 'endDate',
+                  align: 'right',
+                  render: (date: string) => <span className="text-right text-gray-700 dark:text-gray-300">{formatDate(date)}</span>
+                },
+                {
+                  title: 'الحالة',
+                  dataIndex: 'status',
+                  key: 'status',
+                  align: 'right',
+                  render: (status: string) => getStatusBadge(status)
+                },
+                {
+                  title: 'تاريخ الإنشاء',
+                  dataIndex: 'createdAt',
+                  key: 'createdAt',
+                  align: 'right',
+                  render: (date: string) => <span className="text-right text-gray-700 dark:text-gray-300">{formatDate(date)}</span>
+                },
+                {
+                  title: 'الإجراءات',
+                  key: 'actions',
+                  align: 'right',
+                  render: (_: unknown, year: FinancialYear) => (
+                    <div className="flex items-center justify-center gap-2">
+                      {/* Custom blue switch with label inside */}
+                      <label className="flex items-center cursor-pointer select-none">
+                        <Switch
+                          checked={year.status === 'نشطة'}
+                          onChange={async (checked) => {
+                            const newStatus = checked ? 'نشطة' : 'مغلقة';
+                            await updateFinancialYear(year.id, {
+                              year: year.year,
+                              startDate: year.startDate,
+                              endDate: year.endDate,
+                              status: newStatus
+                            });
+                            const updated = await getFinancialYears();
+                            setFinancialYears(updated.sort((a, b) => b.year - a.year));
+                          }}
+                          checkedChildren="مفعل"
+                          unCheckedChildren="مغلق"
+                          style={{ minWidth: 70, background: year.status === 'نشطة' ? '#2563eb' : '#a3a3a3', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
+                        />
+                      </label>
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => handleEdit(year)} 
+                        aria-label="تعديل"
+                        className="h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                      >
+                        <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </Button>
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => handleDelete(year.id)} 
+                        aria-label="حذف"
+                        className="h-8 w-8 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50"
+                      >
+                        <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      </Button>
+                    </div>
+                  )
+                }
+              ]}
+              className="min-w-full bg-transparent custom-table-header"
+            />
           </div>
-
-          {financialYears.length === 0 && (
-            <div className="text-center py-12">
-              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 mb-4">
-                <Calendar className="h-6 w-6 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">لا توجد سنوات مالية</h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                لم يتم إضافة أي سنوات مالية بعد.
-              </p>
-              <div className="mt-6">
-                <Button 
-                  onClick={handleAddYear}
-                  className="bg-purple-600 hover:bg-purple-700 dark:bg-purple-700 dark:hover:bg-purple-800"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  إضافة سنة مالية
-                </Button>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -280,7 +376,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
         onClose={() => { setIsAddModalOpen(false); setEditYear(null); }}
         onSave={handleSaveYear}
         existingYears={financialYears.map(year => year.year)}
-        saveButtonClassName="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white"
+        saveButtonClassName="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white transition-all duration-200"
         {...(editYear ? {
           initialData: {
             year: editYear.year,
@@ -297,8 +393,11 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm.isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" dir="rtl">
-          <Card className="w-full max-w-md mx-4 border border-gray-200 dark:border-gray-700">
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 bg-black/30 backdrop-blur-sm p-4"
+          dir="rtl"
+        >
+          <Card className="max-w-md w-full mx-auto border border-gray-200 dark:border-gray-700 shadow-2xl">
             <CardHeader>
               <div className="flex items-center space-x-2 space-x-reverse">
                 <AlertCircle className="h-6 w-6 text-red-600" />
@@ -316,14 +415,14 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                 <Button
                   variant="outline"
                   onClick={() => setDeleteConfirm({isOpen: false, yearId: '', yearName: ''})}
-                  className="border-gray-300 dark:border-gray-600"
+                  className="border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   إلغاء
                 </Button>
                 <Button
                   variant="destructive"
                   onClick={confirmDelete}
-                  className="flex items-center space-x-2 space-x-reverse"
+                  className="flex items-center space-x-2 space-x-reverse transition-all duration-200"
                 >
                   <Trash2 className="h-4 w-4" />
                   <span>حذف</span>

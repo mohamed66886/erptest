@@ -64,7 +64,72 @@ const SpecialPricePackages: React.FC = () => {
   const [branchId, setBranchId] = useState<string | undefined>(undefined);
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
-
+  // دالة لطباعة جدول باقات الأسعار فقط
+  const handlePrintTable = () => {
+    const printWindow = window.open('', '', 'width=1400,height=900');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+        <head>
+          <title>طباعة باقات الأسعار الخاصة</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap');
+            @page { size: A4 landscape; margin: 15mm; }
+            body { font-family: 'Tajawal', Arial, sans-serif; direction: rtl; padding: 10px; font-size: 12px; line-height: 1.3; margin: 0; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+            .header h1 { color: #000; margin: 0; font-size: 20px; font-weight: 700; }
+            .header p { color: #000; margin: 3px 0 0 0; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+            th, td { border: 1px solid #d1d5db; padding: 6px 2px; text-align: center; vertical-align: middle; font-size: 12px; }
+            th { background-color: #bbbbbc !important; color: #fff; font-weight: 600; font-size: 13px; padding: 8px 4px; }
+            tbody tr:nth-child(even) { background-color: #f5f5f5; }
+            tbody tr:hover { background-color: #e5e5e5; }
+            .print-date { text-align: left; margin-top: 15px; font-size: 11px; color: #000; }
+            @media print { body { margin: 0; padding: 10px; } table { page-break-inside: auto; } tbody { page-break-inside: auto; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>تقرير باقات الأسعار الخاصة</h1>
+            <p class="font-weight-bold">نظام إدارة الموارد ERP90</p>
+            <div style="margin-top: 5px; font-size: 13px; color: #555;">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>رقم الباقة</th>
+                <th>اسم الباقة (عربي)</th>
+                <th>اسم الباقة (إنجليزي)</th>
+                <th>تاريخ الانتهاء</th>
+                <th>الفرع</th>
+                <th>الشركة</th>
+                <th>الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${results.map(pkg => `
+                <tr>
+                  <td>${pkg.id}</td>
+                  <td>${pkg.name}</td>
+                  <td>${pkg.nameEn}</td>
+                  <td>${pkg.endDate || '—'}</td>
+                  <td>${pkg.branch}</td>
+                  <td>${pkg.company}</td>
+                  <td>${pkg.active ? 'مفعل' : 'غير مفعل'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 300);
+    }
+  };
   // جلب الفروع الحقيقية عند تحميل الصفحة
   useEffect(() => {
     setBranchesLoading(true);
@@ -409,7 +474,7 @@ const SpecialPricePackages: React.FC = () => {
               type="primary"
               className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
               size="large"
-              onClick={() => {}}
+              onClick={handlePrintTable}
             >
               طباعة
             </Button>

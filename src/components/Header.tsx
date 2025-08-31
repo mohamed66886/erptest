@@ -274,7 +274,7 @@ const Header = ({
                 transition={{ duration: 0.3 }}
               >
                 <Link to="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-                  <div className="w-8 h-8 sm:w-[3.5rem] sm:h-10 rounded-lg flex items-center justify-center  flex-shrink-0 bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-800 dark:to-blue-900">
+                  <div className="w-8 h-8 sm:w-[3.5rem] sm:h-10 rounded-lg flex items-center justify-center  flex-shrink-0 ">
                     {logoUrl ? (
                       <img
                         src={logoUrl}

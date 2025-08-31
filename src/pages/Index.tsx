@@ -88,6 +88,7 @@ import ReceiptVouchersDirectory from "./stores/ReceiptVouchersDirectory";
 import SoldItems from "./reports/sold-items";
 import BranchSales from "./reports/branch-sales";
 import SalesRepresentativeSales from "./reports/sales-representative-sales";
+import DiscountsOffers from "./management/discounts-offers";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -202,14 +203,14 @@ const Index = () => {
 
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/stores/item" element={<ItemCardPage />} />
-              <Route path="/stores/sales" element={<SalesPage />} />
+              <Route path="/management/sale" element={<SalesPage />} />
               <Route path="/stores/manage" element={<WarehouseManagementOld />} />
               <Route path="/stores/advanced-warehouse" element={<AdvancedWarehouseManagement />} />
               <Route path="/stores/sales-return" element={<SalesReturnPage />} />
               <Route path="/stores/edit-sales-invoice" element={<EditSalesInvoice />} />
               <Route path="/stores/edit-sales-invoice/:id" element={<EditSalesInvoiceDetailPage />} />
               <Route path="/stores/receipt-voucher" element={<ReceiptVoucher />} />
-              <Route path="/stores/receipt-vouchers-directory" element={<ReceiptVouchersDirectory />} />
+              <Route path="/management/receipt-vouchers-directory" element={<ReceiptVouchersDirectory />} />
               <Route path="/stores/quotations" element={<Quotations />} />
               <Route path="/stores/quotations/new" element={<AddQuotationPage />} />
               <Route path="/stores/quotations/edit/:id" element={<EditQuotationPage />} />
@@ -251,6 +252,7 @@ const Index = () => {
               <Route path="/management/performance-evaluation" element={<PerformanceEvaluationPage />} />
               <Route path="/management/purchase" element={<PurchaseManagement />} />
               <Route path="/management/equipment" element={<EquipmentManagement />} />
+              <Route path="/management/discounts-offers" element={<DiscountsOffers />} />
               
               {/* Financial Management Sub-Routes */}
               <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />

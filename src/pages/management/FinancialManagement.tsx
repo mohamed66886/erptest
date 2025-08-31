@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Select as AntdSelect } from 'antd';
+import { Calendar } from 'lucide-react';
+import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -7,7 +10,6 @@ import {
   Settings, 
   FileText, 
   TreePine, 
-  Calendar, 
   Clock, 
   Target, 
   CreditCard, 
@@ -36,61 +38,79 @@ import {
 } from 'lucide-react';
 
 const FinancialManagement: React.FC = () => {
-  const navigate = useNavigate();
+  // السنة المالية
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
 
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
+  const navigate = useNavigate();
+  // ...existing code...
   const settingsCards = [
     {
       title: "تصفية الحسابات",
       description: "إدارة وتصفية الحسابات المالية",
       icon: <FileText className="h-6 w-6" />,
       color: "bg-blue-500",
-      onClick: () => navigate('/accounting/accounts-settlement')
+      onClick: () => navigate('/accounting/accounts-settlement'),
     },
     {
       title: "دليل الحسابات",
       description: "عرض وإدارة دليل الحسابات الكامل",
       icon: <BookOpen className="h-6 w-6" />,
       color: "bg-green-500",
-      onClick: () => navigate('/accounting/chart-of-accounts')
+      onClick: () => navigate('/accounting/chart-of-accounts'),
     },
     {
       title: "دليل الحسابات الشجري",
       description: "عرض الحسابات في شكل شجري",
       icon: <TreePine className="h-6 w-6" />,
-      color: "bg-emerald-500"
+      color: "bg-emerald-500",
     },
     {
       title: "السنوات المالية",
       description: "إدارة السنوات المالية للشركة",
       icon: <Calendar className="h-6 w-6" />,
       color: "bg-purple-500",
-      onClick: () => navigate('/accounting/financial-years')
+      onClick: () => navigate('/accounting/financial-years'),
     },
     {
       title: "الفترات المحاسبية",
       description: "تحديد وإدارة الفترات المحاسبية",
       icon: <Clock className="h-6 w-6" />,
-      color: "bg-orange-500"
+      color: "bg-orange-500",
     },
     {
       title: "مراكز التكلفة",
       description: "إدارة مراكز التكلفة والأقسام",
       icon: <Target className="h-6 w-6" />,
       color: "bg-red-500",
-      onClick: () => navigate('/accounting/cost-centers')
+      onClick: () => navigate('/accounting/cost-centers'),
     },
     {
       title: "الحسابات البنكية",
       description: "إدارة الحسابات البنكية للشركة",
       icon: <CreditCard className="h-6 w-6" />,
       color: "bg-indigo-500",
-      onClick: () => navigate('/accounting/bank-accounts')
+      onClick: () => navigate('/accounting/bank-accounts'),
     },
     {
       title: "دليل مركز التكلفة",
       description: "دليل مراكز التكلفة الشامل",
       icon: <BarChart3 className="h-6 w-6" />,
-      color: "bg-teal-500"
+      color: "bg-teal-500",
+  // Removed duplicate settingsCards definition
     },
     {
       title: "الصناديق النقدية",
@@ -321,21 +341,42 @@ const FinancialManagement: React.FC = () => {
   return (
     <div className="w-full p-6 space-y-8 min-h-screen" dir="rtl">
       {/* Header */}
-    
-       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-         <div className="flex items-center">
-           <FileText className="h-8 w-8 text-blue-600 ml-3" />
-           <h1 className="text-2xl font-bold text-gray-800">الاداره الماليه</h1>
-         </div>
-         <p className="text-gray-600 mt-2">إدارة النظام المالي والمحاسبي</p>
-         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
-       </div>
+      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <FileText className="h-8 w-8 text-blue-600 ml-3" />
+            <h1 className="text-2xl font-bold text-gray-800">الاداره الماليه</h1>
+          </div>
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-2">
+              <Calendar style={{ color: '#7c3aed', width: 28, height: 28 }} />
+              <label className="text-base font-medium text-gray-700">السنة المالية:</label>
+            </span>
+            <div style={{ minWidth: 160 }}>
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ width: 160, height: 48, fontSize: 18, borderRadius: 8, background: '#fff', textAlign: 'right', boxShadow: '0 1px 6px rgba(0,0,0,0.07)', border: 'none' }}
+                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                size="large"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
+            </div>
+          </div>
+        </div>
+        <p className="text-gray-600 mt-2">إدارة النظام المالي والمحاسبي</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+      </div>
 
-       <Breadcrumb
+      <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "الادارة الماليه" }, 
-
+          { label: "الادارة الماليه" },
         ]}
       />
       {/* الإعدادات Section */}

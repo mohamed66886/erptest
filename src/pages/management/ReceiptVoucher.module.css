@@ -1,3 +1,8 @@
+/* إزالة البوردر الداخلي لدروب داون الخصومات والعروض */
+.selectDropdown :global(.ant-select-selector) {
+  border: none !important;
+  box-shadow: none !important;
+}
 .dropdown :global(.ant-select-selector) {
   border: none !important;
   box-shadow: none !important;

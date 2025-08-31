@@ -78,26 +78,6 @@ const SalesManagement: React.FC = () => {
       }
     },
     {
-      title: "تحديث باقات الأسعار الخاصة",
-      description: "تحديث وإدارة باقات الأسعار الخاصة",
-      icon: <RefreshCw className="h-6 w-6" />,
-      color: "bg-orange-500",
-      onClick: () => {
-        navigate('/management/update-special-price-packages');
-        window.scrollTo(0, 0);
-      }
-    },
-    {
-      title: "تحديث الأسعار",
-      description: "تحديث أسعار المنتجات والخدمات",
-      icon: <DollarSign className="h-6 w-6" />,
-      color: "bg-green-500",
-      onClick: () => {
-        navigate('/management/update-prices');
-        window.scrollTo(0, 0);
-      }
-    },
-    {
       title: "الخصومات والعروض",
       description: "إدارة نظام الخصومات والعروض",
       icon: <Percent className="h-6 w-6" />,
@@ -270,7 +250,7 @@ const SalesManagement: React.FC = () => {
       icon: <FileText className="h-5 w-5 sm:h-6 sm:w-6" />,
       color: "bg-blue-600",
       onClick: () => {
-        navigate('/stores/sales');
+        navigate('/management/sale');
         window.scrollTo(0, 0);
       }
     },
@@ -337,7 +317,7 @@ const SalesManagement: React.FC = () => {
       icon: <BookOpen className="h-5 w-5 sm:h-6 sm:w-6" />, 
       color: "bg-indigo-600",
       onClick: () => {
-        navigate('/stores/receipt-vouchers-directory');
+        navigate('/management/receipt-vouchers-directory');
         window.scrollTo(0, 0);
       }
     },
