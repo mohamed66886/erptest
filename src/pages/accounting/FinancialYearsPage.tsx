@@ -1,6 +1,60 @@
-  // تحذير إغلاق السنة المالية
-  // ...existing code...
+
 import React, { useState, useEffect } from 'react';
+
+// مكون للسويتش مع حالة محلية لكل صف
+type SwitchCellProps = {
+  year: FinancialYear;
+  isActionDisabled: boolean;
+  handleEdit: (year: FinancialYear) => void;
+  handleDelete: (id: string) => void;
+};
+
+const SwitchCell: React.FC<SwitchCellProps> = ({ year, isActionDisabled, handleEdit, handleDelete }) => {
+  const [switchChecked, setSwitchChecked] = useState(true);
+  return (
+    <div className="flex items-center justify-center gap-2">
+      {/* Custom blue switch with label inside */}
+      <label className="flex items-center cursor-pointer select-none">
+        <div style={{ position: 'relative', minWidth: 70 }}>
+          <Switch
+            checked={switchChecked}
+            onChange={setSwitchChecked}
+            checkedChildren="نشطة"
+            unCheckedChildren="موقوفة مؤقتاً"
+            style={{ minWidth: 70, background: switchChecked ? '#2563eb' : '#eab308', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
+            disabled={isActionDisabled}
+          />
+          {isActionDisabled && (
+            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)' }}>
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            </span>
+          )}
+        </div>
+      </label>
+      <Button 
+        size="icon" 
+        variant="ghost" 
+        onClick={() => handleEdit(year)} 
+        aria-label="تعديل"
+        className={`h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 ${year.status !== 'مفتوحة' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+        disabled={isActionDisabled}
+      >
+        <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+      </Button>
+      <Button 
+        size="icon" 
+        variant="ghost" 
+        onClick={() => handleDelete(year.id)} 
+        aria-label="حذف"
+        className="h-8 w-8 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50"
+        disabled={isActionDisabled}
+      >
+        <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+      </Button>
+    </div>
+  );
+};
+
 import '../../styles/custom-table.css';
 import { useNavigate } from 'react-router-dom';
 import { getFinancialYears, deleteFinancialYear, updateFinancialYear } from '@/services/financialYearsService';
@@ -20,8 +74,10 @@ import {
   ArrowLeft,
   MoreHorizontal,
   AlertCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Loader2
 } from 'lucide-react';
+// ...existing code...
 import { Table as AntdTable } from 'antd';
 import {
   DropdownMenu,
@@ -37,6 +93,8 @@ interface FinancialYearsPageProps {
 }
 
 const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
+  // حالة تعطيل الإجراءات مؤقتاً
+  const [isActionDisabled, setIsActionDisabled] = useState(false);
   // Ref for warning scroll
   const warningRef = React.useRef<HTMLDivElement>(null);
   // ...existing code...
@@ -117,7 +175,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
               year: nextYear,
               startDate,
               endDate,
-              status: 'نشطة'
+              status: 'مفتوحة'
             });
             updated = await getFinancialYears();
           } catch (e) {
@@ -293,55 +351,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
             إجمالي السنوات المالية: <span className="font-medium text-purple-600 dark:text-purple-400">{financialYears.length}</span>
-            {/* تحذير إغلاق السنة المالية كنص فقط مع زر متابعة وإلغاء */}
-            {closeWarning.open && closeWarning.year && (
-              <div ref={warningRef} style={{background: '#fff5c2', borderRadius: '8px', padding: '12px 16px', marginTop: '10px'}}>
-                <p className="font-bold text-right" style={{textAlign: 'right', color: '#000'}}>
-                  تحذير! أنت على وشك إغلاق السنة المالية {closeWarning.year.year}. هل تريد المتابعة؟
-                </p>
-                <div className="flex gap-2 justify-end mt-2" style={{direction: 'rtl'}}>
-                  <button
-                    style={{background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 18px', fontWeight: 'bold', cursor: 'pointer', marginLeft: '8px'}}
-                    onClick={async () => {
-                      await updateFinancialYear(closeWarning.year!.id, {
-                        year: closeWarning.year!.year,
-                        startDate: closeWarning.year!.startDate,
-                        endDate: closeWarning.year!.endDate,
-                        status: 'مغلقة'
-                      });
-                      let updated = await getFinancialYears();
-                      // إضافة السنة التالية تلقائياً إذا لم تكن موجودة
-                      const sortedYears = [...updated].sort((a, b) => b.year - a.year);
-                      const isLatest = closeWarning.year!.year === sortedYears[0].year;
-                      const nextYear = closeWarning.year!.year + 1;
-                      const nextYearExists = updated.some(y => y.year === nextYear);
-                      if (isLatest && !nextYearExists) {
-                        const startDate = `${nextYear}-01-01`;
-                        const nextEndDate = `${nextYear}-12-31`;
-                        try {
-                          const addFinancialYear = (await import('@/services/financialYearsService')).addFinancialYear;
-                          await addFinancialYear({
-                            year: nextYear,
-                            startDate,
-                            endDate: nextEndDate,
-                            status: 'نشطة' // treat مفتوحة as نشطة
-                          });
-                          updated = await getFinancialYears();
-                        } catch (e) {
-                          // ignore if service not available
-                        }
-                      }
-                      setFinancialYears(updated.sort((a, b) => b.year - a.year));
-                      setCloseWarning({open: false, year: null});
-                    }}
-                  >متابعة</button>
-                  <button
-                    style={{background: '#fff', color: '#dc2626', border: '1px solid #dc2626', borderRadius: '6px', padding: '6px 18px', fontWeight: 'bold', cursor: 'pointer'}}
-                    onClick={() => setCloseWarning({open: false, year: null})}
-                  >إلغاء</button>
-                </div>
-              </div>
-            )}
+            {/* تم حذف تحذير إغلاق السنة المالية */}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -411,53 +421,9 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                   key: 'actions',
                   align: 'right',
                   render: (_: unknown, year: FinancialYear) => (
-                    <div className="flex items-center justify-center gap-2">
-                      {/* Custom blue switch with label inside */}
-                      <label className="flex items-center cursor-pointer select-none">
-                        <Switch
-                          checked={year.status === 'مفتوحة'}
-                          onChange={(checked) => {
-                            if (!checked) {
-                              handleCloseYear(year);
-                            } else {
-                              // فتح السنة مباشرة
-                              updateFinancialYear(year.id, {
-                                year: year.year,
-                                startDate: year.startDate,
-                                endDate: year.endDate,
-                                status: 'مفتوحة'
-                              }).then(async () => {
-                                const updated = await getFinancialYears();
-                                setFinancialYears(updated.sort((a, b) => b.year - a.year));
-                              });
-                            }
-                          }}
-                          checkedChildren="مفتوحة"
-                          unCheckedChildren="مغلقة"
-                          style={{ minWidth: 70, background: year.status === 'مفتوحة' ? '#2563eb' : '#eab308', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
-                        />
-                      </label>
-                      <Button 
-                        size="icon" 
-                        variant="ghost" 
-                        onClick={() => handleEdit(year)} 
-                        aria-label="تعديل"
-                        className={`h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 ${year.status !== 'مفتوحة' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
-                        disabled={year.status !== 'مفتوحة'}
-                      >
-                        <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      </Button>
-                      <Button 
-                        size="icon" 
-                        variant="ghost" 
-                        onClick={() => handleDelete(year.id)} 
-                        aria-label="حذف"
-                        className="h-8 w-8 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50"
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
-                      </Button>
-                    </div>
+                    <SwitchCell year={year} isActionDisabled={isActionDisabled} handleEdit={handleEdit} handleDelete={handleDelete} />
                   )
+// مكون للسويتش مع حالة محلية لكل صف
           }
         ]}
         className="min-w-full bg-transparent custom-table-header"
