@@ -17,7 +17,8 @@ import {
   Trash2, 
   ArrowLeft,
   MoreHorizontal,
-  AlertCircle
+  AlertCircle,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Table as AntdTable } from 'antd';
 import {
@@ -245,7 +246,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                 onClick={handleExport}
                 className="flex items-center space-x-2 space-x-reverse bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white transition-all duration-200 shadow-md hover:shadow-lg"
               >
-                <FileDown className="h-4 w-4" />
+                <FileSpreadsheet className="h-4 w-4" />
                 <span>تصدير</span>
               </Button>
             </div>
@@ -334,7 +335,43 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                               endDate: year.endDate,
                               status: newStatus
                             });
-                            const updated = await getFinancialYears();
+                            let updated = await getFinancialYears();
+                            // If closing the latest year and next year does not exist, add next year as active
+                            if (!checked) {
+                              const sortedYears = [...updated].sort((a, b) => b.year - a.year);
+                              const isLatest = year.year === sortedYears[0].year;
+                              const nextYear = year.year + 1;
+                              const nextYearExists = updated.some(y => y.year === nextYear);
+                              if (isLatest && !nextYearExists) {
+                                // Add next year as active
+                                const pad = (n: number) => n.toString().padStart(2, '0');
+                                const startDate = `${nextYear}-01-01`;
+                                const endDate = `${nextYear}-12-31`;
+                                // You may want to use a service to add the year, assuming addFinancialYear exists
+                                if (typeof window.addFinancialYear === 'function') {
+                                  await window.addFinancialYear({
+                                    year: nextYear,
+                                    startDate,
+                                    endDate,
+                                    status: 'نشطة'
+                                  });
+                                } else {
+                                  // fallback: try to use a service if available
+                                  try {
+                                    const addFinancialYear = (await import('@/services/financialYearsService')).addFinancialYear;
+                                    await addFinancialYear({
+                                      year: nextYear,
+                                      startDate,
+                                      endDate,
+                                      status: 'نشطة'
+                                    });
+                                  } catch (e) {
+                                    // ignore if service not available
+                                  }
+                                }
+                                updated = await getFinancialYears();
+                              }
+                            }
                             setFinancialYears(updated.sort((a, b) => b.year - a.year));
                           }}
                           checkedChildren="مفعل"
