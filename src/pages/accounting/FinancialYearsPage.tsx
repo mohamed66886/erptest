@@ -82,7 +82,30 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
     if (editYear) {
       // تعديل
       await updateFinancialYear(editYear.id, yearData);
-      const updated = await getFinancialYears();
+      let updated = await getFinancialYears();
+      // Check if closing the latest year and next year does not exist, add next year as active
+      if (yearData.status === 'مغلقة') {
+        const sortedYears = [...updated].sort((a, b) => b.year - a.year);
+        const isLatest = editYear.year === sortedYears[0].year;
+        const nextYear = editYear.year + 1;
+        const nextYearExists = updated.some(y => y.year === nextYear);
+        if (isLatest && !nextYearExists) {
+          const startDate = `${nextYear}-01-01`;
+          const endDate = `${nextYear}-12-31`;
+          try {
+            const addFinancialYear = (await import('@/services/financialYearsService')).addFinancialYear;
+            await addFinancialYear({
+              year: nextYear,
+              startDate,
+              endDate,
+              status: 'نشطة'
+            });
+            updated = await getFinancialYears();
+          } catch (e) {
+            // ignore if service not available
+          }
+        }
+      }
       setFinancialYears(updated.sort((a, b) => b.year - a.year));
       setEditYear(null);
       setIsAddModalOpen(false);
@@ -328,7 +351,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                         <Switch
                           checked={year.status === 'نشطة'}
                           onChange={async (checked) => {
-                            const newStatus = checked ? 'نشطة' : 'مغلقة';
+                            const newStatus = checked ? 'نشطة' : 'معلقة';
                             await updateFinancialYear(year.id, {
                               year: year.year,
                               startDate: year.startDate,
@@ -336,47 +359,11 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                               status: newStatus
                             });
                             let updated = await getFinancialYears();
-                            // If closing the latest year and next year does not exist, add next year as active
-                            if (!checked) {
-                              const sortedYears = [...updated].sort((a, b) => b.year - a.year);
-                              const isLatest = year.year === sortedYears[0].year;
-                              const nextYear = year.year + 1;
-                              const nextYearExists = updated.some(y => y.year === nextYear);
-                              if (isLatest && !nextYearExists) {
-                                // Add next year as active
-                                const pad = (n: number) => n.toString().padStart(2, '0');
-                                const startDate = `${nextYear}-01-01`;
-                                const endDate = `${nextYear}-12-31`;
-                                // You may want to use a service to add the year, assuming addFinancialYear exists
-                                if (typeof window.addFinancialYear === 'function') {
-                                  await window.addFinancialYear({
-                                    year: nextYear,
-                                    startDate,
-                                    endDate,
-                                    status: 'نشطة'
-                                  });
-                                } else {
-                                  // fallback: try to use a service if available
-                                  try {
-                                    const addFinancialYear = (await import('@/services/financialYearsService')).addFinancialYear;
-                                    await addFinancialYear({
-                                      year: nextYear,
-                                      startDate,
-                                      endDate,
-                                      status: 'نشطة'
-                                    });
-                                  } catch (e) {
-                                    // ignore if service not available
-                                  }
-                                }
-                                updated = await getFinancialYears();
-                              }
-                            }
                             setFinancialYears(updated.sort((a, b) => b.year - a.year));
                           }}
-                          checkedChildren="مفعل"
-                          unCheckedChildren="مغلق"
-                          style={{ minWidth: 70, background: year.status === 'نشطة' ? '#2563eb' : '#a3a3a3', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
+                          checkedChildren="نشطة"
+                          unCheckedChildren="معلقة"
+                          style={{ minWidth: 70, background: year.status === 'نشطة' ? '#2563eb' : '#eab308', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
                         />
                       </label>
                       <Button 
