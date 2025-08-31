@@ -1,3 +1,5 @@
+  // تحذير إغلاق السنة المالية
+  // ...existing code...
 import React, { useState, useEffect } from 'react';
 import '../../styles/custom-table.css';
 import { useNavigate } from 'react-router-dom';
@@ -35,6 +37,23 @@ interface FinancialYearsPageProps {
 }
 
 const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
+  // Ref for warning scroll
+  const warningRef = React.useRef<HTMLDivElement>(null);
+  // ...existing code...
+  // تحذير إغلاق السنة المالية
+  const [closeWarning, setCloseWarning] = useState<{open: boolean, year: FinancialYear | null}>({open: false, year: null});
+  // Scroll to warning when it appears
+  useEffect(() => {
+    if (closeWarning.open && warningRef.current) {
+      warningRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [closeWarning.open]);
+
+  // إغلاق السنة المالية من الإجراءات مع تحذير
+  const handleCloseYear = (year: FinancialYear) => {
+    setCloseWarning({open: true, year});
+  };
+  // ...existing code...
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
@@ -169,12 +188,10 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
-      'نشطة': { color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200', text: 'نشطة' },
-      'مغلقة': { color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200', text: 'مغلقة' },
-      'معلقة': { color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200', text: 'معلقة' }
+      'مفتوحة': { color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200', text: 'مفتوحة' },
+      'مغلقة': { color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200', text: 'مغلقة' }
     };
-
-    const config = statusConfig[status as keyof typeof statusConfig];
+    const config = statusConfig[status as keyof typeof statusConfig] || { color: 'bg-gray-100 text-gray-800', text: status };
     return (
       <Badge className={`${config.color} hover:${config.color} rounded-md px-2 py-1 text-xs`}>
         {config.text}
@@ -247,7 +264,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
           { label: "السنوات المالية" }
         ]}
       />
-      
+
       <Card className="border border-gray-200 dark:border-gray-700 shadow-lg bg-white rounded-xl overflow-hidden">
         <CardHeader className="bg-white dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -276,6 +293,55 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
             إجمالي السنوات المالية: <span className="font-medium text-purple-600 dark:text-purple-400">{financialYears.length}</span>
+            {/* تحذير إغلاق السنة المالية كنص فقط مع زر متابعة وإلغاء */}
+            {closeWarning.open && closeWarning.year && (
+              <div ref={warningRef} style={{background: '#fff5c2', borderRadius: '8px', padding: '12px 16px', marginTop: '10px'}}>
+                <p className="font-bold text-right" style={{textAlign: 'right', color: '#000'}}>
+                  تحذير! أنت على وشك إغلاق السنة المالية {closeWarning.year.year}. هل تريد المتابعة؟
+                </p>
+                <div className="flex gap-2 justify-end mt-2" style={{direction: 'rtl'}}>
+                  <button
+                    style={{background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 18px', fontWeight: 'bold', cursor: 'pointer', marginLeft: '8px'}}
+                    onClick={async () => {
+                      await updateFinancialYear(closeWarning.year!.id, {
+                        year: closeWarning.year!.year,
+                        startDate: closeWarning.year!.startDate,
+                        endDate: closeWarning.year!.endDate,
+                        status: 'مغلقة'
+                      });
+                      let updated = await getFinancialYears();
+                      // إضافة السنة التالية تلقائياً إذا لم تكن موجودة
+                      const sortedYears = [...updated].sort((a, b) => b.year - a.year);
+                      const isLatest = closeWarning.year!.year === sortedYears[0].year;
+                      const nextYear = closeWarning.year!.year + 1;
+                      const nextYearExists = updated.some(y => y.year === nextYear);
+                      if (isLatest && !nextYearExists) {
+                        const startDate = `${nextYear}-01-01`;
+                        const nextEndDate = `${nextYear}-12-31`;
+                        try {
+                          const addFinancialYear = (await import('@/services/financialYearsService')).addFinancialYear;
+                          await addFinancialYear({
+                            year: nextYear,
+                            startDate,
+                            endDate: nextEndDate,
+                            status: 'نشطة' // treat مفتوحة as نشطة
+                          });
+                          updated = await getFinancialYears();
+                        } catch (e) {
+                          // ignore if service not available
+                        }
+                      }
+                      setFinancialYears(updated.sort((a, b) => b.year - a.year));
+                      setCloseWarning({open: false, year: null});
+                    }}
+                  >متابعة</button>
+                  <button
+                    style={{background: '#fff', color: '#dc2626', border: '1px solid #dc2626', borderRadius: '6px', padding: '6px 18px', fontWeight: 'bold', cursor: 'pointer'}}
+                    onClick={() => setCloseWarning({open: false, year: null})}
+                  >إلغاء</button>
+                </div>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -349,21 +415,26 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                       {/* Custom blue switch with label inside */}
                       <label className="flex items-center cursor-pointer select-none">
                         <Switch
-                          checked={year.status === 'نشطة'}
-                          onChange={async (checked) => {
-                            const newStatus = checked ? 'نشطة' : 'معلقة';
-                            await updateFinancialYear(year.id, {
-                              year: year.year,
-                              startDate: year.startDate,
-                              endDate: year.endDate,
-                              status: newStatus
-                            });
-                            let updated = await getFinancialYears();
-                            setFinancialYears(updated.sort((a, b) => b.year - a.year));
+                          checked={year.status === 'مفتوحة'}
+                          onChange={(checked) => {
+                            if (!checked) {
+                              handleCloseYear(year);
+                            } else {
+                              // فتح السنة مباشرة
+                              updateFinancialYear(year.id, {
+                                year: year.year,
+                                startDate: year.startDate,
+                                endDate: year.endDate,
+                                status: 'مفتوحة'
+                              }).then(async () => {
+                                const updated = await getFinancialYears();
+                                setFinancialYears(updated.sort((a, b) => b.year - a.year));
+                              });
+                            }
                           }}
-                          checkedChildren="نشطة"
-                          unCheckedChildren="معلقة"
-                          style={{ minWidth: 70, background: year.status === 'نشطة' ? '#2563eb' : '#eab308', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
+                          checkedChildren="مفتوحة"
+                          unCheckedChildren="مغلقة"
+                          style={{ minWidth: 70, background: year.status === 'مفتوحة' ? '#2563eb' : '#eab308', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
                         />
                       </label>
                       <Button 
@@ -371,8 +442,8 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                         variant="ghost" 
                         onClick={() => handleEdit(year)} 
                         aria-label="تعديل"
-                        className={`h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 ${year.status !== 'نشطة' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
-                        disabled={year.status !== 'نشطة'}
+                        className={`h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 ${year.status !== 'مفتوحة' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                        disabled={year.status !== 'مفتوحة'}
                       >
                         <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       </Button>
@@ -387,10 +458,10 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                       </Button>
                     </div>
                   )
-                }
-              ]}
-              className="min-w-full bg-transparent custom-table-header"
-            />
+          }
+        ]}
+        className="min-w-full bg-transparent custom-table-header"
+      />
           </div>
         </CardContent>
       </Card>
@@ -402,6 +473,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
         onSave={handleSaveYear}
         existingYears={financialYears.map(year => year.year)}
         saveButtonClassName="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white transition-all duration-200"
+        fieldsLocked={!!editYear}
         {...(editYear ? {
           initialData: {
             year: editYear.year,

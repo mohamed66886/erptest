@@ -341,25 +341,40 @@ const FinancialManagement: React.FC = () => {
   return (
     <div className="w-full p-6 space-y-8 min-h-screen" dir="rtl">
       {/* Header */}
-      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <FileText className="h-8 w-8 text-blue-600 ml-3" />
-            <h1 className="text-2xl font-bold text-gray-800">الاداره الماليه</h1>
-          </div>
+      <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center gap-6">
+        <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+          <Calendar className="h-8 w-8 text-blue-600 dark:text-blue-300" />
+        </div>
+        <div className="flex flex-col ">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">الادارة المالية</h1>
+          <p className="text-gray-600 dark:text-gray-400">إدارة المالية والحسابات</p>
+        </div>
+      </div>
+          
           {/* السنة المالية Dropdown */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
             <span className="flex items-center gap-2">
-              <Calendar style={{ color: '#7c3aed', width: 28, height: 28 }} />
-              <label className="text-base font-medium text-gray-700">السنة المالية:</label>
+            <Calendar className="text-purple-600 dark:text-purple-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
             </span>
-            <div style={{ minWidth: 160 }}>
+            <div className="min-w-[160px]">
               <AntdSelect
                 value={fiscalYear}
                 onChange={handleFiscalYearChange}
-                style={{ width: 160, height: 48, fontSize: 18, borderRadius: 8, background: '#fff', textAlign: 'right', boxShadow: '0 1px 6px rgba(0,0,0,0.07)', border: 'none' }}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
                 dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
-                size="large"
+                size="middle"
                 placeholder="السنة المالية"
               >
                 {activeYears && activeYears.map(y => (
@@ -369,10 +384,8 @@ const FinancialManagement: React.FC = () => {
             </div>
           </div>
         </div>
-        <p className="text-gray-600 mt-2">إدارة النظام المالي والمحاسبي</p>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
-
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },

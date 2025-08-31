@@ -28,6 +28,7 @@ interface AddFinancialYearModalProps {
     status: string;
   };
   saveButtonClassName?: string;
+  fieldsLocked?: boolean;
 }
 
 const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
@@ -36,7 +37,8 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
   onSave,
   existingYears,
   initialData,
-  saveButtonClassName
+  saveButtonClassName,
+  fieldsLocked = false
 }) => {
   const currentYear = new Date().getFullYear();
   const yearsList = Array.from({length: 20}, (_, i) => (currentYear - 10 + i).toString());
@@ -187,6 +189,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                 onChange={(value: string) => handleYearChange(value)}
                 placeholder="اختر السنة"
                 style={{ width: '100%' }}
+                disabled={fieldsLocked}
               >
                 {yearsList.map(y => (
                   <AntdSelect.Option key={y} value={y}>{y}</AntdSelect.Option>
@@ -205,6 +208,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                   value={formData.startDay}
                   onChange={(value: string) => setFormData({...formData, startDay: value})}
                   style={{ width: 80 }}
+                  disabled={fieldsLocked}
                 >
                   {daysList.map(day => (
                     <AntdSelect.Option key={day} value={day}>{day}</AntdSelect.Option>
@@ -214,6 +218,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                   value={formData.startMonth}
                   onChange={(value: string) => setFormData({...formData, startMonth: value})}
                   style={{ width: 120 }}
+                  disabled={fieldsLocked}
                 >
                   {monthsList.map(month => (
                     <AntdSelect.Option key={month.value} value={month.value}>{month.label}</AntdSelect.Option>
@@ -223,6 +228,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                   value={formData.startYear}
                   onChange={(value: string) => setFormData({...formData, startYear: value})}
                   style={{ width: 100 }}
+                  disabled={fieldsLocked}
                 >
                   {yearsList.map(y => (
                     <AntdSelect.Option key={y} value={y}>{y}</AntdSelect.Option>
@@ -242,6 +248,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                   value={formData.endDay}
                   onChange={(value: string) => setFormData({...formData, endDay: value})}
                   style={{ width: 80 }}
+                  disabled={fieldsLocked}
                 >
                   {daysList.map(day => (
                     <AntdSelect.Option key={day} value={day}>{day}</AntdSelect.Option>
@@ -251,6 +258,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                   value={formData.endMonth}
                   onChange={(value: string) => setFormData({...formData, endMonth: value})}
                   style={{ width: 120 }}
+                  disabled={fieldsLocked}
                 >
                   {monthsList.map(month => (
                     <AntdSelect.Option key={month.value} value={month.value}>{month.label}</AntdSelect.Option>
@@ -260,6 +268,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                   value={formData.endYear}
                   onChange={(value: string) => setFormData({...formData, endYear: value})}
                   style={{ width: 100 }}
+                  disabled={fieldsLocked}
                 >
                   {yearsList.map(y => (
                     <AntdSelect.Option key={y} value={y}>{y}</AntdSelect.Option>
@@ -279,8 +288,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
                 onChange={(value: string) => setFormData({...formData, status: value})}
                 style={{ width: '100%' }}
               >
-                <AntdSelect.Option value="معلقة">معلقة</AntdSelect.Option>
-                <AntdSelect.Option value="نشطة">نشطة</AntdSelect.Option>
+                <AntdSelect.Option value="مفتوحة">مفتوحة</AntdSelect.Option>
                 <AntdSelect.Option value="مغلقة">مغلقة</AntdSelect.Option>
               </AntdSelect>
             </div>
