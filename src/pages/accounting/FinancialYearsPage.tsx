@@ -19,7 +19,7 @@ const SwitchCell: React.FC<SwitchCellProps> = ({ year, isActionDisabled, handleE
     setLoading(true);
     const newActiveStatus = checked ? 'نشطة' : 'موقوفة مؤقتاً';
     try {
-      // تحديث فقط خاصية activeStatus في قاعدة البيانات
+      // ...existing code...
       const updateFinancialYear = (await import('@/services/financialYearsService')).updateFinancialYear;
       await updateFinancialYear(year.id, {
         ...year,
@@ -444,13 +444,13 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                 },
                 {
                   title: 'الإجراءات',
+                  dataIndex: 'actions',
                   key: 'actions',
-                  align: 'right',
+                  align: 'center',
                   render: (_: unknown, year: FinancialYear) => (
                     <SwitchCell year={year} isActionDisabled={isActionDisabled} handleEdit={handleEdit} handleDelete={handleDelete} />
                   )
-// مكون للسويتش مع حالة محلية لكل صف
-          }
+                }
         ]}
         className="min-w-full bg-transparent custom-table-header"
       />
