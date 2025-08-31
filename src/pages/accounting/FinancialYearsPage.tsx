@@ -371,7 +371,8 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
                         variant="ghost" 
                         onClick={() => handleEdit(year)} 
                         aria-label="تعديل"
-                        className="h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                        className={`h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 ${year.status !== 'نشطة' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                        disabled={year.status !== 'نشطة'}
                       >
                         <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       </Button>
