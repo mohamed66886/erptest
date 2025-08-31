@@ -66,7 +66,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
     endDay: '31',
     endMonth: '12',
     endYear: currentYear.toString(),
-    status: 'معلقة'
+    status: 'مفتوحة'
   });
   useEffect(() => {
     if (initialData) {
@@ -80,7 +80,7 @@ const AddFinancialYearModal: React.FC<AddFinancialYearModalProps> = ({
         endDay: '31',
         endMonth: '12',
         endYear: currentYear.toString(),
-        status: 'معلقة'
+        status: 'مفتوحة'
       });
     }
   }, [initialData, isOpen, currentYear]);

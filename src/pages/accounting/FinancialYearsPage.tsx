@@ -3,14 +3,34 @@ import React, { useState, useEffect } from 'react';
 
 // مكون للسويتش مع حالة محلية لكل صف
 type SwitchCellProps = {
-  year: FinancialYear;
+  year: FinancialYear & { activeStatus?: string };
   isActionDisabled: boolean;
   handleEdit: (year: FinancialYear) => void;
   handleDelete: (id: string) => void;
 };
 
 const SwitchCell: React.FC<SwitchCellProps> = ({ year, isActionDisabled, handleEdit, handleDelete }) => {
-  const [switchChecked, setSwitchChecked] = useState(true);
+  // اجعل السويتش يعكس خاصية نشطة/موقوفة مؤقتاً من قاعدة البيانات
+  const [switchChecked, setSwitchChecked] = useState(year.activeStatus === 'نشطة');
+  const [loading, setLoading] = useState(false);
+
+  // تحديث الحالة في قاعدة البيانات عند تغيير السويتش
+  const handleSwitchChange = async (checked: boolean) => {
+    setLoading(true);
+    const newActiveStatus = checked ? 'نشطة' : 'موقوفة مؤقتاً';
+    try {
+      // تحديث فقط خاصية activeStatus في قاعدة البيانات
+      const updateFinancialYear = (await import('@/services/financialYearsService')).updateFinancialYear;
+      await updateFinancialYear(year.id, {
+        ...year,
+        activeStatus: newActiveStatus
+      });
+      setSwitchChecked(checked);
+    } catch (e) {
+      setSwitchChecked(!checked);
+    }
+    setLoading(false);
+  };
   return (
     <div className="flex items-center justify-center gap-2">
       {/* Custom blue switch with label inside */}
@@ -18,39 +38,44 @@ const SwitchCell: React.FC<SwitchCellProps> = ({ year, isActionDisabled, handleE
         <div style={{ position: 'relative', minWidth: 70 }}>
           <Switch
             checked={switchChecked}
-            onChange={setSwitchChecked}
+            onChange={handleSwitchChange}
             checkedChildren="نشطة"
             unCheckedChildren="موقوفة مؤقتاً"
             style={{ minWidth: 70, background: switchChecked ? '#2563eb' : '#eab308', color: '#fff', fontWeight: 'bold', fontSize: 16 }}
-            disabled={isActionDisabled}
+            disabled={isActionDisabled || loading}
           />
-          {isActionDisabled && (
+          {(isActionDisabled || loading) && (
             <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)' }}>
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             </span>
           )}
         </div>
       </label>
-      <Button 
-        size="icon" 
-        variant="ghost" 
-        onClick={() => handleEdit(year)} 
-        aria-label="تعديل"
-        className={`h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 ${year.status !== 'مفتوحة' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
-        disabled={isActionDisabled}
-      >
-        <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-      </Button>
-      <Button 
-        size="icon" 
-        variant="ghost" 
-        onClick={() => handleDelete(year.id)} 
-        aria-label="حذف"
-        className="h-8 w-8 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50"
-        disabled={isActionDisabled}
-      >
-        <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
-      </Button>
+            {/* إظهار أزرار التعديل والحذف فقط إذا لم تكن السنة مغلقة */}
+            {year.status !== 'مغلقة' && (
+                <>
+                    <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => handleEdit(year)} 
+                        aria-label="تعديل"
+                        className={`h-8 w-8 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 ${year.status !== 'مفتوحة' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                        disabled={isActionDisabled}
+                    >
+                        <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </Button>
+                    <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => handleDelete(year.id)} 
+                        aria-label="حذف"
+                        className="h-8 w-8 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50"
+                        disabled={isActionDisabled}
+                    >
+                        <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                    </Button>
+                </>
+            )}
     </div>
   );
 };
@@ -133,7 +158,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
   useEffect(() => {
     getFinancialYears().then((years) => {
-      // sort by year desc
+      // ترتيب تنازلي: السنة الجديدة تظهر في الأعلى
       setFinancialYears(years.sort((a, b) => b.year - a.year));
     });
   }, []);
@@ -183,13 +208,22 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
           }
         }
       }
+      // ترتيب تنازلي بعد التعديل
       setFinancialYears(updated.sort((a, b) => b.year - a.year));
       setEditYear(null);
       setIsAddModalOpen(false);
     } else {
       // إضافة
       // سيتم إضافة السنة من خلال AddFinancialYearModal مباشرة
+      // إذا لم يتم تحديد الحالة، اجعلها 'مفتوحة'
+      if (!yearData.status) {
+        yearData.status = 'مفتوحة';
+      }
+      // إضافة السنة المالية الجديدة
+      const addFinancialYear = (await import('@/services/financialYearsService')).addFinancialYear;
+      await addFinancialYear(yearData);
       const updated = await getFinancialYears();
+      // ترتيب تنازلي بعد الإضافة
       setFinancialYears(updated.sort((a, b) => b.year - a.year));
       setIsAddModalOpen(false);
     }
@@ -240,6 +274,7 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
   const confirmDelete = async () => {
     await deleteFinancialYear(deleteConfirm.yearId);
     const updated = await getFinancialYears();
+    // ترتيب تنازلي بعد الحذف
     setFinancialYears(updated.sort((a, b) => b.year - a.year));
     setDeleteConfirm({isOpen: false, yearId: '', yearName: ''});
   };
@@ -259,11 +294,10 @@ const FinancialYearsPage: React.FC<FinancialYearsPageProps> = ({ onBack }) => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-GB', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    const day = date.getDate();
+    const month = date.getMonth() + 1;
+    const year = date.getFullYear();
+    return `${day} / ${month} / ${year}`;
   };
 
   return (
