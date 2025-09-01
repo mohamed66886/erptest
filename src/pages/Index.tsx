@@ -90,6 +90,7 @@ import BranchSales from "./reports/branch-sales";
 import SalesRepresentativeSales from "./reports/sales-representative-sales";
 import DiscountsOffers from "./management/discounts-offers";
 import AddDiscountOffer from "./management/discounts-offers/add";
+import EditDiscountOffer from "./management/discounts-offers/edit";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -282,6 +283,7 @@ const Index = () => {
               <Route path="/warehouses/issue-warehouse" element={<IssueWarehousePage />} />
               <Route path="/warehouses/list-warehouse" element={<ListWarehouse />} />
               <Route path="/management/discounts-offers/add" element={<AddDiscountOffer />} />
+              <Route path="/management/discounts-offers/edit/:id" element={<EditDiscountOffer />} />
 
             </Routes>
           </main>

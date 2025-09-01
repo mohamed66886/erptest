@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Percent, Save } from 'lucide-react';
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { Select as AntdSelect, DatePicker } from 'antd';
@@ -8,17 +8,20 @@ import { Helmet } from "react-helmet";
 import Breadcrumb from "@/components/Breadcrumb";
 import { fetchBranches } from '@/utils/branches';
 import { getAllCustomers } from '@/lib/customerService';
-import { getDocs, collection, query, where, addDoc } from 'firebase/firestore';
+import { getDocs, collection, query, where, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { message } from 'antd';
 import dayjs from 'dayjs';
 
-const AddDiscountOffer: React.FC = () => {
+const EditDiscountOffer: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  
   // السنة المالية
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
-  const navigate = useNavigate();
 
   // بيانات النموذج
   const [formData, setFormData] = useState({
@@ -147,6 +150,63 @@ const AddDiscountOffer: React.FC = () => {
   }
 
   // دالة لتعطيل التواريخ خارج السنة المالية
+
+  // تحميل البيانات عند تحميل الصفحة
+  useEffect(() => {
+    const loadData = async () => {
+      if (!id) {
+        message.error('معرف العرض غير صحيح');
+        navigate('/management/discounts-offers');
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const offerDoc = await getDoc(doc(db, 'discounts_offers', id));
+        
+        if (!offerDoc.exists()) {
+          message.error('العرض غير موجود');
+          navigate('/management/discounts-offers');
+          return;
+        }
+
+        const offerData = offerDoc.data();
+        
+        // تحميل بيانات النموذج
+        setFormData({
+          offerName: offerData.name || '',
+          validFrom: offerData.validFrom ? dayjs(offerData.validFrom) : null,
+          validTo: offerData.validTo ? dayjs(offerData.validTo) : null,
+          requiredQuantity: offerData.requiredQuantity || 1,
+          discountValue: offerData.discountValue || 0,
+          isActive: offerData.isActive !== undefined ? offerData.isActive : true
+        });
+
+        // تحميل الحقول الأخرى
+        setOfferType(offerData.type || "خصم على الأصناف");
+        setDiscountType(offerData.discountType || "مبلغ");
+        setItemType(offerData.itemType || "الكل");
+        setSelectedCustomers(offerData.customers || []);
+        setSelectedBranches(offerData.branches || []);
+        setSelectedLevelTwoItems(offerData.selectedLevelTwoItems || []);
+        setSelectedGroups(offerData.selectedGroups || []);
+        setFiscalYear(offerData.fiscalYear || "");
+
+      } catch (error) {
+        console.error('Error loading offer data:', error);
+        message.error('حدث خطأ أثناء تحميل بيانات العرض');
+        navigate('/management/discounts-offers');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (id) {
+      loadData();
+    }
+  }, [id, navigate]);
+
+  // دالة لتعطيل التواريخ خارج السنة المالية
   const disableOutsideFiscalYear = (current: dayjs.Dayjs) => {
     if (!currentFinancialYear) return false;
     const start = currentFinancialYear.startDate;
@@ -156,6 +216,11 @@ const AddDiscountOffer: React.FC = () => {
 
   // دالة الحفظ
   const handleSave = async () => {
+    if (!id) {
+      message.error('معرف العرض غير صحيح');
+      return;
+    }
+
     try {
       setIsSaving(true);
 
@@ -229,50 +294,35 @@ const AddDiscountOffer: React.FC = () => {
         selectedLevelTwoItems: itemType === "الأصناف" ? selectedLevelTwoItems : [],
         isActive: formData.isActive,
         fiscalYear: fiscalYear,
-        createdAt: new Date(),
         updatedAt: new Date()
       };
 
-      // حفظ العرض في قاعدة البيانات
-      await addDoc(collection(db, 'discounts_offers'), offerData);
+      // تحديث العرض في قاعدة البيانات
+      await updateDoc(doc(db, 'discounts_offers', id), offerData);
 
-      message.success('تم حفظ العرض بنجاح');
-
-      // إعادة تعيين النموذج
-      setFormData({
-        offerName: '',
-        validFrom: null,
-        validTo: null,
-        requiredQuantity: 1,
-        discountValue: 0,
-        isActive: true
-      });
-      setSelectedCustomers([]);
-      setSelectedBranches([]);
-      setSelectedLevelTwoItems([]);
-      setSelectedGroups([]);
-      setOfferType("خصم على الأصناف");
-      setItemType("الكل");
-      setDiscountType("مبلغ");
-
-      // تحويل المستخدم إلى صفحة الخصومات والعروض
+      message.success('تم تحديث العرض بنجاح');
       navigate('/management/discounts-offers');
 
     } catch (error) {
-      console.error('Error saving offer:', error);
-      message.error('حدث خطأ أثناء حفظ العرض');
+      console.error('Error updating offer:', error);
+      message.error('حدث خطأ أثناء تحديث العرض');
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-
     <div className="w-full p-4 sm:p-6 space-y-8 min-h-screen" dir="rtl">
-      <Helmet>
-        <title>إضافة عرض أو خصم جديد | ERP90 Dashboard</title>
-        <meta name="description" content="إضافة عرض أو خصم جديد في نظام ERP90" />
-      </Helmet>
+      {isLoading ? (
+        <div className="flex justify-center items-center min-h-screen">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600"></div>
+        </div>
+      ) : (
+        <>
+          <Helmet>
+            <title>تعديل العرض أو الخصم | ERP90 Dashboard</title>
+            <meta name="description" content="تعديل عرض أو خصم موجود في نظام ERP90" />
+          </Helmet>
       <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-6">
@@ -280,8 +330,8 @@ const AddDiscountOffer: React.FC = () => {
               <Percent className="h-8 w-8 text-red-600" />
             </div>
             <div className="flex flex-col">
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">إضافة عرض أو خصم جديد</h1>
-              <p className="text-gray-600 dark:text-gray-400">صفحة إضافة عرض أو خصم جديد للعملاء</p>
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">تعديل العرض أو الخصم</h1>
+              <p className="text-gray-600 dark:text-gray-400">صفحة تعديل عرض أو خصم موجود للعملاء</p>
             </div>
           </div>
           {/* السنة المالية Dropdown */}
@@ -323,7 +373,7 @@ const AddDiscountOffer: React.FC = () => {
           { label: "الرئيسية", to: "/" },
           { label: "إدارة المبيعات", to: "/management/sales" },
           { label: "الخصومات والعروض", to: "/management/discounts-offers" },
-          { label: "إضافة جديد" },
+          { label: "تعديل" },
         ]}
       />
       <div className="bg-white p-6 rounded-lg shadow-sm border space-y-6">
@@ -620,14 +670,18 @@ const AddDiscountOffer: React.FC = () => {
                 <span className={isSaving ? 'animate-spin' : ''} style={{ display: 'inline-flex', alignItems: 'center' }}>
                   <Save size={20} className="inline-block" />
                 </span>
-                {isSaving ? 'جاري الحفظ...' : 'حفظ'}
+                {isSaving ? 'جاري التحديث...' : 'تحديث'}
               </button>
             </div>
           </div>
         </form>
       </div>
+        </>
+      )}
     </div>
   );
 };
 
-export default AddDiscountOffer;
+export default EditDiscountOffer;
+
+

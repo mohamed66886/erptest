@@ -107,16 +107,6 @@ const SalesManagement: React.FC = () => {
       }
     },
     {
-      title: "تحديث الخصومات والعروض",
-      description: "تحديث بيانات الخصومات والعروض",
-      icon: <RefreshCw className="h-6 w-6" />,
-      color: "bg-pink-500",
-      onClick: () => {
-        navigate('/management/update-discounts-offers');
-        window.scrollTo(0, 0);
-      }
-    },
-    {
       title: "إضافة حسابات مبيعات",
       description: "إضافة حسابات مبيعات جديدة",
       icon: <Plus className="h-6 w-6" />,
@@ -126,16 +116,8 @@ const SalesManagement: React.FC = () => {
         window.scrollTo(0, 0);
       }
     },
-    {
-      title: "إعدادات الخصومات",
-      description: "إعدادات نظام الخصومات",
-      icon: <Percent className="h-6 w-6" />,
-      color: "bg-indigo-500",
-      onClick: () => {
-        navigate('/management/discounts-settings');
-        window.scrollTo(0, 0);
-      }
-    },
+
+    
     {
       title: "إعدادات الضرائب",
       description: "إعدادات نظام الضرائب",

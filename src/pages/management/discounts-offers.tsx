@@ -12,8 +12,10 @@ import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import 'antd/dist/reset.css';
 import dayjs, { Dayjs } from 'dayjs';
-import { Table } from 'antd';
+import { Table, message } from 'antd';
 import styles from './ReceiptVoucher.module.css';
+import { getDocs, collection, query, where, deleteDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const { Option } = Select;
 
@@ -41,46 +43,69 @@ function disabledDate(current: Dayjs | null): boolean {
   return !!current && current.isAfter(dayjs(), 'day');
 }
 
-// Mock data
-const branches = [
-  { id: '1', name: 'الفرع الرئيسي' },
-  { id: '2', name: 'فرع 2' },
-];
+// جلب الفروع الحقيقية من Firebase
+import { fetchBranches, Branch } from '@/utils/branches';
 const warehouses = [
   { id: '1', nameAr: 'المخزن الرئيسي' },
   { id: '2', nameAr: 'مخزن 2' },
 ];
-const paymentMethods = [
-  { id: '1', name: 'نقدي' },
-  { id: '2', name: 'بطاقة' },
-];
 const filteredInvoices = [{ id: 1 }, { id: 2 }];
 
 interface DiscountOfferRow {
-  key: number;
+  key: string;
+  id: string;
   name: string;
-  branch: string;
   type: string;
-  fromDate: string;
-  toDate: string;
-  percent: string;
+  discountType: string;
+  discountValue: number;
+  validFrom: string;
+  validTo: string;
+  customers: string[];
+  branches: string[];
+  items: string[];
+  itemType: string;
+  isActive: boolean;
+  fiscalYear: string;
+  createdAt: any;
 }
 
 const DiscountsOffers: React.FC = () => {
+  // السنة المالية
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+  // ...existing code...
   // السنة المالية
   const navigate = useNavigate();
   const navigateToAdd = () => {
     window.scrollTo(0, 0);
     navigate('/management/discounts-offers/add');
   };
-  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
-  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  // حالة الفروع
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState<boolean>(false);
 
   useEffect(() => {
     if (currentFinancialYear) {
       setFiscalYear(currentFinancialYear.year.toString());
     }
   }, [currentFinancialYear]);
+
+  // تحميل الفروع الحقيقية من Firebase
+  useEffect(() => {
+    const loadBranches = async () => {
+      setBranchesLoading(true);
+      try {
+        const fetched = await fetchBranches();
+        setBranches(fetched);
+      } catch (error) {
+        setBranches([]);
+      } finally {
+        setBranchesLoading(false);
+      }
+    };
+    loadBranches();
+  }, []);
 
   const handleFiscalYearChange = (value: string) => {
     setFiscalYear(value);
@@ -99,20 +124,116 @@ const DiscountsOffers: React.FC = () => {
   const [invoiceTypeFilter, setInvoiceTypeFilter] = useState<string>('');
   const [showMore, setShowMore] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const branchesLoading = false;
+
+  // بيانات العروض والخصومات من Firebase
+  const [discountOffers, setDiscountOffers] = useState<DiscountOfferRow[]>([]);
+  const [filteredOffers, setFilteredOffers] = useState<DiscountOfferRow[]>([]);
+
+  // تحميل البيانات من Firebase
+  const loadDiscountOffers = async () => {
+    try {
+      setIsLoading(true);
+      let q;
+      
+      if (fiscalYear) {
+        // استعلام مع فلترة السنة المالية فقط
+        q = query(
+          collection(db, 'discounts_offers'),
+          where('fiscalYear', '==', fiscalYear)
+        );
+      } else {
+        // استعلام بدون فلترة
+        q = query(collection(db, 'discounts_offers'));
+      }
+      
+      const snapshot = await getDocs(q);
+      const offers = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          key: doc.id,
+          ...data
+        };
+      }) as DiscountOfferRow[];
+      
+      // ترتيب البيانات محلياً حسب تاريخ الإنشاء
+      const sortedOffers = offers.sort((a, b) => {
+        const dateA = a.createdAt?.seconds || 0;
+        const dateB = b.createdAt?.seconds || 0;
+        return dateB - dateA; // ترتيب تنازلي (الأحدث أولاً)
+      });
+      
+      setDiscountOffers(sortedOffers);
+      setFilteredOffers(sortedOffers);
+    } catch (error) {
+      console.error('Error loading discount offers:', error);
+      message.error('حدث خطأ أثناء تحميل البيانات');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (fiscalYear) {
+      loadDiscountOffers();
+    }
+    // eslint-disable-next-line
+  }, [fiscalYear]);
 
   // تفعيل البحث تلقائيًا عند تغيير أي خيار
   React.useEffect(() => {
     handleSearch();
     
   // eslint-disable-next-line
-  }, [invoiceNumber, dateFrom, dateTo, branchId]);
+  }, [invoiceNumber, dateFrom, dateTo, branchId, discountOffers]);
 
 
   function handleSearch() {
-    setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 1000);
+    let filtered = [...discountOffers];
+
+    // البحث بالاسم
+    if (invoiceNumber) {
+      filtered = filtered.filter(offer => 
+        offer.name.toLowerCase().includes(invoiceNumber.toLowerCase())
+      );
+    }
+
+    // البحث بالتاريخ من
+    if (dateFrom) {
+      filtered = filtered.filter(offer => 
+        new Date(offer.validFrom) >= dateFrom
+      );
+    }
+
+    // البحث بالتاريخ إلى
+    if (dateTo) {
+      filtered = filtered.filter(offer => 
+        new Date(offer.validTo) <= dateTo
+      );
+    }
+
+    // البحث بالفرع
+    if (branchId) {
+      filtered = filtered.filter(offer => 
+        offer.branches.includes(branchId)
+      );
+    }
+
+    setFilteredOffers(filtered);
   }
+
+  const handleDelete = async (offerId: string, offerName: string) => {
+    if (window.confirm(`هل أنت متأكد من حذف العرض "${offerName}"؟`)) {
+      try {
+        await deleteDoc(doc(db, 'discounts_offers', offerId));
+        message.success('تم حذف العرض بنجاح');
+        loadDiscountOffers(); // إعادة تحميل البيانات
+      } catch (error) {
+        console.error('Error deleting offer:', error);
+        message.error('حدث خطأ أثناء حذف العرض');
+      }
+    }
+  };
 
   function handleExport() {
     // يمكنك هنا إضافة منطق التصدير الحقيقي
@@ -132,27 +253,7 @@ const DiscountsOffers: React.FC = () => {
 
   // Mock filtered rows for Table
   function getFilteredRows(): DiscountOfferRow[] {
-    // Example data, replace with real filtering logic
-    return [
-      {
-        key: 1,
-        name: 'خصم موسمي',
-        branch: '1',
-        type: 'خصم',
-        fromDate: '2025-08-01',
-        toDate: '2025-08-31',
-        percent: '20%'
-      },
-      {
-        key: 2,
-        name: 'هدية مجانية',
-        branch: '2',
-        type: 'عرض',
-        fromDate: '2025-08-10',
-        toDate: '2025-08-30',
-        percent: '—'
-      },
-    ];
+    return filteredOffers;
   }
 
 
@@ -197,7 +298,14 @@ const DiscountsOffers: React.FC = () => {
                   boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
                   border: '1px solid #e2e8f0'
                 }}
-                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                styles={{ 
+                  popup: { 
+                    root: { 
+                      textAlign: 'right', 
+                      fontSize: 16 
+                    } as React.CSSProperties 
+                  } 
+                }}
                 size="middle"
                 placeholder="السنة المالية"
               >
@@ -217,43 +325,7 @@ const DiscountsOffers: React.FC = () => {
           { label: "الخصومات والعروض" },
         ]}
       />
-      <div className="bg-white p-6 rounded-lg shadow-sm border space-y-6">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <div className="p-2 bg-red-100 rounded-lg">
-            <Gift className="h-5 w-5 sm:h-6 sm:w-6 text-red-600" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">العروض و التخفيضات</h2>
-            <p className="text-sm sm:text-base text-gray-600">إدارة وتحديث العروض والخصومات</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {/* مثال على عرض */}
-          <div className="p-4 bg-pink-50 rounded-lg shadow flex flex-col items-start">
-            <div className="flex items-center mb-2">
-              <Percent className="h-6 w-6 text-pink-500 mr-2" />
-              <span className="font-bold text-pink-700">خصم موسمي</span>
-            </div>
-            <p className="text-gray-700 text-sm mb-2">خصم 20% على جميع المنتجات حتى نهاية الشهر.</p>
-          </div>
-          {/* مثال آخر */}
-          <div className="p-4 bg-yellow-50 rounded-lg shadow flex flex-col items-start">
-            <div className="flex items-center mb-2">
-              <Gift className="h-6 w-6 text-yellow-500 mr-2" />
-              <span className="font-bold text-yellow-700">هدية مجانية</span>
-            </div>
-            <p className="text-gray-700 text-sm mb-2">احصل على هدية مجانية عند شراء منتجات بقيمة 500 جنيه أو أكثر.</p>
-          </div>
-          {/* مثال ثالث */}
-          <div className="p-4 bg-indigo-50 rounded-lg shadow flex flex-col items-start">
-            <div className="flex items-center mb-2">
-              <RefreshCw className="h-6 w-6 text-indigo-500 mr-2" />
-              <span className="font-bold text-indigo-700">تحديث العروض</span>
-            </div>
-            <p className="text-gray-700 text-sm mb-2">تحديث بيانات العروض والخصومات الحالية.</p>
-          </div>
-        </div>
-      </div>
+  
               {/* Search Options */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -345,7 +417,7 @@ const DiscountsOffers: React.FC = () => {
               {isLoading ? "جاري البحث..." : "بحث"}
             </Button>
             <span className="text-gray-500 text-sm">
-              نتائج البحث: {filteredInvoices.length} عروض
+              نتائج البحث: {filteredOffers.length} عروض
             </span>
           </div>
 
@@ -374,14 +446,14 @@ const DiscountsOffers: React.FC = () => {
               <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              نتائج البحث ({filteredInvoices.length} عروض)
+              نتائج البحث ({filteredOffers.length} عروض)
             </h3>
             <div className="flex items-center gap-2">
               <Button
                 type="primary"
                 icon={<DownloadOutlined />}
                 onClick={handleExport}
-                disabled={filteredInvoices.length === 0}
+                disabled={filteredOffers.length === 0}
                 className="bg-blue-300 hover:bg-blue-400 border-blue-300 hover:border-blue-400 font-bold text-white"
                 size="large"
               >
@@ -409,39 +481,56 @@ const DiscountsOffers: React.FC = () => {
                 render: (text: string) => <span className="font-bold text-blue-600">{text}</span>
               },
               {
-                title: 'النسبة',
-                dataIndex: 'percent',
-                key: 'percent',
-                width: 100,
-                render: (text: string) => <span className="font-bold text-pink-600">{text}</span>
-              },
-              {
-                title: 'الفرع',
-                dataIndex: 'branch',
-                key: 'branch',
-                width: 140,
-                render: (text: string) => getBranchName(text)
-              },
-              {
                 title: 'النوع',
                 dataIndex: 'type',
                 key: 'type',
+                width: 140,
+                render: (text: string) => <span className="font-medium">{text}</span>
+              },
+              {
+                title: 'نوع الخصم',
+                dataIndex: 'discountType',
+                key: 'discountType',
                 width: 120,
                 render: (text: string) => <span className="font-medium">{text}</span>
               },
               {
+                title: 'قيمة الخصم',
+                dataIndex: 'discountValue',
+                key: 'discountValue',
+                width: 120,
+                render: (value: number, record: DiscountOfferRow) => (
+                  <span className="font-bold text-pink-600">
+                    {record.discountType === 'نسبة' ? `${value}%` : `${value} ﷼`}
+                  </span>
+                )
+              },
+              {
                 title: 'من تاريخ',
-                dataIndex: 'fromDate',
-                key: 'fromDate',
+                dataIndex: 'validFrom',
+                key: 'validFrom',
                 width: 120,
                 render: (text: string) => text
               },
               {
                 title: 'إلى تاريخ',
-                dataIndex: 'toDate',
-                key: 'toDate',
+                dataIndex: 'validTo',
+                key: 'validTo',
                 width: 120,
                 render: (text: string) => text
+              },
+              {
+                title: 'الحالة',
+                dataIndex: 'isActive',
+                key: 'isActive',
+                width: 100,
+                render: (isActive: boolean) => (
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${
+                    isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                    {isActive ? 'نشط' : 'غير نشط'}
+                  </span>
+                )
               },
               {
                 title: 'الإجراءات',
@@ -453,7 +542,7 @@ const DiscountsOffers: React.FC = () => {
                       type="link"
                       size="small"
                       icon={<EditOutlined />}
-                      onClick={() => alert('تعديل ' + record.name)}
+                      onClick={() => navigate(`/management/discounts-offers/edit/${record.id}`)}
                       aria-label="تعديل"
                     />
                     <Button
@@ -461,7 +550,7 @@ const DiscountsOffers: React.FC = () => {
                       size="small"
                       danger
                       icon={<DeleteOutlined />}
-                      onClick={() => alert('حذف ' + record.name)}
+                      onClick={() => handleDelete(record.id, record.name)}
                       aria-label="حذف"
                     />
                   </div>
