@@ -104,7 +104,8 @@ const DiscountsOffers: React.FC = () => {
   // تفعيل البحث تلقائيًا عند تغيير أي خيار
   React.useEffect(() => {
     handleSearch();
-    // eslint-disable-next-line
+    
+  // eslint-disable-next-line
   }, [invoiceNumber, dateFrom, dateTo, branchId]);
 
 

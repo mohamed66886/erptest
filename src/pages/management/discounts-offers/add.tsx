@@ -4,6 +4,10 @@ import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { Select as AntdSelect, DatePicker } from 'antd';
 import { Helmet } from "react-helmet";
 import Breadcrumb from "@/components/Breadcrumb";
+import { fetchBranches } from '@/utils/branches';
+import { getAllCustomers } from '@/lib/customerService';
+import { getDocs, collection, query, where } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const AddDiscountOffer: React.FC = () => {
   // السنة المالية
@@ -45,22 +49,85 @@ const AddDiscountOffer: React.FC = () => {
   const [itemType, setItemType] = useState<string>("الكل");
   // حالة نوع الخصم
   const [discountType, setDiscountType] = useState<string>("مبلغ");
-  // العملاء (مثال، يجب جلبهم من API أو state)
-  const customers = [
-    { value: "1", label: "عميل 1" },
-    { value: "2", label: "عميل 2" },
-    { value: "3", label: "عميل 3" },
-    { value: "4", label: "عميل 4" },
-  ];
+  // العملاء الحقيقية من قاعدة البيانات
+  const [customers, setCustomers] = useState<{ value: string; label: string }[]>([]);
   // العملاء المحددين
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
 
-  // دوال تحديد الكل وإلغاء التحديد
+  useEffect(() => {
+    async function loadCustomers() {
+      const data = await getAllCustomers();
+      setCustomers(data.map(c => ({ value: c.id, label: c.nameAr })));
+    }
+    loadCustomers();
+  }, []);
+
+  // الفروع الحقيقية من قاعدة البيانات
+  const [branches, setBranches] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    async function loadBranches() {
+      const data = await fetchBranches();
+      setBranches(data.map(b => ({ value: b.id || b.code, label: b.name })));
+    }
+    loadBranches();
+  }, []);
+  // الفروع المحددة
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+
+  // الأصناف من المستوى الثاني
+  const [levelTwoItems, setLevelTwoItems] = useState<{ value: string; label: string }[]>([]);
+  // المجموعات
+  const [groups, setGroups] = useState<{ value: string; label: string }[]>([]);
+  // البند المحدد
+  const [selectedLevelTwoItems, setSelectedLevelTwoItems] = useState<string[]>([]);
+  // المجموعات المحددة
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function loadLevelTwoItems() {
+      const q = query(collection(db, 'inventory_items'), where('type', '==', 'مستوى ثاني'));
+      const snapshot = await getDocs(q);
+      setLevelTwoItems(snapshot.docs.map(doc => ({ value: doc.id, label: doc.data().name })));
+    }
+    loadLevelTwoItems();
+    // تحميل المجموعات من أصناف المستوى الأول
+    async function loadGroups() {
+      const q = query(collection(db, 'inventory_items'), where('type', '==', 'مستوى أول'));
+      const snapshot = await getDocs(q);
+      setGroups(snapshot.docs.map(doc => ({ value: doc.id, label: doc.data().name })));
+    }
+    loadGroups();
+  }, []);
+
+  // دوال تحديد الكل وإلغاء التحديد للعملاء
+  // دوال تحديد الكل وإلغاء التحديد للبنود
+  const handleSelectAllLevelTwoItems = () => {
+    setSelectedLevelTwoItems(levelTwoItems.map(i => i.value));
+  };
+  const handleDeselectAllLevelTwoItems = () => {
+    setSelectedLevelTwoItems([]);
+  };
+  // دوال تحديد الكل وإلغاء التحديد للمجموعات
+  const handleSelectAllGroups = () => {
+    setSelectedGroups(groups.map(g => g.value));
+  };
+  const handleDeselectAllGroups = () => {
+    setSelectedGroups([]);
+  };
   const handleSelectAllCustomers = () => {
     setSelectedCustomers(customers.map(c => c.value));
   };
   const handleDeselectAllCustomers = () => {
     setSelectedCustomers([]);
+  }
+
+  // دوال تحديد الكل وإلغاء التحديد للفروع
+  const handleSelectAllBranches = () => {
+    setSelectedBranches(branches.map(b => b.value));
+  };
+  const handleDeselectAllBranches = () => {
+    setSelectedBranches([]);
   }
 
   // دالة لتعطيل التواريخ خارج السنة المالية
@@ -204,6 +271,37 @@ const AddDiscountOffer: React.FC = () => {
                 disabled={offerType !== "خصم على الكميات"}
               />
             </div>
+            {/* اختيار الفرع */}
+            <div className="flex-1">
+              <label style={labelStyle} className="text-gray-700 dark:text-gray-300">الفروع</label>
+              <AntdSelect
+                className="w-full"
+                placeholder="اختر الفروع"
+                size="large"
+                mode="multiple"
+                showSearch
+                filterOption={(input, option) => {
+                  const labelText = typeof option.label === 'string' ? option.label : option.label?.props?.children?.[1] || '';
+                  return labelText && labelText.toLowerCase().includes(input.toLowerCase());
+                }}
+                style={largeControlStyle}
+                value={selectedBranches}
+                onChange={setSelectedBranches}
+                dropdownRender={menu => (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px' }}>
+                      <button type="button" onClick={handleSelectAllBranches} style={{ color: '#7c3aed', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }}>تحديد الكل</button>
+                      <button type="button" onClick={handleDeselectAllBranches} style={{ color: '#ef4444', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }}>إلغاء التحديد</button>
+                    </div>
+                    <div style={{ borderTop: '1px solid #eee', margin: '4px 0' }} />
+                    {menu}
+                  </div>
+                )}
+                options={branches.map(b => ({ ...b, label: <span><input type="checkbox" checked={selectedBranches.includes(b.value)} readOnly style={{ marginLeft: 6 }} />{b.label}</span> }))}
+                maxTagCount={0}
+                maxTagPlaceholder={() => selectedBranches.length > 0 ? <span style={{background: 'none', padding: 0}}>{`تم اختيار ${selectedBranches.length}`}</span> : null}
+              />
+            </div>
           </div>
           {/* نوع الخصم + قيمة الخصم + العميل في صف واحد */}
           <div className="flex gap-4">
@@ -306,11 +404,12 @@ const AddDiscountOffer: React.FC = () => {
                 options={[ 
                   { value: "الكل", label: "الكل" },
                   { value: "الأصناف", label: "الأصناف" },
+                  { value: "الفئة", label: "الفئة" },
                 ]}
               />
             </div>
-            {/* البند */}
-            {itemType !== "الكل" && (
+            {/* البند أو المجموعة حسب النوع */}
+            {itemType === "الأصناف" && (
               <div className="flex-1 flex items-end gap-2">
                 <div className="w-full">
                   <label style={labelStyle} className="text-gray-700 dark:text-gray-300">البند</label>
@@ -318,13 +417,54 @@ const AddDiscountOffer: React.FC = () => {
                     className="w-full"
                     placeholder="اختر البند"
                     size="large"
+                    mode="multiple"
                     showSearch
                     style={largeControlStyle}
-                    options={[ 
-                      // مثال: يجب جلب البنود من API أو state
-                      { value: "1", label: "بند 1" },
-                      { value: "2", label: "بند 2" },
-                    ]}
+                    value={selectedLevelTwoItems}
+                    onChange={setSelectedLevelTwoItems}
+                    dropdownRender={menu => (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px' }}>
+                          <button type="button" onClick={handleSelectAllLevelTwoItems} style={{ color: '#7c3aed', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }}>تحديد الكل</button>
+                          <button type="button" onClick={handleDeselectAllLevelTwoItems} style={{ color: '#ef4444', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }}>إلغاء التحديد</button>
+                        </div>
+                        <div style={{ borderTop: '1px solid #eee', margin: '4px 0' }} />
+                        {menu}
+                      </div>
+                    )}
+                    options={levelTwoItems.map(i => ({ ...i, label: <span><input type="checkbox" checked={selectedLevelTwoItems.includes(i.value)} readOnly style={{ marginLeft: 6 }} />{i.label}</span> }))}
+                    maxTagCount={0}
+                    maxTagPlaceholder={() => selectedLevelTwoItems.length > 0 ? <span style={{background: 'none', padding: 0}}>{`تم اختيار ${selectedLevelTwoItems.length}`}</span> : null}
+                  />
+                </div>
+              </div>
+            )}
+            {itemType === "الفئة" && (
+              <div className="flex-1 flex items-end gap-2">
+                <div className="w-full">
+                  <label style={labelStyle} className="text-gray-700 dark:text-gray-300">المجموعة</label>
+                  <AntdSelect
+                    className="w-full"
+                    placeholder="اختر المجموعة"
+                    size="large"
+                    mode="multiple"
+                    showSearch
+                    style={largeControlStyle}
+                    value={selectedGroups}
+                    onChange={setSelectedGroups}
+                    dropdownRender={menu => (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px' }}>
+                          <button type="button" onClick={handleSelectAllGroups} style={{ color: '#7c3aed', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }}>تحديد الكل</button>
+                          <button type="button" onClick={handleDeselectAllGroups} style={{ color: '#ef4444', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }}>إلغاء التحديد</button>
+                        </div>
+                        <div style={{ borderTop: '1px solid #eee', margin: '4px 0' }} />
+                        {menu}
+                      </div>
+                    )}
+                    options={groups.map(g => ({ ...g, label: <span><input type="checkbox" checked={selectedGroups.includes(g.value)} readOnly style={{ marginLeft: 6 }} />{g.label}</span> }))}
+                    maxTagCount={0}
+                    maxTagPlaceholder={() => selectedGroups.length > 0 ? <span style={{background: 'none', padding: 0}}>{`تم اختيار ${selectedGroups.length}`}</span> : null}
                   />
                 </div>
               </div>
