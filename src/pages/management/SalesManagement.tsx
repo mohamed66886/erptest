@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useFinancialYear } from "@/hooks/useFinancialYear";
+import { Select as AntdSelect } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +66,23 @@ import {
 } from 'lucide-react';
 
 const SalesManagement: React.FC = () => {
+  // السنة المالية
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
   const navigate = useNavigate();
 
   const settingsCards = [
@@ -565,15 +584,53 @@ const SalesManagement: React.FC = () => {
               <meta name="description" content="إدارة المبيعات والعملاء وفريق المبيعات ERP90 Dashboard" />
               <meta name="keywords" content="ERP, فواتير, مبيعات, تقرير, عملاء, ضريبة, طباعة, Sales, Invoice, Report, Tax, Customer" />
             </Helmet>
-      <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center">
-          <ShoppingBag className="h-5 w-5 sm:h-8 sm:w-8 text-blue-600 ml-1 sm:ml-3" />
-          <h1 className="text-lg sm:text-2xl font-bold text-gray-800">إدارة المبيعات</h1>
+
+            <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center gap-6">
+        <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+          <ShoppingBag className="h-8 w-8 text-blue-600 dark:text-blue-300" />
         </div>
-        <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة المبيعات والعملاء وفريق المبيعات</p>
+        <div className="flex flex-col ">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">ادارة المبيعات</h1>
+          <p className="text-gray-600 dark:text-gray-400">ادارة المبيعات والعملاء وفريق المبيعات</p>
+        </div>
+      </div>
+          
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+            <span className="flex items-center gap-2">
+              <ShoppingBag className="text-purple-600 dark:text-purple-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
+            </span>
+            <div className="min-w-[160px]">
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
+                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                size="middle"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
+            </div>
+          </div>
+        </div>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
-
+      {/* Breadcrumb */}
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },

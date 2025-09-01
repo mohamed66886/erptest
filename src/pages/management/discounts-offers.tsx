@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useFinancialYear } from "@/hooks/useFinancialYear";
+import { Select as AntdSelect } from 'antd';
 import { Helmet } from 'react-helmet';
 import Breadcrumb from '@/components/Breadcrumb';
 import { Percent, Gift, RefreshCw } from 'lucide-react';
@@ -64,6 +67,28 @@ interface DiscountOfferRow {
 }
 
 const DiscountsOffers: React.FC = () => {
+  // السنة المالية
+  const navigate = useNavigate();
+  const navigateToAdd = () => {
+    window.scrollTo(0, 0);
+    navigate('/management/discounts-offers/add');
+  };
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
   // State variables
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
@@ -137,18 +162,57 @@ const DiscountsOffers: React.FC = () => {
         <title>الخصومات والعروض | ERP90 Dashboard</title>
         <meta name="description" content="إدارة الخصومات والعروض في نظام ERP90" />
       </Helmet>
-      <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center">
-          <Percent className="h-5 w-5 sm:h-8 sm:w-8 text-red-600 ml-1 sm:ml-3" />
-          <h1 className="text-lg sm:text-2xl font-bold text-gray-800">الخصومات والعروض</h1>
+
+
+            <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center gap-6">
+        <div className="p-2 bg-yellow-100 dark:bg-blue-900 rounded-lg">
+          <Percent className="h-8 w-8  text-red-600  " />
         </div>
-        <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة نظام الخصومات والعروض للعملاء</p>
+        <div className="flex flex-col ">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">الخصومات والعروض</h1>
+          <p className="text-gray-600 dark:text-gray-400">نظام الخصومات والعروض للعملاء</p>
+        </div>
+      </div>
+          
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+            <span className="flex items-center gap-2">
+              <Percent className="text-purple-600 dark:text-purple-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
+            </span>
+            <div className="min-w-[160px]">
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
+                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                size="middle"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
+            </div>
+          </div>
+        </div>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 to-pink-500"></div>
       </div>
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة المبيعات", to: "/management" },
+          { label: "إدارة المبيعات", to: "/management/sales" },
           { label: "الخصومات والعروض" },
         ]}
       />
@@ -289,7 +353,7 @@ const DiscountsOffers: React.FC = () => {
             className="absolute left-4 top-4 flex items-center gap-2 select-none bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700"
             size="large"
             icon={<Gift />}
-            onClick={() => alert('إضافة جديد')}
+            onClick={navigateToAdd}
           >
             إضافة
           </Button>
