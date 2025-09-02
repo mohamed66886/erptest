@@ -91,6 +91,7 @@ import SalesRepresentativeSales from "./reports/sales-representative-sales";
 import DiscountsOffers from "./management/discounts-offers";
 import AddDiscountOffer from "./management/discounts-offers/add";
 import EditDiscountOffer from "./management/discounts-offers/edit";
+import AddSalesAccounts from "./management/AddSalesAccounts";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -255,6 +256,7 @@ const Index = () => {
               <Route path="/management/purchase" element={<PurchaseManagement />} />
               <Route path="/management/equipment" element={<EquipmentManagement />} />
               <Route path="/management/discounts-offers" element={<DiscountsOffers />} />
+              <Route path="/management/add-sales-accounts" element={<AddSalesAccounts />} />
               
               {/* Financial Management Sub-Routes */}
               <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
