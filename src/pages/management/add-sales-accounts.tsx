@@ -120,11 +120,9 @@ const AddSalesAccounts: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // Table logic
   const [salesAccounts, setSalesAccounts] = useState<SalesAccountType[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // تحميل حسابات المبيعات
   const loadSalesAccounts = async () => {
     try {
       setLoading(true);

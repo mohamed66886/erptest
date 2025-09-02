@@ -92,6 +92,8 @@ import DiscountsOffers from "./management/discounts-offers";
 import AddDiscountOffer from "./management/discounts-offers/add";
 import EditDiscountOffer from "./management/discounts-offers/edit";
 import AddSalesAccounts from "./management/AddSalesAccounts";
+import TaxSettings from "./management/TaxSettings";
+import AddTaxSetting from "./management/AddTaxSetting";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -257,6 +259,8 @@ const Index = () => {
               <Route path="/management/equipment" element={<EquipmentManagement />} />
               <Route path="/management/discounts-offers" element={<DiscountsOffers />} />
               <Route path="/management/add-sales-accounts" element={<AddSalesAccounts />} />
+              <Route path="/management/tax-settings" element={<TaxSettings />} />
+              <Route path="/management/add-tax-setting" element={<AddTaxSetting />} />
               
               {/* Financial Management Sub-Routes */}
               <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
