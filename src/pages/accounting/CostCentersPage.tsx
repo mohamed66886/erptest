@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,11 @@ import {
   TrendingDown,
   AlertCircle,
   Save,
-  X
+  X,
+  RefreshCw,
+  Loader2,
+  Folder,
+  File
 } from 'lucide-react';
 import {
   CostCenter,
@@ -278,7 +282,7 @@ const CostCentersPage: React.FC = () => {
   // Load cost centers on component mount
   useEffect(() => {
     loadCostCenters();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleNode = (nodeId: string) => {
     const newExpanded = new Set(expandedNodes);
@@ -521,74 +525,66 @@ const CostCentersPage: React.FC = () => {
             />
           )}
           
-          {/* خط أفقي */}
-          {level > 0 && (
-            <div
-              className="absolute top-4"
-              style={{
-                width: '18px',
-                right: `${(level - 1) * 20 + 2}px`,
-                height: '2px',
-                backgroundColor: '#e5e7eb',
-                zIndex: 0,
-              }}
-            />
-          )}
-          
           <div
             className={`flex items-center py-2 px-2 hover:bg-gray-50 cursor-pointer rounded ${
-              selectedCostCenter?.id === costCenter.id ? 'bg-blue-50 border-r-4 border-blue-500' : ''
+              selectedCostCenter?.id === costCenter.id ? 'bg-red-50 border-r-4 border-red-500' : ''
             }`}
             style={{ paddingRight: `${level * 20 + 8}px`, position: 'relative', zIndex: 1 }}
             onClick={() => handleCostCenterSelect(costCenter)}
           >
-            {/* أيقونة التوسع/الطي */}
-            <div className="ml-2 w-4 h-4 flex items-center justify-center">
-              {hasChildren && (
-                <button
+            <div className="flex items-center flex-1">
+              {hasChildren || costCenter.hasSubCenters ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 mr-2 font-bold text-lg bg-gray-200 hover:bg-gray-300 rounded-full transition-colors duration-150"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleNode(costCenter.id);
                   }}
-                  className="hover:bg-gray-200 rounded p-0.5"
+                  aria-label={isExpanded ? 'Collapse' : 'Expand'}
                 >
-                  {isExpanded ? (
-                    <ChevronDown className="h-3 w-3 text-gray-600" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 text-gray-600" />
-                  )}
-                </button>
+                  {isExpanded ? '-' : '+'}
+                </Button>
+              ) : (
+                <div className="w-6 mr-2" />
               )}
-            </div>
-            
-            {/* أيقونة نوع المركز */}
-            <div className="ml-2">
-              <Target className={`h-4 w-4 ${
-                costCenter.type === 'رئيسي' ? 'text-blue-600' :
-                costCenter.type === 'فرعي' ? 'text-green-600' : 'text-orange-600'
-              }`} />
-            </div>
-            
-            {/* معلومات المركز */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center space-x-2 space-x-reverse">
-                <span className="text-sm font-medium text-gray-900 truncate">
-                  {costCenter.nameAr}
-                </span>
-                <Badge 
-                  variant="outline" 
-                  className={`text-xs ${
-                    costCenter.status === 'نشط' ? 'text-green-600 border-green-300' : 'text-red-600 border-red-300'
-                  }`}
-                >
-                  {costCenter.status}
-                </Badge>
-              </div>
-              <div className="flex items-center space-x-4 space-x-reverse text-xs text-gray-500 mt-1">
-                <span>كود: {costCenter.code}</span>
-                {costCenter.department && <span>القسم: {costCenter.department}</span>}
-                {costCenter.budget && costCenter.budget > 0 && (
-                  <span>الميزانية: {costCenter.budget.toLocaleString()} ريال</span>
+              <div className="flex items-center">
+                {hasChildren || costCenter.hasSubCenters ? (
+                  <Folder className="h-4 w-4 text-orange-600 mr-2" />
+                ) : (
+                  <Target className="h-4 w-4 text-red-600 mr-2" />
+                )}
+                <span className="text-sm font-medium">{costCenter.code}</span>
+                <span className="text-sm text-gray-600 mr-2">-</span>
+                <span className="text-sm">{costCenter.nameAr}</span>
+                {/* عرض النوع للمراكز الرئيسية */}
+                {costCenter.level === 1 && (
+                  <Badge 
+                    variant="outline" 
+                    className="mr-2 text-xs"
+                    style={{
+                      backgroundColor: '#fef2f2',
+                      color: '#dc2626',
+                      borderColor: '#fca5a5'
+                    }}
+                  >
+                    {costCenter.type}
+                  </Badge>
+                )}
+                {/* عرض القسم إن وجد */}
+                {costCenter.department && (
+                  <Badge 
+                    variant="outline" 
+                    className="mr-2 text-xs"
+                    style={{
+                      backgroundColor: '#f0f9ff',
+                      color: '#0369a1',
+                      borderColor: '#7dd3fc'
+                    }}
+                  >
+                    {costCenter.department}
+                  </Badge>
                 )}
               </div>
             </div>
@@ -640,611 +636,672 @@ const CostCentersPage: React.FC = () => {
         {/* Cost Center Tree - Right Side */}
         <div className="lg:col-span-1">
           <Card className="h-[700px]">
-            <div className="p-4 border-b">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-800">شجرة مراكز التكلفة</h3>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>شجرة مراكز التكلفة</span>
                 <Button 
-                  onClick={handleAddClick}
-                  size="sm"
-                  className="bg-red-600 hover:bg-red-700"
+                  size="sm" 
+                  className="h-8 bg-red-500 hover:bg-red-600 text-white disabled:bg-gray-400" 
+                  onClick={() => loadCostCenters(0)}
+                  disabled={isLoading}
                 >
-                  <Plus className="h-4 w-4 ml-1" />
-                  إضافة مركز
+                  <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                  {isLoading ? 'جاري التحميل...' : 'تحديث'}
                 </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-auto h-[600px] p-4">
+                {isLoading ? (
+                  <div className="flex flex-col items-center justify-center h-full space-y-4">
+                    <div className="relative">
+                      <Loader2 className="h-12 w-12 text-red-600 animate-spin" />
+                      <div className="absolute inset-0 h-12 w-12 border-2 border-red-200 rounded-full animate-pulse"></div>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-gray-700 font-medium mb-2">جاري تحميل مراكز التكلفة...</p>
+                      <p className="text-gray-500 text-sm">يرجى الانتظار قليلاً</p>
+                    </div>
+                    <div className="w-48 bg-gray-200 rounded-full h-2">
+                      <div className="bg-red-600 h-2 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                    </div>
+                  </div>
+                ) : costCenters.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <Target className="h-16 w-16 text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">لا توجد مراكز تكلفة</h3>
+                    <p className="text-gray-500 mb-4">يبدو أن قاعدة البيانات فارغة أو لم يتم الاتصال بها بعد</p>
+                    <div className="space-y-2">
+                      <p className="text-red-600 text-sm">💡 يمكنك إضافة مراكز تكلفة رئيسية من هنا</p>
+                      <p className="text-orange-600 text-sm">🔄 أو جرب الضغط على زر "تحديث" أعلاه</p>
+                    </div>
+                    <Button 
+                      className="mt-4 bg-red-500 hover:bg-red-600 text-white"
+                      onClick={() => loadCostCenters(0)}
+                      disabled={isLoading}
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                      إعادة تحميل
+                    </Button>
+                  </div>
+                ) : (
+                  renderCostCenterTree(costCenters)
+                )}
               </div>
-            </div>
-            
-            <div className="p-4 overflow-y-auto" style={{ height: 'calc(100% - 80px)' }}>
-              {costCenters.length > 0 ? (
-                renderCostCenterTree(costCenters)
-              ) : (
-                <div className="text-center text-gray-500 py-8">
-                  <Target className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>لا توجد مراكز تكلفة</p>
-                  <Button 
-                    onClick={handleAddClick}
-                    size="sm"
-                    className="mt-4 bg-red-600 hover:bg-red-700"
-                  >
-                    <Plus className="h-4 w-4 ml-1" />
-                    إضافة مركز جديد
-                  </Button>
-                </div>
-              )}
-            </div>
+            </CardContent>
           </Card>
         </div>
 
         {/* Cost Center Details - Left Side */}
         <div className="lg:col-span-2">
           <Card className="h-[700px]">
-            {showAddForm ? (
-              /* Add Form */
-              <div className="p-6 overflow-y-auto h-full">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-semibold text-gray-800">
-                    {selectedCostCenter ? 'إضافة مركز فرعي' : 'إضافة مركز رئيسي'}
-                  </h3>
-                  <Button variant="outline" onClick={handleCancelAdd}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="space-y-6">
-                  {selectedCostCenter && (
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <p className="text-sm text-blue-800">
-                        <strong>المركز الأب:</strong> {selectedCostCenter.nameAr} ({selectedCostCenter.code})
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label>اسم المركز (عربي) *</Label>
-                      <Input
-                        value={newCostCenter.nameAr || ''}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, nameAr: e.target.value})}
-                        placeholder="اسم مركز التكلفة بالعربي"
-                        className="text-right"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>اسم المركز (إنجليزي) *</Label>
-                      <Input
-                        value={newCostCenter.nameEn || ''}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, nameEn: e.target.value})}
-                        placeholder="Cost Center Name in English"
-                        className="text-left"
-                        dir="ltr"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>نوع المركز</Label>
-                      <select
-                        value={newCostCenter.type || 'رئيسي'}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, type: e.target.value as any})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                        disabled={!!selectedCostCenter}
-                      >
-                        {costCenterTypes.map(type => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>القسم</Label>
-                      <select
-                        value={newCostCenter.department || ''}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, department: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                      >
-                        <option value="">اختر القسم</option>
-                        {departments.map(dept => (
-                          <option key={dept} value={dept}>{dept}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>المدير المسؤول</Label>
-                      <Input
-                        value={newCostCenter.manager || ''}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, manager: e.target.value})}
-                        placeholder="اسم المدير المسؤول"
-                        className="text-right"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>الموقع</Label>
-                      <Input
-                        value={newCostCenter.location || ''}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, location: e.target.value})}
-                        placeholder="موقع مركز التكلفة"
-                        className="text-right"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>الميزانية المخططة</Label>
-                      <Input
-                        type="number"
-                        value={newCostCenter.budget || 0}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, budget: parseFloat(e.target.value) || 0})}
-                        placeholder="0"
-                        className="text-right"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>تاريخ البداية</Label>
-                      <Input
-                        type="date"
-                        value={newCostCenter.startDate || ''}
-                        onChange={(e) => setNewCostCenter({...newCostCenter, startDate: e.target.value})}
-                        className="text-right"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>الوصف</Label>
-                    <textarea
-                      value={newCostCenter.description || ''}
-                      onChange={(e) => setNewCostCenter({...newCostCenter, description: e.target.value})}
-                      placeholder="وصف مركز التكلفة..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>ملاحظات</Label>
-                    <textarea
-                      value={newCostCenter.notes || ''}
-                      onChange={(e) => setNewCostCenter({...newCostCenter, notes: e.target.value})}
-                      placeholder="ملاحظات إضافية..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-2 space-x-reverse">
-                    <input
-                      type="checkbox"
-                      id="hasSubCenters"
-                      checked={newCostCenter.hasSubCenters || false}
-                      onChange={(e) => setNewCostCenter({...newCostCenter, hasSubCenters: e.target.checked})}
-                      className="rounded"
-                    />
-                    <Label htmlFor="hasSubCenters">يحتوي على مراكز فرعية</Label>
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-3 space-x-reverse mt-8 pt-6 border-t">
-                  <Button variant="outline" onClick={handleCancelAdd}>
-                    إلغاء
-                  </Button>
-                  <Button 
-                    onClick={handleAddCostCenter}
-                    className="bg-red-600 hover:bg-red-700"
-                  >
-                    <Save className="h-4 w-4 ml-1" />
-                    حفظ المركز
-                  </Button>
-                </div>
-              </div>
-            ) : selectedCostCenter ? (
-              /* Cost Center Details */
-              <div className="p-6 overflow-y-auto h-full">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-semibold text-gray-800">تفاصيل مركز التكلفة</h3>
-                  <div className="flex space-x-2 space-x-reverse">
-                    {!isEditing ? (
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>تفاصيل مركز التكلفة</span>
+                {selectedCostCenter && (
+                  <div className="flex gap-2">
+                    {!isEditing && !showAddForm ? (
                       <>
                         <Button 
-                          onClick={handleEdit}
-                          size="sm"
-                          variant="outline"
+                          size="sm" 
+                          onClick={handleAddClick} 
+                          className="h-8 bg-red-500 hover:bg-red-600 text-white disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          disabled={!selectedCostCenter.hasSubCenters}
+                          title={
+                            selectedCostCenter.hasSubCenters 
+                              ? `إضافة مركز فرعي تحت: ${selectedCostCenter.nameAr}` 
+                              : `لا يمكن إضافة مركز فرعي تحت: ${selectedCostCenter.nameAr} - المركز ليس له مراكز تحليلية`
+                          }
                         >
-                          <Edit className="h-4 w-4 ml-1" />
+                          <Plus className="h-4 w-4 mr-1" />
+                          إضافة مركز فرعي
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          onClick={handleEdit} 
+                          className="h-8 bg-blue-500 hover:bg-blue-600 text-white"
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
                           تعديل
                         </Button>
                         <Button 
-                          onClick={handleDelete}
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 border-red-300 hover:bg-red-50"
+                          size="sm" 
+                          onClick={handleDelete} 
+                          className={`h-8 text-white ${
+                            (() => {
+                              const flatCostCenters = flattenCostCenterHierarchy(costCenters);
+                              const hasSubCenters = flatCostCenters.some(costCenter => costCenter.parentId === selectedCostCenter.id);
+                              return hasSubCenters 
+                                ? 'bg-gray-400 cursor-not-allowed' 
+                                : 'bg-red-500 hover:bg-red-600';
+                            })()
+                          }`}
+                          disabled={(() => {
+                            const flatCostCenters = flattenCostCenterHierarchy(costCenters);
+                            return flatCostCenters.some(costCenter => costCenter.parentId === selectedCostCenter.id);
+                          })()}
+                          title={(() => {
+                            const flatCostCenters = flattenCostCenterHierarchy(costCenters);
+                            const hasSubCenters = flatCostCenters.some(costCenter => costCenter.parentId === selectedCostCenter.id);
+                            if (hasSubCenters) {
+                              const subCentersCount = flatCostCenters.filter(costCenter => costCenter.parentId === selectedCostCenter.id).length;
+                              return `لا يمكن حذف "${selectedCostCenter.nameAr}" - يحتوي على ${subCentersCount} مركز فرعي`;
+                            }
+                            return `حذف مركز التكلفة "${selectedCostCenter.nameAr}"`;
+                          })()}
                         >
-                          <Trash2 className="h-4 w-4 ml-1" />
+                          <Trash2 className="h-4 w-4 mr-1" />
                           حذف
                         </Button>
                       </>
-                    ) : (
-                      <>
+                    ) : isEditing ? (
+                      <div className="flex gap-2">
                         <Button 
-                          onClick={handleCancel}
-                          size="sm"
-                          variant="outline"
-                        >
-                          إلغاء
-                        </Button>
-                        <Button 
-                          onClick={handleSave}
-                          size="sm"
-                          className="bg-green-600 hover:bg-green-700"
+                          size="sm" 
+                          onClick={handleSave} 
+                          className="h-8 bg-blue-500 hover:bg-blue-600 text-white" 
                           disabled={isSaving}
                         >
-                          <Save className="h-4 w-4 ml-1" />
-                          {isSaving ? 'جاري الحفظ...' : 'حفظ'}
+                          {isSaving ? (
+                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4 mr-1" />
+                          )}
+                          {isSaving ? 'جاري الحفظ...' : 'حفظ التعديل'}
                         </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {showDeleteWarning && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                    <div className="flex items-center">
-                      <AlertCircle className="h-5 w-5 text-red-600 ml-2" />
-                      <p className="text-red-800 font-medium">تحذير: لا يمكن حذف هذا المركز</p>
-                    </div>
-                    <p className="text-red-700 text-sm mt-1">
-                      يحتوي هذا المركز على مراكز فرعية. يجب حذف المراكز الفرعية أولاً.
-                    </p>
+                        <Button 
+                          size="sm" 
+                          onClick={handleCancel} 
+                          className="h-8 bg-blue-100 hover:bg-blue-200 text-blue-700 border-none" 
+                          disabled={isSaving}
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          إلغاء
+                        </Button>
+                      </div>
+                    ) : showAddForm ? (
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleAddCostCenter} className="h-8 bg-red-500 hover:bg-red-600 text-white">
+                          <Save className="h-4 w-4 mr-1" />
+                          إضافة
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={handleCancelAdd} 
+                          className="h-8"
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          إلغاء
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
-
+              </CardTitle>
+            </CardHeader>
+            
+            <CardContent className="space-y-4 overflow-auto h-[600px]">
+              {selectedCostCenter ? (
                 <div className="space-y-6">
-                  {/* معلومات أساسية */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-800 mb-4">المعلومات الأساسية</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>اسم المركز (عربي)</Label>
-                        {isEditing ? (
-                          <Input
-                            value={editForm.nameAr || ''}
-                            onChange={(e) => setEditForm({...editForm, nameAr: e.target.value})}
-                            className="text-right"
-                          />
-                        ) : (
-                          <p className="text-gray-800 font-medium">{selectedCostCenter.nameAr}</p>
-                        )}
-                      </div>
-                      
-                      <div>
-                        <Label>اسم المركز (إنجليزي)</Label>
-                        {isEditing ? (
-                          <Input
-                            value={editForm.nameEn || ''}
-                            onChange={(e) => setEditForm({...editForm, nameEn: e.target.value})}
-                            className="text-left"
-                            dir="ltr"
-                          />
-                        ) : (
-                          <p className="text-gray-800 font-medium" dir="ltr">{selectedCostCenter.nameEn}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>كود المركز</Label>
-                        <p className="text-gray-800 font-medium">{selectedCostCenter.code}</p>
-                      </div>
-
-                      <div>
-                        <Label>نوع المركز</Label>
-                        <Badge className={`
-                          ${selectedCostCenter.type === 'رئيسي' ? 'bg-blue-100 text-blue-800' :
-                            selectedCostCenter.type === 'فرعي' ? 'bg-green-100 text-green-800' : 
-                            'bg-orange-100 text-orange-800'}
-                        `}>
-                          {selectedCostCenter.type}
-                        </Badge>
-                      </div>
-
-                      <div>
-                        <Label>الحالة</Label>
-                        {isEditing ? (
-                          <select
-                            value={editForm.status || 'نشط'}
-                            onChange={(e) => setEditForm({...editForm, status: e.target.value as any})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                          >
-                            <option value="نشط">نشط</option>
-                            <option value="غير نشط">غير نشط</option>
-                          </select>
-                        ) : (
-                          <Badge className={`
-                            ${selectedCostCenter.status === 'نشط' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
-                          `}>
-                            {selectedCostCenter.status}
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>المستوى</Label>
-                        <p className="text-gray-800 font-medium">المستوى {selectedCostCenter.level}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* معلومات إدارية */}
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
-                      <Building className="h-5 w-5 ml-2" />
-                      المعلومات الإدارية
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>القسم</Label>
-                        {isEditing ? (
-                          <select
-                            value={editForm.department || ''}
-                            onChange={(e) => setEditForm({...editForm, department: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                          >
-                            <option value="">اختر القسم</option>
-                            {departments.map(dept => (
-                              <option key={dept} value={dept}>{dept}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <p className="text-gray-800">{selectedCostCenter.department || 'غير محدد'}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>المدير المسؤول</Label>
-                        {isEditing ? (
-                          <Input
-                            value={editForm.manager || ''}
-                            onChange={(e) => setEditForm({...editForm, manager: e.target.value})}
-                            className="text-right"
-                            placeholder="اسم المدير المسؤول"
-                          />
-                        ) : (
-                          <p className="text-gray-800">{selectedCostCenter.manager || 'غير محدد'}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>الموقع</Label>
-                        {isEditing ? (
-                          <Input
-                            value={editForm.location || ''}
-                            onChange={(e) => setEditForm({...editForm, location: e.target.value})}
-                            className="text-right"
-                            placeholder="موقع مركز التكلفة"
-                          />
-                        ) : (
-                          <p className="text-gray-800">{selectedCostCenter.location || 'غير محدد'}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>تاريخ البداية</Label>
-                        {isEditing ? (
-                          <Input
-                            type="date"
-                            value={editForm.startDate || ''}
-                            onChange={(e) => setEditForm({...editForm, startDate: e.target.value})}
-                            className="text-right"
-                          />
-                        ) : (
-                          <p className="text-gray-800">{selectedCostCenter.startDate || 'غير محدد'}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>تاريخ النهاية</Label>
-                        {isEditing ? (
-                          <Input
-                            type="date"
-                            value={editForm.endDate || ''}
-                            onChange={(e) => setEditForm({...editForm, endDate: e.target.value})}
-                            className="text-right"
-                          />
-                        ) : (
-                          <p className="text-gray-800">{selectedCostCenter.endDate || 'غير محدد'}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* المعلومات المالية */}
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
-                      <DollarSign className="h-5 w-5 ml-2" />
-                      المعلومات المالية
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <Label>الميزانية المخططة</Label>
-                        {isEditing ? (
-                          <Input
-                            type="number"
-                            value={editForm.budget || 0}
-                            onChange={(e) => setEditForm({...editForm, budget: parseFloat(e.target.value) || 0})}
-                            className="text-right"
-                          />
-                        ) : (
-                          <div className="flex items-center">
-                            <DollarSign className="h-4 w-4 text-green-600 ml-1" />
-                            <span className="text-gray-800 font-medium">
-                              {selectedCostCenter.budget?.toLocaleString() || '0'} ريال
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>التكلفة الفعلية</Label>
-                        {isEditing ? (
-                          <Input
-                            type="number"
-                            value={editForm.actualCost || 0}
-                            onChange={(e) => setEditForm({...editForm, actualCost: parseFloat(e.target.value) || 0})}
-                            className="text-right"
-                          />
-                        ) : (
-                          <div className="flex items-center">
-                            <TrendingUp className="h-4 w-4 text-blue-600 ml-1" />
-                            <span className="text-gray-800 font-medium">
-                              {selectedCostCenter.actualCost?.toLocaleString() || '0'} ريال
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <Label>الانحراف</Label>
-                        {isEditing ? (
-                          <Input
-                            type="number"
-                            value={editForm.variance || 0}
-                            onChange={(e) => setEditForm({...editForm, variance: parseFloat(e.target.value) || 0})}
-                            className="text-right"
-                          />
-                        ) : (
-                          <div className="flex items-center">
-                            {(selectedCostCenter.variance || 0) >= 0 ? (
-                              <TrendingUp className="h-4 w-4 text-green-600 ml-1" />
-                            ) : (
-                              <TrendingDown className="h-4 w-4 text-red-600 ml-1" />
-                            )}
-                            <span className={`font-medium ${
-                              (selectedCostCenter.variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {selectedCostCenter.variance?.toLocaleString() || '0'} ريال
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* نسبة الإنجاز */}
-                    {selectedCostCenter.budget && selectedCostCenter.budget > 0 && (
-                      <div className="mt-4">
-                        <Label>نسبة استهلاك الميزانية</Label>
-                        <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                          <div 
-                            className={`h-2 rounded-full ${
-                              ((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget) > 0.9 
-                                ? 'bg-red-600' 
-                                : ((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget) > 0.7 
-                                  ? 'bg-yellow-500' 
-                                  : 'bg-green-600'
-                            }`}
-                            style={{
-                              width: `${Math.min(((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget) * 100, 100)}%`
-                            }}
-                          ></div>
+                  {/* رسالة تحذيرية للمراكز التي ليس لها مراكز تحليلية */}
+                  {!selectedCostCenter.hasSubCenters && (
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <div className="flex items-center">
+                        <div className="text-yellow-800">
+                          <span className="font-medium">تنبيه:</span> هذا المركز ليس له مراكز تحليلية، لذا لا يمكن إضافة مراكز فرعية تحته.
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget * 100).toFixed(1)}% مستهلك
-                        </p>
                       </div>
-                    )}
-                  </div>
+                      <div className="text-sm text-yellow-700 mt-2">
+                        💡 لتمكين إضافة مراكز فرعية، قم بتعديل المركز وتفعيل خيار "له مراكز تحليلية"
+                      </div>
+                    </div>
+                  )}
 
-                  {/* الوصف والملاحظات */}
-                  {(selectedCostCenter.description || selectedCostCenter.notes || isEditing) && (
-                    <div className="bg-yellow-50 p-4 rounded-lg">
-                      <h4 className="font-semibold text-gray-800 mb-4">الوصف والملاحظات</h4>
-                      
-                      {(selectedCostCenter.description || isEditing) && (
-                        <div className="mb-4">
-                          <Label>الوصف</Label>
-                          {isEditing ? (
-                            <textarea
-                              value={editForm.description || ''}
-                              onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                              rows={3}
-                              placeholder="وصف مركز التكلفة..."
-                            />
-                          ) : (
-                            <p className="text-gray-800 whitespace-pre-wrap">{selectedCostCenter.description}</p>
-                          )}
+                  {showAddForm ? (
+                    /* نموذج إضافة مركز جديد */
+                    <div className="space-y-6">
+                      {selectedCostCenter && (
+                        <div className="bg-red-50 p-4 rounded-lg">
+                          <p className="text-sm text-red-800">
+                            <strong>المركز الأب:</strong> {selectedCostCenter.nameAr} ({selectedCostCenter.code})
+                          </p>
                         </div>
                       )}
 
-                      {(selectedCostCenter.notes || isEditing) && (
-                        <div>
-                          <Label>ملاحظات</Label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label>اسم المركز (عربي) *</Label>
+                          <Input
+                            value={newCostCenter.nameAr || ''}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, nameAr: e.target.value})}
+                            placeholder="اسم مركز التكلفة بالعربي"
+                            className="text-right"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>اسم المركز (إنجليزي) *</Label>
+                          <Input
+                            value={newCostCenter.nameEn || ''}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, nameEn: e.target.value})}
+                            placeholder="Cost Center Name in English"
+                            className="text-left"
+                            dir="ltr"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>نوع المركز</Label>
+                          <select
+                            value={newCostCenter.type || 'رئيسي'}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, type: e.target.value as 'رئيسي' | 'فرعي' | 'وحدة'})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                            disabled={!!selectedCostCenter}
+                          >
+                            {costCenterTypes.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>القسم</Label>
+                          <select
+                            value={newCostCenter.department || ''}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, department: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                          >
+                            <option value="">اختر القسم</option>
+                            {departments.map(department => (
+                              <option key={department} value={department}>{department}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>المدير المسؤول</Label>
+                          <Input
+                            value={newCostCenter.manager || ''}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, manager: e.target.value})}
+                            placeholder="اسم المدير المسؤول"
+                            className="text-right"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>الموقع</Label>
+                          <Input
+                            value={newCostCenter.location || ''}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, location: e.target.value})}
+                            placeholder="موقع مركز التكلفة"
+                            className="text-right"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>الميزانية (ريال)</Label>
+                          <Input
+                            type="number"
+                            value={newCostCenter.budget || 0}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, budget: parseFloat(e.target.value) || 0})}
+                            placeholder="0"
+                            className="text-right"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>تاريخ البداية</Label>
+                          <Input
+                            type="date"
+                            value={newCostCenter.startDate || ''}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, startDate: e.target.value})}
+                            className="text-right"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>الوصف</Label>
+                        <textarea
+                          value={newCostCenter.description || ''}
+                          onChange={(e) => setNewCostCenter({...newCostCenter, description: e.target.value})}
+                          placeholder="وصف مركز التكلفة..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                          rows={3}
+                        />
+                      </div>
+
+                      <div className="flex items-center space-x-2 space-x-reverse">
+                        <input
+                          type="checkbox"
+                          id="hasSubCenters"
+                          checked={newCostCenter.hasSubCenters || false}
+                          onChange={(e) => setNewCostCenter({...newCostCenter, hasSubCenters: e.target.checked})}
+                          className="rounded"
+                        />
+                        <Label htmlFor="hasSubCenters">له مراكز تحليلية</Label>
+                      </div>
+
+                      {selectedCostCenter && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
+                          💡 سيتم إنشاء كود المركز الفرعي تلقائياً بناءً على كود المركز الأب: {selectedCostCenter.code} (مثال: {selectedCostCenter.code}1)
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* تفاصيل المركز الحالي */
+                    <div className="space-y-6">
+                      {/* الصف الأول: 3 أعمدة */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* نوع المركز */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">نوع المركز</div>
                           {isEditing ? (
-                            <textarea
-                              value={editForm.notes || ''}
-                              onChange={(e) => setEditForm({...editForm, notes: e.target.value})}
+                            <select
+                              value={editForm.type || 'رئيسي'}
+                              onChange={(e) => setEditForm({...editForm, type: e.target.value as 'رئيسي' | 'فرعي' | 'وحدة'})}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                              rows={2}
-                              placeholder="ملاحظات إضافية..."
+                            >
+                              {costCenterTypes.map(type => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border">
+                              <Badge style={{ 
+                                background: selectedCostCenter.type === 'رئيسي' ? '#fef2f2' : 
+                                           selectedCostCenter.type === 'فرعي' ? '#f0fdf4' : '#fefbf0', 
+                                color: selectedCostCenter.type === 'رئيسي' ? '#dc2626' : 
+                                       selectedCostCenter.type === 'فرعي' ? '#16a34a' : '#d97706',
+                                borderColor: selectedCostCenter.type === 'رئيسي' ? '#fca5a5' : 
+                                             selectedCostCenter.type === 'فرعي' ? '#86efac' : '#fed7aa'
+                              }}>
+                                {selectedCostCenter.type}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* المركز الأب */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">المركز الأب</div>
+                          <div className="p-2 bg-gray-50 rounded border">
+                            {selectedCostCenter.parentId ? (
+                              <span className="text-sm">
+                                {flattenCostCenterHierarchy(costCenters).find(center => center.id === selectedCostCenter.parentId)?.nameAr || 'غير محدد'}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-gray-500">مركز رئيسي</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* مستوى المركز */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">المستوى</div>
+                          <div className="p-2 bg-gray-50 rounded border">
+                            <Badge style={{ background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>المستوى {selectedCostCenter.level}</Badge>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* الصف الثاني: 3 أعمدة */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* رقم المركز */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">رقم المركز</div>
+                          <div className="p-2 bg-gray-50 rounded border font-mono">
+                            {selectedCostCenter.code}
+                          </div>
+                        </div>
+
+                        {/* اسم المركز (عربي) */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">اسم المركز (عربي)</div>
+                          {isEditing ? (
+                            <Input
+                              value={editForm.nameAr || ''}
+                              onChange={(e) => setEditForm({ ...editForm, nameAr: e.target.value })}
+                              className="text-right"
                             />
                           ) : (
-                            <p className="text-gray-800 whitespace-pre-wrap">{selectedCostCenter.notes}</p>
+                            <div className="p-2 bg-gray-50 rounded border">
+                              {selectedCostCenter.nameAr}
+                            </div>
                           )}
+                        </div>
+
+                        {/* اسم المركز (إنجليزي) */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">اسم المركز (إنجليزي)</div>
+                          {isEditing ? (
+                            <Input
+                              value={editForm.nameEn || ''}
+                              onChange={(e) => setEditForm({ ...editForm, nameEn: e.target.value })}
+                              className="text-left"
+                              dir="ltr"
+                            />
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border text-left" dir="ltr">
+                              {selectedCostCenter.nameEn}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* الصف الثالث: 3 أعمدة */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* القسم */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">القسم</div>
+                          {isEditing ? (
+                            <select
+                              value={editForm.department || ''}
+                              onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                            >
+                              <option value="">اختر القسم</option>
+                              {departments.map(department => (
+                                <option key={department} value={department}>{department}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border">
+                              {selectedCostCenter.department || 'غير محدد'}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* حالة المركز */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">حالة المركز</div>
+                          {isEditing ? (
+                            <select
+                              value={editForm.status || 'نشط'}
+                              onChange={(e) => setEditForm({...editForm, status: e.target.value as 'نشط' | 'غير نشط'})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                            >
+                              <option value="نشط">نشط</option>
+                              <option value="غير نشط">غير نشط</option>
+                            </select>
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border">
+                              <Badge style={{ 
+                                background: selectedCostCenter.status === 'نشط' ? '#f0fdf4' : '#f5f5f5', 
+                                color: selectedCostCenter.status === 'نشط' ? '#16a34a' : '#757575',
+                                borderColor: selectedCostCenter.status === 'نشط' ? '#86efac' : '#d6d3d1'
+                              }}>
+                                {selectedCostCenter.status}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* المدير المسؤول */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">المدير المسؤول</div>
+                          {isEditing ? (
+                            <Input
+                              value={editForm.manager || ''}
+                              onChange={(e) => setEditForm({ ...editForm, manager: e.target.value })}
+                              className="text-right"
+                              placeholder="اسم المدير المسؤول"
+                            />
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border">
+                              {selectedCostCenter.manager || 'غير محدد'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* الصف الرابع: معلومات مالية */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* الميزانية */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">الميزانية (ريال)</div>
+                          {isEditing ? (
+                            <Input
+                              type="number"
+                              value={editForm.budget || 0}
+                              onChange={(e) => setEditForm({ ...editForm, budget: parseFloat(e.target.value) || 0 })}
+                              className="text-right"
+                            />
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border">
+                              {selectedCostCenter.budget?.toLocaleString() || '0'} ريال
+                            </div>
+                          )}
+                        </div>
+
+                        {/* التكلفة الفعلية */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">التكلفة الفعلية (ريال)</div>
+                          {isEditing ? (
+                            <Input
+                              type="number"
+                              value={editForm.actualCost || 0}
+                              onChange={(e) => setEditForm({ ...editForm, actualCost: parseFloat(e.target.value) || 0 })}
+                              className="text-right"
+                            />
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border">
+                              {selectedCostCenter.actualCost?.toLocaleString() || '0'} ريال
+                            </div>
+                          )}
+                        </div>
+
+                        {/* الانحراف */}
+                        <div className="space-y-2">
+                          <div className="font-semibold mb-1">الانحراف (ريال)</div>
+                          {isEditing ? (
+                            <Input
+                              type="number"
+                              value={editForm.variance || 0}
+                              onChange={(e) => setEditForm({ ...editForm, variance: parseFloat(e.target.value) || 0 })}
+                              className="text-right"
+                            />
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border">
+                              <span className={`font-medium ${
+                                (selectedCostCenter.variance || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {selectedCostCenter.variance?.toLocaleString() || '0'} ريال
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* الصف الخامس: له مراكز تحليلية (مركز) */}
+                      <div className="flex justify-center">
+                        <div className="w-full max-w-sm space-y-2">
+                          <div className="font-semibold mb-1">له مراكز تحليلية</div>
+                          {isEditing ? (
+                            <div className="flex items-center justify-center space-x-2 space-x-reverse p-2">
+                              <input
+                                type="checkbox"
+                                checked={editForm.hasSubCenters || false}
+                                onChange={(e) => setEditForm({ ...editForm, hasSubCenters: e.target.checked })}
+                                className="rounded"
+                              />
+                              <Label>له مراكز فرعية</Label>
+                            </div>
+                          ) : (
+                            <div className="p-2 bg-gray-50 rounded border text-center">
+                              <Badge style={{ 
+                                background: selectedCostCenter.hasSubCenters ? '#fef2f2' : '#f5f5f5', 
+                                color: selectedCostCenter.hasSubCenters ? '#dc2626' : '#757575',
+                                borderColor: selectedCostCenter.hasSubCenters ? '#fca5a5' : '#d6d3d1'
+                              }}>
+                                {selectedCostCenter.hasSubCenters ? 'نعم' : 'لا'}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* نسبة استهلاك الميزانية */}
+                      {selectedCostCenter.budget && selectedCostCenter.budget > 0 && (
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <div className="flex items-center gap-2 mb-3">
+                            <DollarSign className="h-5 w-5 text-blue-600" />
+                            <h3 className="text-lg font-semibold text-blue-800">نسبة استهلاك الميزانية</h3>
+                          </div>
+                          
+                          <div className="w-full bg-gray-200 rounded-full h-3 mb-2">
+                            <div 
+                              className={`h-3 rounded-full transition-all duration-300 ${
+                                ((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget) > 0.9 
+                                  ? 'bg-red-600' 
+                                  : ((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget) > 0.7 
+                                    ? 'bg-yellow-500' 
+                                    : 'bg-green-600'
+                              }`}
+                              style={{
+                                width: `${Math.min(((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget) * 100, 100)}%`
+                              }}
+                            ></div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-gray-600">النسبة المستهلكة:</span>
+                              <span className="font-bold text-blue-800 mr-2">
+                                {((selectedCostCenter.actualCost || 0) / selectedCostCenter.budget * 100).toFixed(1)}%
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">المتبقي:</span>
+                              <span className="font-bold text-green-600 mr-2">
+                                {(selectedCostCenter.budget - (selectedCostCenter.actualCost || 0)).toLocaleString()} ريال
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* قسم الوصف والملاحظات */}
+                      {(selectedCostCenter.description || selectedCostCenter.notes || isEditing) && (
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <div className="flex items-center gap-2 mb-3">
+                            <AlertCircle className="h-5 w-5 text-gray-600" />
+                            <h3 className="text-lg font-semibold text-gray-800">الوصف والملاحظات</h3>
+                          </div>
+                          
+                          <div className="space-y-4">
+                            {(selectedCostCenter.description || isEditing) && (
+                              <div className="space-y-2">
+                                <div className="font-semibold text-gray-700">الوصف</div>
+                                {isEditing ? (
+                                  <textarea
+                                    value={editForm.description || ''}
+                                    onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                                    rows={3}
+                                    placeholder="وصف مركز التكلفة..."
+                                  />
+                                ) : (
+                                  <div className="p-2 bg-white rounded border">
+                                    {selectedCostCenter.description || 'لا يوجد وصف'}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {(selectedCostCenter.notes || isEditing) && (
+                              <div className="space-y-2">
+                                <div className="font-semibold text-gray-700">ملاحظات</div>
+                                {isEditing ? (
+                                  <textarea
+                                    value={editForm.notes || ''}
+                                    onChange={(e) => setEditForm({...editForm, notes: e.target.value})}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                                    rows={2}
+                                    placeholder="ملاحظات إضافية..."
+                                  />
+                                ) : (
+                                  <div className="p-2 bg-white rounded border">
+                                    {selectedCostCenter.notes || 'لا توجد ملاحظات'}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
                   )}
-
-                  {/* خصائص إضافية */}
-                  <div className="bg-purple-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-gray-800 mb-4">خصائص إضافية</h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center">
-                        <span className="text-sm">يحتوي على مراكز فرعية:</span>
-                        <Badge className={`mr-2 ${
-                          selectedCostCenter.hasSubCenters ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {selectedCostCenter.hasSubCenters ? 'نعم' : 'لا'}
-                        </Badge>
-                      </div>
-                      
-                      {selectedCostCenter.createdAt && (
-                        <div className="flex items-center text-sm text-gray-600">
-                          <span>تاريخ الإنشاء:</span>
-                          <span className="mr-2">
-                            {new Date(selectedCostCenter.createdAt).toLocaleDateString('ar-SA')}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {selectedCostCenter.updatedAt && (
-                        <div className="flex items-center text-sm text-gray-600">
-                          <span>آخر تحديث:</span>
-                          <span className="mr-2">
-                            {new Date(selectedCostCenter.updatedAt).toLocaleDateString('ar-SA')}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
-              </div>
-            ) : (
-              /* Empty State */
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <Target className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">اختر مركز تكلفة</h3>
-                  <p className="text-gray-500 mb-4">اختر مركز تكلفة من الشجرة لعرض تفاصيله</p>
-                  <Button 
-                    onClick={handleAddClick}
-                    className="bg-red-600 hover:bg-red-700"
-                  >
-                    <Plus className="h-4 w-4 ml-1" />
-                    إضافة مركز جديد
-                  </Button>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <Target className="h-16 w-16 text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">اختر مركز تكلفة من الشجرة</h3>
+                  <p className="text-gray-500">قم بالنقر على أي مركز من الشجرة لعرض تفاصيله</p>
                 </div>
-              </div>
-            )}
+              )}
+            </CardContent>
           </Card>
         </div>
       </div>
@@ -1253,3 +1310,4 @@ const CostCentersPage: React.FC = () => {
 };
 
 export default CostCentersPage;
+
