@@ -62,7 +62,6 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
   ];
   
   const [formData, setFormData] = useState({
-    code: '', // إضافة حقل الكود
     nameAr: '',
     nameEn: '',
     description: '',
@@ -80,13 +79,6 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-
-    // Validate code (required)
-    if (!formData.code.trim()) {
-      newErrors.code = 'كود مركز التكلفة مطلوب';
-    } else if (!/^\d+$/.test(formData.code.trim())) {
-      newErrors.code = 'كود مركز التكلفة يجب أن يحتوي على أرقام فقط';
-    }
 
     // Validate Arabic name
     if (!formData.nameAr.trim()) {
@@ -116,6 +108,43 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
+  const generateCostCenterCode = async (): Promise<string> => {
+    try {
+      const costCenters = await getCostCenters();
+      // فلترة مراكز التكلفة المستوى الأول فقط
+      const level1CostCenters = costCenters.filter(cc => cc.level === 1);
+      
+      if (level1CostCenters.length === 0) {
+        return '1000'; // الكود الأول
+      }
+      
+      // الحصول على جميع الأكواد الموجودة وتحويلها لأرقام
+      const codes = level1CostCenters
+        .map(cc => parseInt(cc.code))
+        .filter(code => !isNaN(code))
+        .sort((a, b) => a - b); // ترتيب تصاعدي
+      
+      if (codes.length === 0) {
+        return '1000';
+      }
+      
+      // البحث عن أول فجوة في التسلسل أو إضافة رقم جديد
+      let nextCode = 1000;
+      for (const code of codes) {
+        if (code === nextCode) {
+          nextCode += 1000;
+        } else {
+          break;
+        }
+      }
+      
+      return nextCode.toString();
+    } catch (error) {
+      console.error('Error generating cost center code:', error);
+      return '1000'; // القيمة الافتراضية في حالة حدوث خطأ
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) {
@@ -135,20 +164,12 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
         return;
       }
       
-      // استخدام الكود المدخل من المستخدم مباشرة
-      const finalCode = formData.code.trim();
-      
-      // التحقق من عدم تكرار الكود
-      const codeExists = allCostCenters.some(cc => cc.code === finalCode);
-      if (codeExists) {
-        toast.error('هذا الكود مستخدم بالفعل، يرجى اختيار كود آخر');
-        setIsSubmitting(false);
-        return;
-      }
+      // إنشاء كود تلقائي لمركز التكلفة الرئيسي
+      const autoCode = await generateCostCenterCode();
       
       // إضافة مركز التكلفة مباشرة إلى Firebase كمستوى أول
       const newCostCenter = {
-        code: finalCode,
+        code: autoCode,
         nameAr: formData.nameAr,
         nameEn: formData.nameEn,
         description: formData.description,
@@ -230,28 +251,8 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Cost Center Code & Type */}
+              {/* Type */}
               <div className="flex flex-col md:flex-row gap-6 w-full md:col-span-2">
-                <div className="space-y-2 w-full">
-                  <Typography.Text className="text-sm font-medium text-gray-700">كود مركز التكلفة *</Typography.Text>
-                  <Input
-                    id="code"
-                    value={formData.code}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('code', e.target.value)}
-                    placeholder="أدخل كود مركز التكلفة"
-                    size="large"
-                    status={errors.code ? 'error' : ''}
-                  />
-                  {errors.code && (
-                    <Alert variant="destructive" className="py-2">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription className="text-sm">{errors.code}</AlertDescription>
-                    </Alert>
-                  )}
-                  <Typography.Text className="text-xs text-gray-500">
-                    يجب إدخال كود رقمي مميز لمركز التكلفة
-                  </Typography.Text>
-                </div>
                 <div className="space-y-2 w-full">
                   <Typography.Text className="text-sm font-medium text-gray-700">نوع مركز التكلفة *</Typography.Text>
                   <Select
@@ -268,6 +269,9 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
                       <AlertDescription className="text-sm">{errors.type}</AlertDescription>
                     </Alert>
                   )}
+                  <Typography.Text className="text-xs text-gray-500">
+                    سيتم توليد كود مركز التكلفة تلقائياً
+                  </Typography.Text>
                 </div>
               </div>
 

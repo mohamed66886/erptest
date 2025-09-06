@@ -53,13 +53,12 @@ const CostCentersPage: React.FC = () => {
 
   // Form states
   const [newCostCenter, setNewCostCenter] = useState<Partial<CostCenter>>({
-    code: '', // إضافة حقل الكود
     nameAr: '',
     nameEn: '',
     description: '',
     type: 'رئيسي',
     status: 'نشط',
-    hasSubCenters: false,
+    hasSubCenters: true, // افتراضياً يقبل مراكز تحليلية للمراكز الرئيسية
     level: 1,
     budget: 0,
     actualCost: 0,
@@ -201,6 +200,82 @@ const CostCentersPage: React.FC = () => {
     loadCostCenters();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Generate automatic code for cost centers
+  const generateCostCenterCode = async (parentCostCenter?: CostCenter): Promise<string> => {
+    try {
+      const allCostCenters = await getCostCenters();
+      
+      if (!parentCostCenter) {
+        // للمراكز الرئيسية - نفس منطق AddCostCenterPage
+        const level1CostCenters = allCostCenters.filter(cc => cc.level === 1);
+        
+        if (level1CostCenters.length === 0) {
+          return '1000';
+        }
+        
+        const codes = level1CostCenters
+          .map(cc => parseInt(cc.code))
+          .filter(code => !isNaN(code))
+          .sort((a, b) => a - b);
+        
+        if (codes.length === 0) {
+          return '1000';
+        }
+        
+        let nextCode = 1000;
+        for (const code of codes) {
+          if (code === nextCode) {
+            nextCode += 1000;
+          } else {
+            break;
+          }
+        }
+        
+        return nextCode.toString();
+      } else {
+        // للمراكز الفرعية - كود الأب + أرقام متتالية
+        const parentCode = parentCostCenter.code;
+        const subCostCenters = allCostCenters.filter(cc => 
+          cc.parentId === parentCostCenter.id && cc.code.startsWith(parentCode)
+        );
+        
+        if (subCostCenters.length === 0) {
+          return `${parentCode}01`; // أول مركز فرعي
+        }
+        
+        // استخراج الأرقام التتالية من نهاية الكود
+        const subCodes = subCostCenters
+          .map(cc => {
+            const suffix = cc.code.replace(parentCode, '');
+            return parseInt(suffix) || 0;
+          })
+          .filter(code => !isNaN(code))
+          .sort((a, b) => a - b);
+        
+        if (subCodes.length === 0) {
+          return `${parentCode}01`;
+        }
+        
+        // البحث عن أول فجوة في التسلسل أو إضافة رقم جديد
+        let nextSuffix = 1;
+        for (const suffix of subCodes) {
+          if (suffix === nextSuffix) {
+            nextSuffix += 1;
+          } else {
+            break;
+          }
+        }
+        
+        // تنسيق الرقم بحيث يكون رقمين على الأقل
+        const formattedSuffix = nextSuffix.toString().padStart(2, '0');
+        return `${parentCode}${formattedSuffix}`;
+      }
+    } catch (error) {
+      console.error('Error generating cost center code:', error);
+      return parentCostCenter ? `${parentCostCenter.code}01` : '1000';
+    }
+  };
+
   const toggleNode = (nodeId: string) => {
     const newExpanded = new Set(expandedNodes);
     if (newExpanded.has(nodeId)) {
@@ -288,7 +363,6 @@ const CostCentersPage: React.FC = () => {
     
     if (selectedCostCenter) {
       setNewCostCenter({
-        code: '', // إعادة تعيين الكود
         nameAr: '',
         nameEn: '',
         description: '',
@@ -304,13 +378,12 @@ const CostCentersPage: React.FC = () => {
       });
     } else {
       setNewCostCenter({
-        code: '', // إعادة تعيين الكود
         nameAr: '',
         nameEn: '',
         description: '',
         type: 'رئيسي',
         status: 'نشط',
-        hasSubCenters: false,
+        hasSubCenters: true, // افتراضياً يقبل مراكز تحليلية للمراكز الرئيسية
         level: 1,
         budget: 0,
         actualCost: 0,
@@ -320,35 +393,24 @@ const CostCentersPage: React.FC = () => {
   };
 
   const handleAddCostCenter = async () => {
-    if (!newCostCenter.nameAr || !newCostCenter.nameEn || !newCostCenter.code?.trim()) {
-      toast.error('يرجى إدخال كود مركز التكلفة واسم المركز بالعربي والإنجليزي');
-      return;
-    }
-    
-    // التحقق من صحة الكود (أرقام فقط)
-    if (!/^\d+$/.test(newCostCenter.code.trim())) {
-      toast.error('كود مركز التكلفة يجب أن يحتوي على أرقام فقط');
+    if (!newCostCenter.nameAr || !newCostCenter.nameEn) {
+      toast.error('يرجى إدخال اسم المركز بالعربي والإنجليزي');
       return;
     }
     
     try {
-      // التحقق من عدم تكرار الكود
-      const allCostCenters = await getCostCenters();
-      const codeExists = allCostCenters.some(cc => cc.code === newCostCenter.code?.trim());
-      if (codeExists) {
-        toast.error('هذا الكود مستخدم بالفعل، يرجى اختيار كود آخر');
-        return;
-      }
+      // توليد الكود التلقائي
+      const autoCode = await generateCostCenterCode(selectedCostCenter || undefined);
       
       const costCenterToAdd: Omit<CostCenter, 'id'> = {
-        code: newCostCenter.code.trim(),
+        code: autoCode,
         nameAr: newCostCenter.nameAr!,
         nameEn: newCostCenter.nameEn!,
         description: newCostCenter.description || '',
         type: newCostCenter.type!,
         level: newCostCenter.level || 1,
         status: 'نشط',
-        hasSubCenters: newCostCenter.hasSubCenters || false,
+        hasSubCenters: newCostCenter.hasSubCenters ?? (newCostCenter.type === 'رئيسي' ? true : false), // افتراضياً true للمراكز الرئيسية
         department: newCostCenter.department || '',
         manager: newCostCenter.manager || '',
         location: newCostCenter.location || '',
@@ -364,9 +426,9 @@ const CostCentersPage: React.FC = () => {
       await addCostCenter(costCenterToAdd);
       
       if (newCostCenter.parentId && selectedCostCenter) {
-        toast.success(`تم إضافة المركز الفرعي بنجاح تحت ${selectedCostCenter.nameAr} بالكود ${newCostCenter.code.trim()}`);
+        toast.success(`تم إضافة المركز الفرعي بنجاح تحت ${selectedCostCenter.nameAr} بالكود ${autoCode}`);
       } else {
-        toast.success(`تم إضافة المركز الرئيسي بنجاح بالكود ${newCostCenter.code.trim()}`);
+        toast.success(`تم إضافة المركز الرئيسي بنجاح بالكود ${autoCode}`);
       }
       
       setShowAddForm(false);
@@ -384,13 +446,12 @@ const CostCentersPage: React.FC = () => {
   const handleCancelAdd = () => {
     setShowAddForm(false);
     setNewCostCenter({
-      code: '', // إعادة تعيين الكود
       nameAr: '',
       nameEn: '',
       description: '',
       type: 'رئيسي',
       status: 'نشط',
-      hasSubCenters: false,
+      hasSubCenters: true, // افتراضياً يقبل مراكز تحليلية للمراكز الرئيسية
       level: 1,
       budget: 0,
       actualCost: 0,
@@ -758,16 +819,6 @@ const CostCentersPage: React.FC = () => {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
-                          <Label>كود مركز التكلفة *</Label>
-                          <Input
-                            value={newCostCenter.code || ''}
-                            onChange={(e) => setNewCostCenter({...newCostCenter, code: e.target.value})}
-                            placeholder="أدخل كود مركز التكلفة"
-                            style={{ textAlign: 'right', height: '38px' }}
-                          />
-                        </div>
-
-                        <div className="space-y-2">
                           <Label>نوع المركز</Label>
                           <Select
                             value={newCostCenter.type || 'رئيسي'}
@@ -776,6 +827,9 @@ const CostCentersPage: React.FC = () => {
                             disabled={!!selectedCostCenter}
                             options={costCenterTypes.map(type => ({ value: type, label: type }))}
                           />
+                          <div className="text-xs text-gray-500">
+                            💡 سيتم توليد كود المركز تلقائياً
+                          </div>
                         </div>
 
                         <div className="space-y-2">
@@ -796,17 +850,6 @@ const CostCentersPage: React.FC = () => {
                             placeholder="Cost Center Name in English"
                             style={{ textAlign: 'left', height: '38px' }}
                             dir="ltr"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>نوع المركز</Label>
-                          <Select
-                            value={newCostCenter.type || 'رئيسي'}
-                            onChange={(value) => setNewCostCenter({...newCostCenter, type: value as 'رئيسي' | 'فرعي' | 'وحدة'})}
-                            style={{ width: '100%', height: '38px', textAlign: 'right' }}
-                            disabled={!!selectedCostCenter}
-                            options={costCenterTypes.map(type => ({ value: type, label: type }))}
                           />
                         </div>
 
@@ -886,9 +929,15 @@ const CostCentersPage: React.FC = () => {
                         <Label htmlFor="hasSubCenters">له مراكز تحليلية</Label>
                       </div>
 
-                      {selectedCostCenter && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
-                          💡 سيتم إنشاء كود المركز الفرعي تلقائياً بناءً على كود المركز الأب: {selectedCostCenter.code} (مثال: {selectedCostCenter.code}1)
+                      {selectedCostCenter ? (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                          💡 سيتم إنشاء كود المركز الفرعي تلقائياً بناءً على كود المركز الأب: {selectedCostCenter.code} 
+                          <br />
+                          (مثال: {selectedCostCenter.code}01, {selectedCostCenter.code}02, {selectedCostCenter.code}03...)
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800">
+                          💡 سيتم إنشاء كود المركز الرئيسي تلقائياً (1000, 2000, 3000...)
                         </div>
                       )}
                     </div>
