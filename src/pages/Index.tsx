@@ -70,6 +70,9 @@ import FinancialYearsPage from "./accounting/FinancialYearsPage";
 import BankAccountsPage from "./accounting/BankAccountsPage";
 import CashBoxesPage from "./management/CashBoxesPage";
 import CostCentersPage from "./accounting/CostCentersPage";
+import CostCenterClassificationPage from "./accounting/CostCenterClassificationPage";
+import AddCostCenterPage from "./accounting/AddCostCenterPage";
+import EditCostCenterPage from "./accounting/EditCostCenterPage";
 
 // Customer Management Pages
 import AddCustomerPage from "./customers/AddCustomerPage";
@@ -271,6 +274,9 @@ const Index = () => {
               <Route path="/accounting/bank-accounts" element={<BankAccountsPage />} />
               <Route path="/accounting/cash-boxes" element={<CashBoxesPage />} />
               <Route path="/accounting/cost-centers" element={<CostCentersPage />} />
+              <Route path="/accounting/cost-center-classification" element={<CostCenterClassificationPage />} />
+              <Route path="/accounting/add-cost-center" element={<AddCostCenterPage />} />
+              <Route path="/accounting/edit-cost-center/:id" element={<EditCostCenterPage />} />
               
               {/* Customer Management Routes */}
               <Route path="/customers/add" element={<AddCustomerPage />} />

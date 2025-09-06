@@ -31,8 +31,7 @@ import {
   getCostCenters,
   addCostCenter,
   updateCostCenter,
-  deleteCostCenter,
-  getDefaultCostCenters
+  deleteCostCenter
 } from '@/lib/costCenterService';
 
 const CostCentersPage: React.FC = () => {
@@ -94,27 +93,13 @@ const CostCentersPage: React.FC = () => {
       const firebaseCostCenters = await Promise.race([costCentersPromise, timeoutPromise]) as CostCenter[];
       console.log('Cost centers loaded:', firebaseCostCenters);
       
-      // If no cost centers exist, create default ones
+      // Build hierarchical structure
+      const hierarchicalCostCenters = buildCostCenterHierarchy(firebaseCostCenters);
+      setCostCenters(hierarchicalCostCenters);
+      
       if (firebaseCostCenters.length === 0) {
-        console.log('No cost centers found, creating default ones...');
-        const defaultCostCenters = getDefaultCostCenters();
-        
-        // Add default cost centers to Firebase
-        for (const costCenter of defaultCostCenters) {
-          await addCostCenter(costCenter);
-        }
-        
-        // Reload cost centers after adding defaults
-        const newCostCenters = await getCostCenters();
-        const hierarchicalCostCenters = buildCostCenterHierarchy(newCostCenters);
-        setCostCenters(hierarchicalCostCenters);
-        
-        toast.success(`تم إنشاء ${defaultCostCenters.length} مركز تكلفة افتراضي`);
+        toast.info('لا توجد مراكز تكلفة في قاعدة البيانات. يمكنك إضافة مراكز تكلفة جديدة.');
       } else {
-        // Build hierarchical structure
-        const hierarchicalCostCenters = buildCostCenterHierarchy(firebaseCostCenters);
-        setCostCenters(hierarchicalCostCenters);
-        
         toast.success(`تم تحميل ${firebaseCostCenters.length} مركز تكلفة من قاعدة البيانات`);
       }
     } catch (error) {
@@ -553,7 +538,7 @@ const CostCentersPage: React.FC = () => {
                 {hasChildren || costCenter.hasSubCenters ? (
                   <Folder className="h-4 w-4 text-orange-600 mr-2" />
                 ) : (
-                  <Target className="h-4 w-4 text-red-600 mr-2" />
+                  <span className="h-4 w-4 mr-2" />
                 )}
                 <span className="text-sm font-medium">{costCenter.code}</span>
                 <span className="text-sm text-gray-600 mr-2">-</span>

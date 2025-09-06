@@ -106,11 +106,11 @@ const FinancialManagement: React.FC = () => {
       onClick: () => navigate('/accounting/bank-accounts'),
     },
     {
-      title: "دليل مركز التكلفة",
-      description: "دليل مراكز التكلفة الشامل",
+      title: "تصنيف مركز التكلفة",
+      description: "دليل تصنيف مراكز التكلفة الشامل",
       icon: <BarChart3 className="h-6 w-6" />,
       color: "bg-teal-500",
-  // Removed duplicate settingsCards definition
+      onClick: () => navigate('/accounting/cost-center-classification'),
     },
     {
       title: "الصناديق النقدية",
