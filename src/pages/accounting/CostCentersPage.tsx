@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Select, ConfigProvider } from "antd";
+const { TextArea } = Input;
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -34,6 +35,12 @@ import {
   deleteCostCenter
 } from '@/lib/costCenterService';
 
+// CSS للـ Ant Design components
+const antdStyles = {
+  fontFamily: 'Tajawal, sans-serif',
+  direction: 'rtl' as const,
+};
+
 const CostCentersPage: React.FC = () => {
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,6 +53,7 @@ const CostCentersPage: React.FC = () => {
 
   // Form states
   const [newCostCenter, setNewCostCenter] = useState<Partial<CostCenter>>({
+    code: '', // إضافة حقل الكود
     nameAr: '',
     nameEn: '',
     description: '',
@@ -188,82 +196,6 @@ const CostCentersPage: React.FC = () => {
     return result;
   };
 
-  // Generate sub cost center code
-  const generateSubCostCenterCode = async (parentCode: string): Promise<string> => {
-    try {
-      const allCostCenters = await getCostCenters();
-      
-      const subCostCenters = allCostCenters.filter(costCenter => 
-        costCenter.code.startsWith(parentCode) && 
-        costCenter.code !== parentCode &&
-        costCenter.code.length === parentCode.length + 1
-      );
-      
-      if (subCostCenters.length === 0) {
-        return parentCode + '1';
-      }
-      
-      const subCodes = subCostCenters
-        .map(costCenter => costCenter.code.substring(parentCode.length))
-        .map(suffix => parseInt(suffix))
-        .filter(num => !isNaN(num))
-        .sort((a, b) => a - b);
-      
-      if (subCodes.length === 0) {
-        return parentCode + '1';
-      }
-      
-      let nextSubCode = 1;
-      for (const code of subCodes) {
-        if (code === nextSubCode) {
-          nextSubCode++;
-        } else {
-          break;
-        }
-      }
-      
-      return parentCode + nextSubCode.toString();
-    } catch (error) {
-      console.error('Error generating sub cost center code:', error);
-      return parentCode + '1';
-    }
-  };
-
-  // Generate main cost center code
-  const generateMainCostCenterCode = async (): Promise<string> => {
-    try {
-      const allCostCenters = await getCostCenters();
-      const level1CostCenters = allCostCenters.filter(costCenter => costCenter.level === 1);
-      
-      if (level1CostCenters.length === 0) {
-        return '100';
-      }
-      
-      const codes = level1CostCenters
-        .map(costCenter => parseInt(costCenter.code))
-        .filter(code => !isNaN(code))
-        .sort((a, b) => a - b);
-      
-      if (codes.length === 0) {
-        return '100';
-      }
-      
-      let nextCode = 100;
-      for (const code of codes) {
-        if (code === nextCode) {
-          nextCode += 100;
-        } else {
-          break;
-        }
-      }
-      
-      return nextCode.toString();
-    } catch (error) {
-      console.error('Error generating main cost center code:', error);
-      return '100';
-    }
-  };
-
   // Load cost centers on component mount
   useEffect(() => {
     loadCostCenters();
@@ -356,6 +288,7 @@ const CostCentersPage: React.FC = () => {
     
     if (selectedCostCenter) {
       setNewCostCenter({
+        code: '', // إعادة تعيين الكود
         nameAr: '',
         nameEn: '',
         description: '',
@@ -371,6 +304,7 @@ const CostCentersPage: React.FC = () => {
       });
     } else {
       setNewCostCenter({
+        code: '', // إعادة تعيين الكود
         nameAr: '',
         nameEn: '',
         description: '',
@@ -386,21 +320,28 @@ const CostCentersPage: React.FC = () => {
   };
 
   const handleAddCostCenter = async () => {
-    if (!newCostCenter.nameAr || !newCostCenter.nameEn) {
-      toast.error('يرجى إدخال اسم مركز التكلفة بالعربي والإنجليزي');
+    if (!newCostCenter.nameAr || !newCostCenter.nameEn || !newCostCenter.code?.trim()) {
+      toast.error('يرجى إدخال كود مركز التكلفة واسم المركز بالعربي والإنجليزي');
+      return;
+    }
+    
+    // التحقق من صحة الكود (أرقام فقط)
+    if (!/^\d+$/.test(newCostCenter.code.trim())) {
+      toast.error('كود مركز التكلفة يجب أن يحتوي على أرقام فقط');
       return;
     }
     
     try {
-      let autoCode: string;
-      if (newCostCenter.parentId && selectedCostCenter) {
-        autoCode = await generateSubCostCenterCode(selectedCostCenter.code);
-      } else {
-        autoCode = await generateMainCostCenterCode();
+      // التحقق من عدم تكرار الكود
+      const allCostCenters = await getCostCenters();
+      const codeExists = allCostCenters.some(cc => cc.code === newCostCenter.code?.trim());
+      if (codeExists) {
+        toast.error('هذا الكود مستخدم بالفعل، يرجى اختيار كود آخر');
+        return;
       }
       
       const costCenterToAdd: Omit<CostCenter, 'id'> = {
-        code: autoCode,
+        code: newCostCenter.code.trim(),
         nameAr: newCostCenter.nameAr!,
         nameEn: newCostCenter.nameEn!,
         description: newCostCenter.description || '',
@@ -423,9 +364,9 @@ const CostCentersPage: React.FC = () => {
       await addCostCenter(costCenterToAdd);
       
       if (newCostCenter.parentId && selectedCostCenter) {
-        toast.success(`تم إضافة المركز الفرعي بنجاح تحت ${selectedCostCenter.nameAr} بالكود ${autoCode}`);
+        toast.success(`تم إضافة المركز الفرعي بنجاح تحت ${selectedCostCenter.nameAr} بالكود ${newCostCenter.code.trim()}`);
       } else {
-        toast.success(`تم إضافة المركز الرئيسي بنجاح بالكود ${autoCode}`);
+        toast.success(`تم إضافة المركز الرئيسي بنجاح بالكود ${newCostCenter.code.trim()}`);
       }
       
       setShowAddForm(false);
@@ -443,6 +384,7 @@ const CostCentersPage: React.FC = () => {
   const handleCancelAdd = () => {
     setShowAddForm(false);
     setNewCostCenter({
+      code: '', // إعادة تعيين الكود
       nameAr: '',
       nameEn: '',
       description: '',
@@ -538,7 +480,7 @@ const CostCentersPage: React.FC = () => {
                 {hasChildren || costCenter.hasSubCenters ? (
                   <Folder className="h-4 w-4 text-orange-600 mr-2" />
                 ) : (
-                  <span className="h-4 w-4 mr-2" />
+                  <File className="h-4 w-4 text-blue-600 mr-2" />
                 )}
                 <span className="text-sm font-medium">{costCenter.code}</span>
                 <span className="text-sm text-gray-600 mr-2">-</span>
@@ -816,12 +758,33 @@ const CostCentersPage: React.FC = () => {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
+                          <Label>كود مركز التكلفة *</Label>
+                          <Input
+                            value={newCostCenter.code || ''}
+                            onChange={(e) => setNewCostCenter({...newCostCenter, code: e.target.value})}
+                            placeholder="أدخل كود مركز التكلفة"
+                            style={{ textAlign: 'right', height: '38px' }}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>نوع المركز</Label>
+                          <Select
+                            value={newCostCenter.type || 'رئيسي'}
+                            onChange={(value) => setNewCostCenter({...newCostCenter, type: value as 'رئيسي' | 'فرعي' | 'وحدة'})}
+                            style={{ width: '100%', height: '38px', textAlign: 'right' }}
+                            disabled={!!selectedCostCenter}
+                            options={costCenterTypes.map(type => ({ value: type, label: type }))}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
                           <Label>اسم المركز (عربي) *</Label>
                           <Input
                             value={newCostCenter.nameAr || ''}
                             onChange={(e) => setNewCostCenter({...newCostCenter, nameAr: e.target.value})}
                             placeholder="اسم مركز التكلفة بالعربي"
-                            className="text-right"
+                            style={{ textAlign: 'right', height: '38px' }}
                           />
                         </div>
 
@@ -831,37 +794,32 @@ const CostCentersPage: React.FC = () => {
                             value={newCostCenter.nameEn || ''}
                             onChange={(e) => setNewCostCenter({...newCostCenter, nameEn: e.target.value})}
                             placeholder="Cost Center Name in English"
-                            className="text-left"
+                            style={{ textAlign: 'left', height: '38px' }}
                             dir="ltr"
                           />
                         </div>
 
                         <div className="space-y-2">
                           <Label>نوع المركز</Label>
-                          <select
+                          <Select
                             value={newCostCenter.type || 'رئيسي'}
-                            onChange={(e) => setNewCostCenter({...newCostCenter, type: e.target.value as 'رئيسي' | 'فرعي' | 'وحدة'})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                            onChange={(value) => setNewCostCenter({...newCostCenter, type: value as 'رئيسي' | 'فرعي' | 'وحدة'})}
+                            style={{ width: '100%', height: '38px', textAlign: 'right' }}
                             disabled={!!selectedCostCenter}
-                          >
-                            {costCenterTypes.map(type => (
-                              <option key={type} value={type}>{type}</option>
-                            ))}
-                          </select>
+                            options={costCenterTypes.map(type => ({ value: type, label: type }))}
+                          />
                         </div>
 
                         <div className="space-y-2">
                           <Label>القسم</Label>
-                          <select
+                          <Select
                             value={newCostCenter.department || ''}
-                            onChange={(e) => setNewCostCenter({...newCostCenter, department: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                          >
-                            <option value="">اختر القسم</option>
-                            {departments.map(department => (
-                              <option key={department} value={department}>{department}</option>
-                            ))}
-                          </select>
+                            onChange={(value) => setNewCostCenter({...newCostCenter, department: value})}
+                            style={{ width: '100%', height: '38px', textAlign: 'right' }}
+                            placeholder="اختر القسم"
+                            allowClear
+                            options={departments.map(department => ({ value: department, label: department }))}
+                          />
                         </div>
 
                         <div className="space-y-2">
@@ -870,7 +828,7 @@ const CostCentersPage: React.FC = () => {
                             value={newCostCenter.manager || ''}
                             onChange={(e) => setNewCostCenter({...newCostCenter, manager: e.target.value})}
                             placeholder="اسم المدير المسؤول"
-                            className="text-right"
+                            style={{ textAlign: 'right', height: '38px' }}
                           />
                         </div>
 
@@ -880,7 +838,7 @@ const CostCentersPage: React.FC = () => {
                             value={newCostCenter.location || ''}
                             onChange={(e) => setNewCostCenter({...newCostCenter, location: e.target.value})}
                             placeholder="موقع مركز التكلفة"
-                            className="text-right"
+                            style={{ textAlign: 'right', height: '38px' }}
                           />
                         </div>
 
@@ -891,7 +849,7 @@ const CostCentersPage: React.FC = () => {
                             value={newCostCenter.budget || 0}
                             onChange={(e) => setNewCostCenter({...newCostCenter, budget: parseFloat(e.target.value) || 0})}
                             placeholder="0"
-                            className="text-right"
+                            style={{ textAlign: 'right', height: '38px' }}
                           />
                         </div>
 
@@ -901,18 +859,18 @@ const CostCentersPage: React.FC = () => {
                             type="date"
                             value={newCostCenter.startDate || ''}
                             onChange={(e) => setNewCostCenter({...newCostCenter, startDate: e.target.value})}
-                            className="text-right"
+                            style={{ textAlign: 'right', height: '38px' }}
                           />
                         </div>
                       </div>
 
                       <div className="space-y-2">
                         <Label>الوصف</Label>
-                        <textarea
+                        <TextArea
                           value={newCostCenter.description || ''}
                           onChange={(e) => setNewCostCenter({...newCostCenter, description: e.target.value})}
                           placeholder="وصف مركز التكلفة..."
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                          style={{ textAlign: 'right' }}
                           rows={3}
                         />
                       </div>
@@ -943,15 +901,12 @@ const CostCentersPage: React.FC = () => {
                         <div className="space-y-2">
                           <div className="font-semibold mb-1">نوع المركز</div>
                           {isEditing ? (
-                            <select
+                            <Select
                               value={editForm.type || 'رئيسي'}
-                              onChange={(e) => setEditForm({...editForm, type: e.target.value as 'رئيسي' | 'فرعي' | 'وحدة'})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                            >
-                              {costCenterTypes.map(type => (
-                                <option key={type} value={type}>{type}</option>
-                              ))}
-                            </select>
+                              onChange={(value) => setEditForm({...editForm, type: value as 'رئيسي' | 'فرعي' | 'وحدة'})}
+                              style={{ width: '100%', height: '38px', textAlign: 'right' }}
+                              options={costCenterTypes.map(type => ({ value: type, label: type }))}
+                            />
                           ) : (
                             <div className="p-2 bg-gray-50 rounded border">
                               <Badge style={{ 
@@ -1008,7 +963,7 @@ const CostCentersPage: React.FC = () => {
                             <Input
                               value={editForm.nameAr || ''}
                               onChange={(e) => setEditForm({ ...editForm, nameAr: e.target.value })}
-                              className="text-right"
+                              style={{ textAlign: 'right', height: '38px' }}
                             />
                           ) : (
                             <div className="p-2 bg-gray-50 rounded border">
@@ -1024,7 +979,7 @@ const CostCentersPage: React.FC = () => {
                             <Input
                               value={editForm.nameEn || ''}
                               onChange={(e) => setEditForm({ ...editForm, nameEn: e.target.value })}
-                              className="text-left"
+                              style={{ textAlign: 'left', height: '38px' }}
                               dir="ltr"
                             />
                           ) : (
@@ -1041,16 +996,14 @@ const CostCentersPage: React.FC = () => {
                         <div className="space-y-2">
                           <div className="font-semibold mb-1">القسم</div>
                           {isEditing ? (
-                            <select
+                            <Select
                               value={editForm.department || ''}
-                              onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                            >
-                              <option value="">اختر القسم</option>
-                              {departments.map(department => (
-                                <option key={department} value={department}>{department}</option>
-                              ))}
-                            </select>
+                              onChange={(value) => setEditForm({ ...editForm, department: value })}
+                              style={{ width: '100%', height: '38px', textAlign: 'right' }}
+                              placeholder="اختر القسم"
+                              allowClear
+                              options={departments.map(department => ({ value: department, label: department }))}
+                            />
                           ) : (
                             <div className="p-2 bg-gray-50 rounded border">
                               {selectedCostCenter.department || 'غير محدد'}
@@ -1062,14 +1015,15 @@ const CostCentersPage: React.FC = () => {
                         <div className="space-y-2">
                           <div className="font-semibold mb-1">حالة المركز</div>
                           {isEditing ? (
-                            <select
+                            <Select
                               value={editForm.status || 'نشط'}
-                              onChange={(e) => setEditForm({...editForm, status: e.target.value as 'نشط' | 'غير نشط'})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
-                            >
-                              <option value="نشط">نشط</option>
-                              <option value="غير نشط">غير نشط</option>
-                            </select>
+                              onChange={(value) => setEditForm({...editForm, status: value as 'نشط' | 'غير نشط'})}
+                              style={{ width: '100%', height: '38px', textAlign: 'right' }}
+                              options={[
+                                { value: 'نشط', label: 'نشط' },
+                                { value: 'غير نشط', label: 'غير نشط' }
+                              ]}
+                            />
                           ) : (
                             <div className="p-2 bg-gray-50 rounded border">
                               <Badge style={{ 
@@ -1090,7 +1044,7 @@ const CostCentersPage: React.FC = () => {
                             <Input
                               value={editForm.manager || ''}
                               onChange={(e) => setEditForm({ ...editForm, manager: e.target.value })}
-                              className="text-right"
+                              style={{ textAlign: 'right', height: '38px' }}
                               placeholder="اسم المدير المسؤول"
                             />
                           ) : (
@@ -1111,7 +1065,7 @@ const CostCentersPage: React.FC = () => {
                               type="number"
                               value={editForm.budget || 0}
                               onChange={(e) => setEditForm({ ...editForm, budget: parseFloat(e.target.value) || 0 })}
-                              className="text-right"
+                              style={{ textAlign: 'right', height: '38px' }}
                             />
                           ) : (
                             <div className="p-2 bg-gray-50 rounded border">
@@ -1128,7 +1082,7 @@ const CostCentersPage: React.FC = () => {
                               type="number"
                               value={editForm.actualCost || 0}
                               onChange={(e) => setEditForm({ ...editForm, actualCost: parseFloat(e.target.value) || 0 })}
-                              className="text-right"
+                              style={{ textAlign: 'right', height: '38px' }}
                             />
                           ) : (
                             <div className="p-2 bg-gray-50 rounded border">
@@ -1145,7 +1099,7 @@ const CostCentersPage: React.FC = () => {
                               type="number"
                               value={editForm.variance || 0}
                               onChange={(e) => setEditForm({ ...editForm, variance: parseFloat(e.target.value) || 0 })}
-                              className="text-right"
+                              style={{ textAlign: 'right', height: '38px' }}
                             />
                           ) : (
                             <div className="p-2 bg-gray-50 rounded border">
@@ -1240,10 +1194,10 @@ const CostCentersPage: React.FC = () => {
                               <div className="space-y-2">
                                 <div className="font-semibold text-gray-700">الوصف</div>
                                 {isEditing ? (
-                                  <textarea
+                                  <TextArea
                                     value={editForm.description || ''}
                                     onChange={(e) => setEditForm({...editForm, description: e.target.value})}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                                    style={{ textAlign: 'right' }}
                                     rows={3}
                                     placeholder="وصف مركز التكلفة..."
                                   />
@@ -1259,10 +1213,10 @@ const CostCentersPage: React.FC = () => {
                               <div className="space-y-2">
                                 <div className="font-semibold text-gray-700">ملاحظات</div>
                                 {isEditing ? (
-                                  <textarea
+                                  <TextArea
                                     value={editForm.notes || ''}
                                     onChange={(e) => setEditForm({...editForm, notes: e.target.value})}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-right"
+                                    style={{ textAlign: 'right' }}
                                     rows={2}
                                     placeholder="ملاحظات إضافية..."
                                   />

@@ -46,6 +46,21 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
 }) => {
   const navigate = useNavigate();
   
+  const departments = [
+    'الإدارة',
+    'الموارد البشرية',
+    'المالية',
+    'الإنتاج',
+    'المبيعات',
+    'التسويق',
+    'المشتريات',
+    'المخازن',
+    'تكنولوجيا المعلومات',
+    'الصيانة',
+    'الجودة',
+    'الأمن والسلامة'
+  ];
+  
   const [formData, setFormData] = useState({
     code: '', // إضافة حقل الكود
     nameAr: '',
@@ -99,43 +114,6 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const generateCostCenterCode = async (): Promise<string> => {
-    try {
-      const costCenters = await getCostCenters();
-      // فلترة مراكز التكلفة المستوى الأول فقط
-      const level1CostCenters = costCenters.filter(costCenter => costCenter.level === 1);
-      
-      if (level1CostCenters.length === 0) {
-        return '100'; // الكود الأول
-      }
-      
-      // الحصول على جميع الأكواد الموجودة وتحويلها لأرقام
-      const codes = level1CostCenters
-        .map(costCenter => parseInt(costCenter.code))
-        .filter(code => !isNaN(code))
-        .sort((a, b) => a - b); // ترتيب تصاعدي
-      
-      if (codes.length === 0) {
-        return '100';
-      }
-      
-      // البحث عن أول فجوة في التسلسل أو إضافة رقم جديد
-      let nextCode = 100;
-      for (const code of codes) {
-        if (code === nextCode) {
-          nextCode += 100;
-        } else {
-          break;
-        }
-      }
-      
-      return nextCode.toString();
-    } catch (error) {
-      console.error('Error generating cost center code:', error);
-      return '100'; // القيمة الافتراضية في حالة حدوث خطأ
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -362,13 +340,20 @@ const AddCostCenterPage: React.FC<AddCostCenterPageProps> = ({
                 </div>
                 <div className="space-y-2 w-full">
                   <Typography.Text className="text-sm font-medium text-gray-700">القسم</Typography.Text>
-                  <Input
-                    id="department"
+                  <Select
                     value={formData.department}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('department', e.target.value)}
-                    placeholder="اسم القسم"
+                    onChange={(value) => handleInputChange('department', value)}
+                    placeholder="اختر القسم"
+                    style={{ width: '100%' }}
                     size="large"
-                  />
+                    allowClear
+                  >
+                    {departments.map((dept) => (
+                      <Select.Option key={dept} value={dept}>
+                        {dept}
+                      </Select.Option>
+                    ))}
+                  </Select>
                 </div>
               </div>
 
