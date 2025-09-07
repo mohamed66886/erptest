@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { updateCostCenter, getCostCenters, type CostCenter } from '@/lib/costCenterService';
+import { updateCostCenter, getCostCenters } from '@/lib/costCenterService';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Input from 'antd/lib/input';
@@ -8,35 +8,69 @@ import Select from 'antd/lib/select';
 import Typography from 'antd/lib/typography';
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from 'sonner';
-import { AlertCircle, ArrowRight, Save, Target, Edit } from 'lucide-react';
+import { AlertCircle, ArrowRight, Edit, Target } from 'lucide-react';
 import Breadcrumb from '@/components/Breadcrumb';
+
+interface CostCenter {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  description?: string;
+  type: 'رئيسي' | 'فرعي' | 'وحدة';
+  level: number;
+  parentId?: string;
+  status: 'نشط' | 'غير نشط';
+  hasSubCenters: boolean;
+  manager?: string;
+  department?: string;
+  location?: string;
+  budget?: number;
+  actualCost?: number;
+  variance?: number;
+  startDate?: string;
+  endDate?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 interface EditCostCenterPageProps {
   onBack?: () => void;
   costCenter?: CostCenter;
-  onSave?: (costCenter: CostCenter) => void;
 }
 
 const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({ 
-  onBack, 
-  costCenter: externalCostCenter,
-  onSave 
+  onBack,
+  costCenter: propCostCenter
 }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   
-  // Get cost center from location state or props
-  const initialCostCenter = location.state?.costCenter || externalCostCenter;
+  // Get cost center data from props, route state, or URL params
+  const initialCostCenter = propCostCenter || location.state?.costCenter;
   
-  const [costCenter, setCostCenter] = useState<CostCenter | null>(initialCostCenter || null);
-  const [isLoading, setIsLoading] = useState(!initialCostCenter);
+  const departments = [
+    'الإدارة',
+    'الموارد البشرية',
+    'المالية',
+    'الإنتاج',
+    'المبيعات',
+    'التسويق',
+    'المشتريات',
+    'المخازن',
+    'تكنولوجيا المعلومات',
+    'الصيانة',
+    'الجودة',
+    'الأمن والسلامة'
+  ];
   
   const [formData, setFormData] = useState({
     nameAr: '',
     nameEn: '',
     description: '',
-    type: '' as 'رئيسي' | 'فرعي' | 'وحدة' | '',
+    type: 'رئيسي' as 'رئيسي' | 'فرعي' | 'وحدة',
     status: 'نشط' as 'نشط' | 'غير نشط',
     manager: '',
     department: '',
@@ -47,54 +81,68 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [costCenter, setCostCenter] = useState<CostCenter | null>(null);
 
-  // Load cost center data if not provided
+  // Load cost center data on component mount
   useEffect(() => {
     const loadCostCenter = async () => {
-      if (!costCenter && id) {
-        try {
-          setIsLoading(true);
-          const costCenters = await getCostCenters();
-          const foundCostCenter = costCenters.find(cc => cc.id === id);
+      try {
+        setIsLoading(true);
+        
+        if (initialCostCenter) {
+          // Use provided cost center data
+          setCostCenter(initialCostCenter);
+          setFormData({
+            nameAr: initialCostCenter.nameAr || '',
+            nameEn: initialCostCenter.nameEn || '',
+            description: initialCostCenter.description || '',
+            type: initialCostCenter.type || 'رئيسي',
+            status: initialCostCenter.status || 'نشط',
+            manager: initialCostCenter.manager || '',
+            department: initialCostCenter.department || '',
+            location: initialCostCenter.location || '',
+            budget: initialCostCenter.budget || 0,
+            notes: initialCostCenter.notes || ''
+          });
+        } else if (id) {
+          // Load cost center by ID from database
+          const allCostCenters = await getCostCenters();
+          const foundCostCenter = allCostCenters.find(cc => cc.id === id);
           
           if (foundCostCenter) {
             setCostCenter(foundCostCenter);
+            setFormData({
+              nameAr: foundCostCenter.nameAr || '',
+              nameEn: foundCostCenter.nameEn || '',
+              description: foundCostCenter.description || '',
+              type: foundCostCenter.type || 'رئيسي',
+              status: foundCostCenter.status || 'نشط',
+              manager: foundCostCenter.manager || '',
+              department: foundCostCenter.department || '',
+              location: foundCostCenter.location || '',
+              budget: foundCostCenter.budget || 0,
+              notes: foundCostCenter.notes || ''
+            });
           } else {
             toast.error('لم يتم العثور على مركز التكلفة المطلوب');
             navigate('/accounting/cost-center-classification');
-            return;
           }
-        } catch (error) {
-          console.error('Error loading cost center:', error);
-          toast.error('فشل في تحميل بيانات مركز التكلفة');
+        } else {
+          toast.error('معرف مركز التكلفة غير صحيح');
           navigate('/accounting/cost-center-classification');
-          return;
-        } finally {
-          setIsLoading(false);
         }
+      } catch (error) {
+        console.error('Error loading cost center:', error);
+        toast.error('فشل في تحميل بيانات مركز التكلفة');
+        navigate('/accounting/cost-center-classification');
+      } finally {
+        setIsLoading(false);
       }
     };
 
     loadCostCenter();
-  }, [id, costCenter, navigate]);
-
-  // Populate form data when cost center is available
-  useEffect(() => {
-    if (costCenter) {
-      setFormData({
-        nameAr: costCenter.nameAr || '',
-        nameEn: costCenter.nameEn || '',
-        description: costCenter.description || '',
-        type: costCenter.type || '',
-        status: costCenter.status || 'نشط',
-        manager: costCenter.manager || '',
-        department: costCenter.department || '',
-        location: costCenter.location || '',
-        budget: costCenter.budget || 0,
-        notes: costCenter.notes || ''
-      });
-    }
-  }, [costCenter]);
+  }, [id, initialCostCenter, navigate]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -132,14 +180,13 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
     if (!validateForm() || !costCenter) {
       return;
     }
-    
     setIsSubmitting(true);
     try {
-      // Check for duplicate names (excluding current cost center)
+      // جلب جميع مراكز التكلفة للتحقق من التكرار (باستثناء مركز التكلفة الحالي)
       const allCostCenters = await getCostCenters();
-      const level1CostCenters = allCostCenters.filter(cc => cc.level === 1 && cc.id !== costCenter.id);
-      const existsAr = level1CostCenters.some(cc => cc.nameAr.trim() === formData.nameAr.trim());
-      const existsEn = level1CostCenters.some(cc => cc.nameEn.trim().toLowerCase() === formData.nameEn.trim().toLowerCase());
+      const otherCostCenters = allCostCenters.filter(cc => cc.id !== costCenter.id);
+      const existsAr = otherCostCenters.some(cc => cc.nameAr.trim() === formData.nameAr.trim());
+      const existsEn = otherCostCenters.some(cc => cc.nameEn.trim().toLowerCase() === formData.nameEn.trim().toLowerCase());
       
       if (existsAr || existsEn) {
         toast.error('يوجد مركز تكلفة آخر بنفس الاسم العربي أو الإنجليزي');
@@ -147,44 +194,27 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
         return;
       }
       
-      // Prepare update data
-      const updateData = {
-        nameAr: formData.nameAr.trim(),
-        nameEn: formData.nameEn.trim(),
-        description: formData.description.trim(),
-        type: formData.type as 'رئيسي' | 'فرعي' | 'وحدة',
+      // تحديث مركز التكلفة
+      const updatedCostCenter = {
+        ...costCenter,
+        nameAr: formData.nameAr,
+        nameEn: formData.nameEn,
+        description: formData.description,
+        type: formData.type,
         status: formData.status,
-        manager: formData.manager.trim(),
-        department: formData.department.trim(),
-        location: formData.location.trim(),
+        manager: formData.manager,
+        department: formData.department,
+        location: formData.location,
         budget: formData.budget,
-        notes: formData.notes.trim(),
+        notes: formData.notes,
         updatedAt: new Date().toISOString()
       };
       
-      // Update cost center in Firebase
-      await updateCostCenter(costCenter.id, updateData);
-      
-      // Update local cost center object
-      const updatedCostCenter = { ...costCenter, ...updateData };
-      setCostCenter(updatedCostCenter);
-      
-      toast.success(`تم تحديث مركز التكلفة "${formData.nameAr}" بنجاح`);
-      
-      // Call onSave callback if provided
-      if (onSave) {
-        onSave(updatedCostCenter);
-      }
-      
-      // Navigate back after a short delay
+      await updateCostCenter(costCenter.id, updatedCostCenter);
+      toast.success('تم تحديث مركز التكلفة بنجاح');
       setTimeout(() => {
-        if (onBack) {
-          onBack();
-        } else {
-          navigate('/accounting/cost-center-classification');
-        }
-      }, 1000);
-      
+        navigate('/accounting/cost-center-classification');
+      }, 800);
     } catch (error) {
       console.error('Error updating cost center:', error);
       toast.error('حدث خطأ أثناء تحديث مركز التكلفة');
@@ -196,8 +226,6 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
   const handleCancel = () => {
     if (onBack) {
       onBack();
-    } else {
-      navigate('/accounting/cost-center-classification');
     }
   };
 
@@ -216,52 +244,17 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="w-full p-6 space-y-6 min-h-screen" dir="rtl">
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-lg text-gray-600">جاري تحميل بيانات مركز التكلفة...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!costCenter) {
-    return (
-      <div className="w-full p-6 space-y-6 min-h-screen" dir="rtl">
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-            <p className="text-lg text-gray-600">لم يتم العثور على مركز التكلفة المطلوب</p>
-            <Button 
-              onClick={handleCancel}
-              className="mt-4"
-            >
-              العودة إلى القائمة الرئيسية
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full p-6 space-y-6 min-h-screen" dir="rtl">
       {/* Header */}
       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
           <Edit className="h-8 w-8 text-blue-600 ml-3" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">تعديل مركز التكلفة</h1>
-            <p className="text-gray-600 mt-1">
-              تعديل بيانات مركز التكلفة: <span className="font-semibold text-blue-600">{costCenter.nameAr}</span>
-              <span className="text-sm text-gray-500 mr-2">(كود: {costCenter.code})</span>
-            </p>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-800">تعديل مركز التكلفة</h1>
         </div>
+        <p className="text-gray-600 mt-2">
+          {costCenter ? `تعديل بيانات مركز التكلفة: ${costCenter.nameAr} (كود: ${costCenter.code})` : 'تعديل بيانات مركز التكلفة'}
+        </p>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
 
@@ -270,39 +263,42 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
           { label: "الرئيسية", to: "/" },
           { label: "الادارة الماليه", to: "/management/financial" }, 
           { label: "تصنيف مراكز التكلفة", to: "/accounting/cost-center-classification" },
-          { label: `تعديل مركز التكلفة: ${costCenter.nameAr}` },
+          { label: "تعديل مركز التكلفة" },
         ]}
       />
 
       {/* Form Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5 text-blue-600" />
-            بيانات مركز التكلفة
-          </CardTitle>
-          <div className="text-sm text-gray-500">
-            كود مركز التكلفة: <span className="font-mono bg-blue-50 px-2 py-1 rounded">{costCenter.code}</span>
-            <span className="mx-2">•</span>
-            المستوى: <span className="font-semibold">{costCenter.level}</span>
-            <span className="mx-2">•</span>
-            تاريخ الإنشاء: <span className="font-mono">{costCenter.createdAt ? new Date(costCenter.createdAt).toLocaleDateString('ar-SA') : 'غير محدد'}</span>
-          </div>
-        </CardHeader>
+      {isLoading ? (
+        <Card>
+          <CardContent className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <Typography.Text className="text-gray-600">جاري تحميل بيانات مركز التكلفة...</Typography.Text>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>بيانات مركز التكلفة</CardTitle>
+            {costCenter && (
+              <Typography.Text type="secondary">
+                كود مركز التكلفة: {costCenter.code} | المستوى: {costCenter.level}
+              </Typography.Text>
+            )}
+          </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Cost Center Type & Arabic Name */}
+              {/* Type */}
               <div className="flex flex-col md:flex-row gap-6 w-full md:col-span-2">
                 <div className="space-y-2 w-full">
                   <Typography.Text className="text-sm font-medium text-gray-700">نوع مركز التكلفة *</Typography.Text>
                   <Select
-                    value={formData.type || undefined}
-                    onChange={(value) => handleInputChange('type', value)}
-                    placeholder="اختر نوع مركز التكلفة"
+                    value={formData.type}
+                    disabled
                     style={{ width: '100%' }}
                     size="large"
-                    allowClear
                   >
                     <Select.Option value="رئيسي">رئيسي</Select.Option>
                     <Select.Option value="فرعي">فرعي</Select.Option>
@@ -314,7 +310,14 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
                       <AlertDescription className="text-sm">{errors.type}</AlertDescription>
                     </Alert>
                   )}
+                  <Typography.Text className="text-xs text-gray-500">
+                    يمكن تغيير نوع مركز التكلفة حسب الحاجة
+                  </Typography.Text>
                 </div>
+              </div>
+
+              {/* Arabic Name & English Name */}
+              <div className="flex flex-col md:flex-row gap-6 w-full md:col-span-2">
                 <div className="space-y-2 w-full">
                   <Typography.Text className="text-sm font-medium text-gray-700">اسم مركز التكلفة (عربي) *</Typography.Text>
                   <Input
@@ -332,10 +335,6 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
                     </Alert>
                   )}
                 </div>
-              </div>
-
-              {/* English Name & Status */}
-              <div className="flex flex-col md:flex-row gap-6 w-full md:col-span-2">
                 <div className="space-y-2 w-full">
                   <Typography.Text className="text-sm font-medium text-gray-700">اسم مركز التكلفة (انجليزي) *</Typography.Text>
                   <Input
@@ -353,6 +352,10 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
                     </Alert>
                   )}
                 </div>
+              </div>
+
+              {/* Status */}
+              <div className="flex flex-col md:flex-row gap-6 w-full md:col-span-2">
                 <div className="space-y-2 w-full">
                   <Typography.Text className="text-sm font-medium text-gray-700">الحالة</Typography.Text>
                   <Select
@@ -382,13 +385,20 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
                 </div>
                 <div className="space-y-2 w-full">
                   <Typography.Text className="text-sm font-medium text-gray-700">القسم</Typography.Text>
-                  <Input
-                    id="department"
+                  <Select
                     value={formData.department}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('department', e.target.value)}
-                    placeholder="اسم القسم"
+                    onChange={(value) => handleInputChange('department', value)}
+                    placeholder="اختر القسم"
+                    style={{ width: '100%' }}
                     size="large"
-                  />
+                    allowClear
+                  >
+                    {departments.map((dept) => (
+                      <Select.Option key={dept} value={dept}>
+                        {dept}
+                      </Select.Option>
+                    ))}
+                  </Select>
                 </div>
               </div>
 
@@ -451,31 +461,6 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
               </div>
             </div>
 
-            {/* Additional Info */}
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <h4 className="text-sm font-semibold text-blue-800 mb-2">معلومات إضافية</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">التكلفة الفعلية:</span>
-                  <span className="font-mono mr-2 text-blue-700">
-                    {(costCenter.actualCost || 0).toLocaleString('ar-SA')} ريال
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-600">الانحراف:</span>
-                  <span className="font-mono mr-2 text-blue-700">
-                    {(costCenter.variance || 0).toLocaleString('ar-SA')} ريال
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-600">آخر تحديث:</span>
-                  <span className="font-mono mr-2 text-blue-700">
-                    {costCenter.updatedAt ? new Date(costCenter.updatedAt).toLocaleDateString('ar-SA') : 'غير محدد'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
             {/* Action Buttons */}
             <div className="flex gap-4 pt-6">
               <Button 
@@ -483,23 +468,21 @@ const EditCostCenterPage: React.FC<EditCostCenterPageProps> = ({
                 disabled={isSubmitting}
                 className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white"
               >
-                <Save className="h-4 w-4 ml-2" />
-                {isSubmitting ? 'جاري الحفظ...' : 'حفظ التغييرات'}
+                {isSubmitting ? 'جاري التحديث...' : 'تحديث مركز التكلفة'}
               </Button>
               <Button 
                 type="button"
                 variant="outline"
                 onClick={handleCancel}
-                disabled={isSubmitting}
                 className="flex-1 md:flex-none"
               >
-                <ArrowRight className="h-4 w-4 ml-2" />
                 إلغاء
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 };
