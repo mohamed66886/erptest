@@ -1,16 +1,21 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
+import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined, FileTextOutlined } from '@ant-design/icons';
 import { FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/useAuth';
 import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider } from 'antd';
+import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider, Tabs } from 'antd';
 import Breadcrumb from "../../components/Breadcrumb";
 import { db } from '@/lib/firebase';
 import { useFinancialYear } from '@/hooks/useFinancialYear';
 import { FinancialYear } from '@/services/financialYearsService';
 import { fetchCashBoxes } from '../../services/cashBoxesService';
 import { fetchBankAccounts } from '../../services/bankAccountsService';
+import { GiMagicBroom } from 'react-icons/gi';
+import * as XLSX from 'xlsx';
+import { Upload } from 'antd';
+import ItemSearchModal from '@/components/ItemSearchModal';
+import styles from '@/styles/SelectStyles.module.css';
 
 // Lazy load heavy components
 const ItemSelect = lazy(() => import('@/components/ItemSelect'));
@@ -31,18 +36,14 @@ interface Warehouse {
   nameAr?: string;
   nameEn?: string;
   branch?: string; // هذا هو الحقل الصحيح المستخدم لربط المخزن بالفرع
-  documentType?: 'quotation' | 'warehouse';
+  documentType?: 'invoice' | 'warehouse';
   quotationTypes?: string[];
   allowedUsers?: string[];
   allowedBranches?: string[];
   status?: 'active' | 'inactive' | 'suspended';
 }
 
-interface PaymentMethod {
-  id: string;
-  name?: string;
-  value?: string;
-}
+
 
 interface Customer {
   id: string;
@@ -91,17 +92,13 @@ interface QuotationItem {
   taxPercent: string;
   taxValue: number;
   total: number;
-  isNewItem?: boolean; // إضافة خاصية تحديد إذا كان الصنف جديد
+  isNewItem?: boolean;
 }
 
 interface QuotationData {
   quotationNumber: string;
   entryNumber: string;
   date: string;
-  expiryDate: string; // تاريخ انتهاء العرض
-  paymentMethod: string;
-  cashBox: string;
-  multiplePayment: MultiplePayment;
   branch: string;
   warehouse: string;
   customerNumber: string;
@@ -110,8 +107,8 @@ interface QuotationData {
   priceRule: string;
   commercialRecord: string;
   taxFile: string;
-  customerAddress?: string; // عنوان العميل
-  notes?: string; // ملاحظات العرض
+  dueDate?: string;
+  validUntil?: string; // تاريخ انتهاء صلاحية عرض السعر
 }
 
 interface Totals {
@@ -121,14 +118,13 @@ interface Totals {
   tax: number;
 }
 
-// Custom Hook for Quotation Data Management
-const useQuotationData = () => {
+// Custom Hook for Sales Data Management
+const useSalesData = () => {
   const [loading, setLoading] = useState(false);
   const [fetchingItems, setFetchingItems] = useState(false);
   const [delegates, setDelegates] = useState<Delegate[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [units, setUnits] = useState<string[]>([]);
   const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
@@ -146,7 +142,6 @@ const useQuotationData = () => {
         delegatesSnapshot,
         branchesSnapshot,
         warehousesSnapshot,
-        paymentMethodsSnapshot,
         inventorySnapshot,
         customersSnapshot,
         companySnapshot
@@ -154,7 +149,6 @@ const useQuotationData = () => {
         getDocs(collection(db, 'salesRepresentatives')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'branches')),
         getDocs(collection(db, 'warehouses')),
-        getDocs(collection(db, 'paymentMethods')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'inventory_items')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'customers')),
         getDocs(collection(db, 'companies')) // تم تصحيح اسم المجموعة
@@ -170,7 +164,6 @@ const useQuotationData = () => {
       setDelegates(delegatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Delegate[]);
       setBranches(branchesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Branch[]);
       setWarehouses(warehousesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Warehouse[]);
-      setPaymentMethods(paymentMethodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PaymentMethod[]);
       setCashBoxes(cashBoxesData as CashBox[]);
       setCustomers(customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Customer[]);
       
@@ -201,7 +194,6 @@ const useQuotationData = () => {
     delegates,
     branches,
     warehouses,
-    paymentMethods,
     cashBoxes,
     units,
     itemNames,
@@ -241,20 +233,6 @@ interface Bank {
   subAccountCode?: string;
 }
 
-interface MultiplePayment {
-  cash?: {
-    cashBoxId: string;
-    amount: string;
-  };
-  bank?: {
-    bankId: string;
-    amount: string;
-  };
-  card?: {
-    bankId: string;
-    amount: string;
-  };
-}
 
 interface Supplier {
   id: string;
@@ -329,6 +307,44 @@ const initialItem: QuotationItem = {
 }
 
 
+// دالة توليد رقم فاتورة جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
+async function generateInvoiceNumberAsync(branchId: string, branches: Branch[] = []): Promise<string> {
+  const date = new Date();
+  const y = date.getFullYear();
+  
+  // البحث عن رقم الفرع الحقيقي من بيانات الفروع
+  const branchObj = branches.find(b => b.id === branchId);
+  const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
+  
+  try {
+    // جلب عدد الفواتير لنفس الفرع في نفس السنة - استعلام مبسط
+    const { getDocs, collection, query, where } = await import('firebase/firestore');
+    const q = query(
+      collection(db, 'sales_invoices'),
+      where('branch', '==', branchId)
+    );
+    const snapshot = await getDocs(q);
+    
+    // فلترة النتائج في الكود بدلاً من قاعدة البيانات لتجنب مشكلة الفهرس
+    const currentYearInvoices = snapshot.docs.filter(doc => {
+      const invoiceDate = doc.data().date;
+      if (!invoiceDate) return false;
+      const invoiceYear = new Date(invoiceDate).getFullYear();
+      return invoiceYear === y;
+    });
+    
+    const count = currentYearInvoices.length + 1;
+    const serial = count;
+    
+    return `INV-${branchNumber}-${y}-${serial}`;
+  } catch (error) {
+    console.error('خطأ في توليد رقم الفاتورة:', error);
+    // في حالة الخطأ، استخدم رقم عشوائي
+    const randomSerial = Math.floor(Math.random() * 1000) + 1;
+    return `INV-${branchNumber}-${y}-${randomSerial}`;
+  }
+}
+
 // دالة توليد رقم عرض سعر جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
 async function generateQuotationNumberAsync(branchId: string, branches: Branch[] = []): Promise<string> {
   const date = new Date();
@@ -339,11 +355,11 @@ async function generateQuotationNumberAsync(branchId: string, branches: Branch[]
   const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
   
   try {
-    // جلب عدد عروض الأسعار لنفس الفرع في نفس السنة - استعلام مبسط
+    // جلب عدد عروض الأسعار لنفس الفرع في نفس السنة
     const { getDocs, collection, query, where } = await import('firebase/firestore');
     const q = query(
       collection(db, 'quotations'),
-      where('branchId', '==', branchId)
+      where('branch', '==', branchId)
     );
     const snapshot = await getDocs(q);
     
@@ -358,12 +374,12 @@ async function generateQuotationNumberAsync(branchId: string, branches: Branch[]
     const count = currentYearQuotations.length + 1;
     const serial = count;
     
-    return `QOT-${branchNumber}-${y}-${serial}`;
+    return `QUO-${branchNumber}-${y}-${serial}`;
   } catch (error) {
     console.error('خطأ في توليد رقم عرض السعر:', error);
     // في حالة الخطأ، استخدم رقم عشوائي
     const randomSerial = Math.floor(Math.random() * 1000) + 1;
-    return `QOT-${branchNumber}-${y}-${randomSerial}`;
+    return `QUO-${branchNumber}-${y}-${randomSerial}`;
   }
 }
 
@@ -397,7 +413,13 @@ function getValidDateForFinancialYear(financialYear: FinancialYear | null): stri
 }
 
 // دالة حساب تاريخ الاستحقاق (بعد 12 يوم من تاريخ الفاتورة)
-function calculateExpiryDate(quotationDate: string): string {
+function calculateDueDate(invoiceDate: string): string {
+  if (!invoiceDate) return '';
+  return dayjs(invoiceDate).add(12, 'day').format('YYYY-MM-DD');
+}
+
+// دالة حساب تاريخ انتهاء صلاحية عرض السعر (بعد 30 يوم من تاريخ عرض السعر)
+function calculateValidUntilDate(quotationDate: string): string {
   if (!quotationDate) return '';
   return dayjs(quotationDate).add(30, 'day').format('YYYY-MM-DD');
 }
@@ -455,8 +477,8 @@ const AddQuotationPage: React.FC = () => {
 
   // زر توليد 3000 فاتورة عشوائية
   const generateRandomInvoices = async () => {
-    if (!branches.length || !warehouses.length || !paymentMethods.length || !customers.length || !itemNames.length) {
-      customMessage.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف وطرق الدفع أولاً');
+    if (!branches.length || !warehouses.length || !customers.length || !itemNames.length) {
+      customMessage.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف أولاً');
       return;
     }
     const { addDoc, collection } = await import('firebase/firestore');
@@ -469,7 +491,6 @@ const AddQuotationPage: React.FC = () => {
       for (let i = 0; i < 3000; i++) {
         const branch = randomFrom(branches);
         const warehouse = randomFrom(warehouses);
-        const paymentMethod = randomFrom(paymentMethods);
         const customer = randomFrom(customers);
         const item = randomFrom(itemNames);
         const discountPercent = randomDiscount();
@@ -482,11 +503,10 @@ const AddQuotationPage: React.FC = () => {
         const taxValue = taxableAmount * (taxPercent / 100);
         const total = subtotal;
         const invoiceNumber = `RND-${branch.id}-${today.replace(/-/g, '')}-${i+1}`;
-        const invoiceData = {
+        const quotationData = {
           invoiceNumber,
           entryNumber: `EN-${Math.floor(100000 + Math.random() * 900000)}`,
           date: today,
-          paymentMethod: paymentMethod.name || paymentMethod.value || paymentMethod,
           branch: branch.id,
           warehouse: warehouse.id,
           customerNumber: customer.phone || customer.phoneNumber || '',
@@ -518,7 +538,7 @@ const AddQuotationPage: React.FC = () => {
           },
           type: 'ضريبة'
         };
-        await addDoc(collection(db, 'sales_invoices'), invoiceData);
+        await addDoc(collection(db, 'sales_invoices'), quotationData);
       }
       customMessage.success('تم توليد 3000 فاتورة عشوائية بنجاح');
       if (fetchInvoices) {
@@ -741,7 +761,7 @@ const AddQuotationPage: React.FC = () => {
       await fetchBasicData(); // Refresh data from hook
       
       // تحديد العميل الجديد في الفاتورة
-      setInvoiceData(prev => ({
+      setQuotationData(prev => ({
         ...prev,
         customerName: newCustomer.nameAr,
         customerNumber: newCustomer.phone || '',
@@ -827,8 +847,7 @@ interface CompanyData {
         'العميل': inv.customer,
         'تليفون العميل': inv.customerPhone,
         'البائع': getDelegateName(inv.seller),
-        'طريقة الدفع': inv.paymentMethod,
-        'نوع الفاتورة': inv.invoiceType
+        'نوع الفاتورة': inv.quotationType
       };
     });
 
@@ -861,7 +880,6 @@ interface CompanyData {
       'العميل': '',
       'تليفون العميل': '',
       'البائع': '',
-      'طريقة الدفع': '',
       'نوع الفاتورة': ''
     };
 
@@ -988,16 +1006,16 @@ interface CompanyData {
         return false;
       }
 
-      // التحقق من نوع الاستخدام (يجب أن يكون عرض سعر أو غير محدد)
-      if (warehouse.documentType && warehouse.documentType !== 'quotation') {
+      // التحقق من نوع الاستخدام (يجب أن يكون فاتورة أو غير محدد)
+      if (warehouse.documentType && warehouse.documentType !== 'invoice') {
         return false;
       }
 
-      // التحقق من أنواع عروض الأسعار (يجب أن تحتوي على عروض أسعار أو الكل أو غير محددة)
+      // التحقق من أنواع الفواتير (يجب أن تحتوي على مبيعات أو الكل أو غير محددة)
       if (warehouse.quotationTypes && warehouse.quotationTypes.length > 0) {
-        const hasValidQuotationType = warehouse.quotationTypes.includes('quotations') || 
-                                    warehouse.quotationTypes.includes('all');
-        if (!hasValidQuotationType) {
+        const hasValidInvoiceType = warehouse.quotationTypes.includes('sales') || 
+                                  warehouse.quotationTypes.includes('all');
+        if (!hasValidInvoiceType) {
           return false;
         }
       }
@@ -1020,18 +1038,13 @@ interface CompanyData {
     });
   };
 
-  const [invoiceType, setInvoiceType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
+  const [quotationType, setQuotationType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
   const [warehouseMode, setWarehouseMode] = useState<'single' | 'multiple'>('single');
-  const [multiplePaymentMode, setMultiplePaymentMode] = useState<boolean>(false);
   const [branchCode, setBranchCode] = useState<string>('');
   const [quotationData, setQuotationData] = useState<QuotationData>({
     quotationNumber: '',
     entryNumber: generateEntryNumber(),
     date: getTodayString(),
-    expiryDate: dayjs().add(30, 'days').format('YYYY-MM-DD'), // انتهاء العرض بعد 30 يوم
-    paymentMethod: '',
-    cashBox: '',
-    multiplePayment: {},
     branch: '',
     warehouse: '',
     customerNumber: '',
@@ -1040,8 +1053,8 @@ interface CompanyData {
     priceRule: '',
     commercialRecord: '',
     taxFile: '',
-    customerAddress: '',
-    notes: ''
+    dueDate: '', // سيتم حسابه لاحقاً
+    validUntil: '' // تاريخ انتهاء صلاحية عرض السعر
   });
 
   // توليد رقم فاتورة جديد عند كل إعادة تعيين أو تغيير الفرع
@@ -1082,7 +1095,6 @@ interface CompanyData {
     delegates,
     branches,
     warehouses,
-    paymentMethods,
     cashBoxes,
     units,
     itemNames,
@@ -1090,7 +1102,7 @@ interface CompanyData {
     companyData,
     fetchBasicData,
     taxRate
-  } = useQuotationData();
+  } = useSalesData();
   
   // Additional state variables not in hook
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -1107,8 +1119,8 @@ interface CompanyData {
   });
 
   const [priceType, setPriceType] = useState<'سعر البيع' | 'آخر سعر العميل'>('سعر البيع');
-  const [quotations, setQuotations] = useState<(QuotationRecord & { firstLevelCategory?: string })[]>([]);
-  const [quotationsLoading, setQuotationsLoading] = useState<boolean>(false);
+  const [invoices, setInvoices] = useState<(InvoiceRecord & { firstLevelCategory?: string })[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState<boolean>(false);
 interface FirebaseQuotationItem {
   itemNumber?: string;
   itemName?: string;
@@ -1124,13 +1136,9 @@ interface FirebaseQuotationItem {
 }
 
 interface SavedQuotation {
-  quotationNumber: string;
+  invoiceNumber: string;
   entryNumber: string;
   date: string;
-  expiryDate: string;
-  paymentMethod: string;
-  cashBox?: string;
-  multiplePayment?: MultiplePayment;
   branch: string;
   warehouse: string;
   customerNumber: string;
@@ -1144,43 +1152,62 @@ interface SavedQuotation {
   type: string;
   createdAt: string;
   source: string;
+  dueDate?: string;
   customerAddress?: string;
-  notes?: string;
   [key: string]: unknown;
-}
-
-interface QuotationRecord {
-  key: string;
-  id: string;
-  quotationNumber: string;
-  date: string;
-  expiryDate: string;
-  customerName: string;
-  customerPhone: string;
-  amount: number;
-  branchId: string;
-  branchName: string;
-  paymentMethod: string;
-  warehouse: string;
-  salesRep: string;
-  status: string;
 }
 
   // حالة المودال بعد الحفظ
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [lastSavedInvoice, setLastSavedInvoice] = useState<SavedInvoice | null>(null);
+  const [lastSavedQuotation, setLastSavedQuotation] = useState<SavedQuotation | null>(null);
 
   // حالة تتبع الصنف المحدد للتعديل
+  // المتغيرات الجديدة للواجهة المطلوبة
+  const [periodRange, setPeriodRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
+  const [refNumber, setRefNumber] = useState("");
+  const [refDate, setRefDate] = useState<dayjs.Dayjs | null>(null);
+  const [movementType, setMovementType] = useState<string | null>(null);
+  const [accountType, setAccountType] = useState<string | null>(null);
+  const [sideType, setSideType] = useState<string | null>(null);
+  const [sideNumber, setSideNumber] = useState("");
+  const [sideName, setSideName] = useState("");
+  const [operationClass, setOperationClass] = useState<string | null>(null);
+  const [statement, setStatement] = useState("");
+
+  // متغيرات الأصناف
+  const [activeTab, setActiveTab] = useState("new");
+  const [itemCode, setItemCode] = useState("");
+  const [itemName, setItemName] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [unit, setUnit] = useState("");
+  const [price, setPrice] = useState("");
+  const [costCenterName, setCostCenterName] = useState("");
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [addedItems, setAddedItems] = useState<Array<{
+    itemCode: string;
+    itemName: string;
+    quantity: string;
+    unit: string;
+    price: string;
+    costCenterName: string;
+  }>>([]);
+
+  // متغيرات مودال البحث عن العميل
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountModalType, setAccountModalType] = useState("عميل");
+  const [customerAccounts, setCustomerAccounts] = useState<{ code: string; nameAr: string; mobile?: string; taxNumber?: string }[]>([]);
+  const [supplierAccounts, setSupplierAccounts] = useState<{ code: string; nameAr: string; mobile?: string }[]>([]);
+
+  // متغيرات الإكسل
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+
+  // المتغيرات المحذوفة المطلوبة
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
-
-  // دالة للتحقق من حالة الإيقاف المؤقت للصنف
-  const checkItemTempStatus = (itemName: string): boolean => {
-    const item = itemNames.find(i => i.name === itemName);
-    return item ? !!item.tempCodes : false;
-  };
-
   const [itemStocks, setItemStocks] = useState<{[key: string]: number}>({});
   const [loadingStocks, setLoadingStocks] = useState(false);
+
+  const { TabPane } = Tabs;
 
   // دالة للتحقق من صحة التاريخ وإظهار التحذير
   const handleDateValidation = useCallback((date: string | dayjs.Dayjs, fieldName: string) => {
@@ -1230,7 +1257,7 @@ interface QuotationRecord {
   useEffect(() => {
     if (currentFinancialYear) {
       const validDate = getValidDateForFinancialYear(currentFinancialYear);
-      setInvoiceData(prev => ({
+      setQuotationData(prev => ({
         ...prev,
         date: validDate,
         dueDate: calculateDueDate(validDate)
@@ -1372,7 +1399,7 @@ interface QuotationRecord {
       invoicesSnap.forEach(doc => {
         const data = doc.data();
         if (Array.isArray(data.items)) {
-          data.items.forEach((item: FirebaseInvoiceItem) => {
+          data.items.forEach((item: FirebaseQuotationItem) => {
             // البحث عن الصنف لجلب المستويات
             const foundItem = inventoryItems.find(i => i.name === item.itemName);
             // البحث عن اسم الصنف الرئيسي (الأب) واسمه الأعلى (الجد) إذا كان هناك parentId
@@ -1411,7 +1438,7 @@ interface QuotationRecord {
               customerPhone: data.customerNumber || '',
               seller: data.delegate || '',
               paymentMethod: data.paymentMethod || '',
-              invoiceType: data.type || '',
+              quotationType: data.type || '',
               itemData: foundItem || {}
             });
           });
@@ -1465,15 +1492,15 @@ interface QuotationRecord {
     console.log('الفرع المحدد حالياً:', quotationData.branch);
   }, [branches, quotationData.branch]);
 
-  const handleQuotationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInvoiceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQuotationData({ ...quotationData, [e.target.name]: e.target.value });
   };
 
   useEffect(() => {
-    if (invoiceType !== 'ضريبة') {
-      setInvoiceData(prev => ({ ...prev, commercialRecord: '', taxFile: '' }));
+    if (quotationType !== 'ضريبة') {
+      setQuotationData(prev => ({ ...prev, commercialRecord: '', taxFile: '' }));
     }
-  }, [invoiceType]);
+  }, [quotationType]);
 
   const handleItemChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setItem({ ...item, [e.target.name]: e.target.value });
@@ -1485,8 +1512,8 @@ interface QuotationRecord {
       const filtered = salesSnap.docs
         .map(doc => doc.data())
         .filter(inv => inv.customerName === customerName && Array.isArray(inv.items))
-        .flatMap(inv => inv.items.filter((it: FirebaseInvoiceItem) => it.itemName === itemName))
-        .sort((a: FirebaseInvoiceItem, b: FirebaseInvoiceItem) => new Date(String(b.date || '')).getTime() - new Date(String(a.date || '')).getTime());
+        .flatMap(inv => inv.items.filter((it: FirebaseQuotationItem) => it.itemName === itemName))
+        .sort((a: FirebaseQuotationItem, b: FirebaseQuotationItem) => new Date(String(b.date || '')).getTime() - new Date(String(a.date || '')).getTime());
       if (filtered.length > 0) {
         return filtered[0].price;
       }
@@ -1625,84 +1652,51 @@ interface QuotationRecord {
 
   const handleSave = async () => {
     if (items.length === 0) {
-      customMessage.error('لا يمكن حفظ عرض سعر بدون أصناف');
+      customMessage.error('لا يمكن حفظ عرض السعر بدون أصناف');
       return;
     }
     
     // التحقق من صحة التواريخ
     if (quotationData.date && !validateDate(quotationData.date)) {
-      customMessage.error(`تاريخ العرض خارج نطاق السنة المالية. ${getDateValidationMessage(quotationData.date)}`);
+      customMessage.error(`تاريخ عرض السعر خارج نطاق السنة المالية. ${getDateValidationMessage(quotationData.date)}`);
       return;
     }
     
-    if (quotationData.expiryDate && !validateDate(quotationData.expiryDate)) {
-      customMessage.error(`تاريخ انتهاء العرض خارج نطاق السنة المالية. ${getDateValidationMessage(quotationData.expiryDate)}`);
+    if (quotationData.validUntil && !validateDate(quotationData.validUntil)) {
+      customMessage.error(`تاريخ انتهاء الصلاحية خارج نطاق السنة المالية. ${getDateValidationMessage(quotationData.validUntil)}`);
       return;
-    }
-    
-    // التحقق من الصندوق النقدي إذا كانت طريقة الدفع نقدي
-    if (quotationData.paymentMethod === 'نقدي' && !quotationData.cashBox) {
-      message.error('يجب اختيار الصندوق النقدي عند اختيار الدفع النقدي');
-      return;
-    }
-      const cashAmount = parseFloat(invoiceData.multiplePayment.cash?.amount || '0');
-      const bankAmount = parseFloat(invoiceData.multiplePayment.bank?.amount || '0');
-      const cardAmount = parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-      const totalPayment = cashAmount + bankAmount + cardAmount;
-      const invoiceTotal = totals.afterTax;
-      
-      if (Math.abs(totalPayment - invoiceTotal) > 0.01) {
-        message.error(`مجموع المبالغ (${totalPayment.toFixed(2)}) لا يساوي إجمالي الفاتورة (${invoiceTotal.toFixed(2)})`);
-        return;
-      }
-      
-      if (totalPayment === 0) {
-        message.error('يجب إدخال مبلغ واحد على الأقل في الدفع المتعدد');
-        return;
-      }
     }
     
     setLoading(true);
-    // حذف الحقول الفارغة من بيانات الفاتورة
-    const cleanInvoiceData = Object.fromEntries(
-      Object.entries(invoiceData).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
+    // حذف الحقول الفارغة من بيانات عرض السعر
+    const cleanQuotationData = Object.fromEntries(
+      Object.entries(quotationData).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
     );
-    // توحيد اسم طريقة الدفع مع قائمة طرق الدفع
-    let paymentMethodName = cleanInvoiceData.paymentMethod;
-    const paymentNames = paymentMethods.map(m => m.name || m.id);
-    if (!paymentNames.includes(paymentMethodName)) {
-      // إذا لم تكن القيمة موجودة، اختر أول طريقة دفع كافتراضي أو اتركها فارغة
-      paymentMethodName = paymentNames[0] || '';
-    }
-    const invoice: Partial<SavedInvoice> & { createdAt: string; source: string } = {
-      ...cleanInvoiceData,
-      paymentMethod: paymentMethodName,
+    
+    const quotation = {
+      ...cleanQuotationData,
       items,
       totals: {
         ...totals
       },
-      type: invoiceType,
+      type: quotationType,
       createdAt: new Date().toISOString(),
-      source: 'sales'
+      source: 'quotations'
     };
 
-    // Add multiplePayment only if multiplePaymentMode is true
-    if (multiplePaymentMode && invoiceData.multiplePayment) {
-      invoice.multiplePayment = invoiceData.multiplePayment;
-    }
     try {
-      // حفظ الفاتورة في Firestore مباشرة
+      // حفظ عرض السعر في Firestore مباشرة
       const { addDoc, collection } = await import('firebase/firestore');
       await addDoc(collection(db, 'quotations'), quotation);
-      customMessage.success('تم حفظ الفاتورة بنجاح!');
+      customMessage.success('تم حفظ عرض السعر بنجاح!');
       
-      // تحديث الأرصدة بعد الحفظ
-      if (warehouseMode === 'single' && invoiceData.warehouse) {
-        await fetchItemStocks(invoiceData.warehouse);
+      // Reset form
+      if (warehouseMode === 'single' && quotationData.warehouse) {
+        await fetchItemStocks(quotationData.warehouse);
       } else if (warehouseMode === 'multiple') {
         // في حالة المخازن المتعددة، تحديث رصيد كل صنف في مخزنه
         for (const savedItem of items) {
-          const itemWithWarehouse = savedItem as InvoiceItem & { warehouseId?: string };
+          const itemWithWarehouse = savedItem as QuotationItem & { warehouseId?: string };
           if (itemWithWarehouse.warehouseId && itemWithWarehouse.itemName) {
             await fetchSingleItemStock(itemWithWarehouse.itemName, itemWithWarehouse.warehouseId);
           }
@@ -1712,38 +1706,34 @@ interface QuotationRecord {
       // إعادة تعيين النموذج
       setItems([]);
       setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
-      setMultiplePaymentMode(false);
-      // توليد رقم فاتورة جديد بعد الحفظ
+      // Reset form after saving
+      setItems([]);
+      setQuotationData(prev => ({
+        quotationNumber: '',
+        entryNumber: generateEntryNumber(),
+        date: getTodayString(),
+        paymentMethod: '',
+        cashBox: '',
+        multiplePayment: {},
+        branch: prev.branch, // Keep branch
+        warehouse: prev.warehouse, // Keep warehouse
+        customerNumber: '',
+        customerName: '',
+        delegate: prev.delegate, // Keep delegate
+        priceRule: '',
+        commercialRecord: '',
+        taxFile: '',
+        dueDate: '',
+        validUntil: ''
+      }));
+      
+      // Generate new quotation number
       if (branchCode) {
-        generateAndSetInvoiceNumber(branchCode);
-      } else {
-        const newDate = getTodayString();
-        setInvoiceData(prev => ({
-          ...prev,
-          invoiceNumber: '',
-          entryNumber: generateEntryNumber(),
-          date: newDate,
-          paymentMethod: '',
-          cashBox: '',
-          multiplePayment: {},
-          branch: '',
-          warehouse: '',
-          customerNumber: '',
-          customerName: '',
-          delegate: '',
-          priceRule: '',
-          commercialRecord: '',
-          taxFile: '',
-          dueDate: calculateDueDate(newDate) // إضافة تاريخ الاستحقاق عند الإعادة تعيين
-        }));
+        generateAndSetQuotationNumber(branchCode);
       }
-      // تحديث سجل الفواتير
-      await fetchInvoices();
-      // حفظ بيانات الفاتورة الأخيرة للمودال
-      setLastSavedInvoice(invoice as SavedInvoice);
-      setShowPrintModal(true);
+      
     } catch (err) {
-      console.error('Error saving invoice:', err);
+      console.error('Error saving quotation:', err);
       message.error(err.message || 'حدث خطأ أثناء الحفظ');
     } finally {
       setLoading(false);
@@ -1780,8 +1770,8 @@ interface QuotationRecord {
       dataIndex: 'warehouseId',
       width: 120,
       align: 'center' as const,
-      render: (_: string | undefined, record: InvoiceItem & { warehouseId?: string }) => {
-        const warehouseId = record.warehouseId || invoiceData.warehouse;
+      render: (_: string | undefined, record: QuotationItem & { warehouseId?: string }) => {
+        const warehouseId = record.warehouseId || quotationData.warehouse;
         if (!warehouseId) return '';
         const warehouse = warehouses.find(w => w.id === warehouseId);
         return warehouse ? warehouse.nameAr || warehouse.name || warehouse.id : warehouseId;
@@ -1813,7 +1803,7 @@ interface QuotationRecord {
       key: 'netAfterDiscount',
       width: 110,
       align: 'center' as const,
-      render: (_: unknown, record: InvoiceItem) => {
+      render: (_: unknown, record: QuotationItem) => {
         const subtotal = Number(record.price) * Number(record.quantity);
         const discountValue = subtotal * Number(record.discountPercent) / 100;
         return (subtotal - discountValue).toFixed(2);
@@ -1838,7 +1828,7 @@ interface QuotationRecord {
       width: 100,
       align: 'center' as const,
       // الإجمالي النهائي = (السعر * الكمية - قيمة الخصم) + قيمة الضريبة
-      render: (_: unknown, record: InvoiceItem) => {
+      render: (_: unknown, record: QuotationItem) => {
         const quantity = Number(record.quantity) || 0;
         const price = Number(record.price) || 0;
         const discountPercent = Number(record.discountPercent) || 0;
@@ -1855,7 +1845,7 @@ interface QuotationRecord {
       title: 'إجراءات',
       width: 140,
       align: 'center' as const,
-      render: (_: unknown, record: InvoiceItem, index: number) => (
+      render: (_: unknown, record: QuotationItem, index: number) => (
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
           <Button
             type="text"
@@ -1901,7 +1891,7 @@ interface QuotationRecord {
   ];
 
   // دالة تعبئة بيانات الصنف عند التعديل
-  const handleEditItem = (record: InvoiceItem, index: number) => {
+  const handleEditItem = (record: QuotationItem, index: number) => {
     setItem({
       ...record,
       taxPercent: taxRate // استخدام نسبة الضريبة من إعدادات الشركة
@@ -1912,8 +1902,8 @@ interface QuotationRecord {
 
   const handleEditInvoice = (record: InvoiceRecord & { firstLevelCategory?: string }) => {
     // تعبئة بيانات الفاتورة المختارة في النموذج
-    setInvoiceData({
-      ...invoiceData,
+    setQuotationData({
+      ...quotationData,
       ...record,
       delegate: record.delegate || record.seller || '',
       branch: record.branch || '',
@@ -1927,7 +1917,7 @@ interface QuotationRecord {
     });
     setItems(record.items || []);
     setTotals(record.totals || totals);
-    setLastSavedInvoice(record as unknown as SavedInvoice);
+    setLastSavedQuotation(record as unknown as SavedQuotation);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -2140,15 +2130,9 @@ interface QuotationRecord {
       render: (seller: string) => getDelegateName(seller)
     },
     {
-      title: 'طريقة الدفع',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod',
-      width: 120
-    },
-    {
       title: 'نوع الفاتورة',
-      dataIndex: 'invoiceType',
-      key: 'invoiceType',
+      dataIndex: 'quotationType',
+      key: 'quotationType',
       width: 120,
       render: (type: string) => type === 'ضريبة' ? 'ضريبة' : 'ضريبة مبسطة'
     },
@@ -2255,13 +2239,13 @@ interface QuotationRecord {
 
   // تحديد المندوب الافتراضي بناءً على المستخدم الحالي
   useEffect(() => {
-    console.log('useEffect للمندوب الافتراضي - المندوبين:', delegates.length, 'المستخدم UID:', user?.uid, 'المندوب الحالي:', invoiceData.delegate);
-    if (delegates.length > 0 && user?.uid && !invoiceData.delegate) {
+    console.log('useEffect للمندوب الافتراضي - المندوبين:', delegates.length, 'المستخدم UID:', user?.uid, 'المندوب الحالي:', quotationData.delegate);
+    if (delegates.length > 0 && user?.uid && !quotationData.delegate) {
       // البحث عن المندوب المطابق للمستخدم الحالي
       const currentUserDelegate = delegates.find(delegate => delegate.uid === user.uid);
       if (currentUserDelegate) {
         console.log('تم العثور على المندوب المطابق للمستخدم:', currentUserDelegate.name);
-        setInvoiceData(prev => ({
+        setQuotationData(prev => ({
           ...prev,
           delegate: currentUserDelegate.id
         }));
@@ -2270,7 +2254,7 @@ interface QuotationRecord {
         const firstActiveDelegate = delegates.find(delegate => delegate.status === 'active');
         if (firstActiveDelegate) {
           console.log('تم اختيار أول مندوب نشط:', firstActiveDelegate.name);
-          setInvoiceData(prev => ({
+          setQuotationData(prev => ({
             ...prev,
             delegate: firstActiveDelegate.id
           }));
@@ -2279,7 +2263,7 @@ interface QuotationRecord {
         }
       }
     }
-  }, [delegates, user?.uid, invoiceData.delegate]);
+  }, [delegates, user?.uid, quotationData.delegate]);
 
   // دالة للحصول على اسم المندوب من ID
   const getDelegateName = (delegateId: string) => {
@@ -2366,7 +2350,7 @@ const handlePrint = () => {
         // Ignore error silently
       }
 
-      const invoice = lastSavedInvoice;
+      const invoice = lastSavedQuotation;
       if (!invoice) {
         message.error('لا توجد فاتورة للطباعة');
         return;
@@ -2576,7 +2560,7 @@ const handlePrint = () => {
             <div class="header-section center">
               <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
               <div style="text-align: center;  font-size: 12px; margin-top: 8px; padding: 4px 8px; border-radius: 4px;">
-                ${invoiceType || 'فاتورة مبيعات'}
+                ${quotationType || 'فاتورة مبيعات'}
               </div>
             </div>
             <div class="header-section company-info-en">
@@ -2593,7 +2577,7 @@ const handlePrint = () => {
           <!-- Info Row Section: Invoice info (right), QR (center), Customer info (left) -->
           <div class="info-row-container">
             <table class="info-row-table right">
-              <tr><td class="label">طريقة الدفع</td><td class="value">${invoice.paymentMethod || ''}</td></tr>
+
               <tr><td class="label">رقم الفاتورة</td><td class="value">${invoice.invoiceNumber || ''}</td></tr>
               <tr><td class="label">تاريخ الفاتورة</td><td class="value">${invoice.date || ''}</td></tr>
               <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${invoice.dueDate || ''}</td></tr>
@@ -2636,7 +2620,7 @@ const handlePrint = () => {
               </tr>
             </thead>
             <tbody>
-              ${(invoice.items || []).map((it: InvoiceItem & { warehouseId?: string }, idx: number) => {
+              ${(invoice.items || []).map((it: QuotationItem & { warehouseId?: string }, idx: number) => {
                 const subtotal = Number(it.price) * Number(it.quantity);
                 const discountValue = Number(it.discountValue) || 0;
                 const taxValue = Number(it.taxValue) || 0;
@@ -2669,7 +2653,7 @@ const handlePrint = () => {
                     // إجمالي الخصم
                     if (!invoice.items) return '0.00';
                     let total = 0;
-                    invoice.items.forEach((it: InvoiceItem) => { total += Number(it.discountValue) || 0; });
+                    invoice.items.forEach((it: QuotationItem) => { total += Number(it.discountValue) || 0; });
                     return total.toFixed(2);
                   })()}
                 </td>
@@ -2678,7 +2662,7 @@ const handlePrint = () => {
                     // إجمالي قبل الضريبة
                     if (!invoice.items) return '0.00';
                     let total = 0;
-                    invoice.items.forEach((it: InvoiceItem) => {
+                    invoice.items.forEach((it: QuotationItem) => {
                       const subtotal = Number(it.price) * Number(it.quantity);
                       const discountValue = Number(it.discountValue) || 0;
                       total += subtotal - discountValue;
@@ -2691,7 +2675,7 @@ const handlePrint = () => {
                     // إجمالي الضريبة
                     if (!invoice.items) return '0.00';
                     let total = 0;
-                    invoice.items.forEach((it: InvoiceItem) => { total += Number(it.taxValue) || 0; });
+                    invoice.items.forEach((it: QuotationItem) => { total += Number(it.taxValue) || 0; });
                     return total.toFixed(2);
                   })()}
                 </td>
@@ -2700,7 +2684,7 @@ const handlePrint = () => {
                     // إجمالي النهائي
                     if (!invoice.items) return '0.00';
                     let total = 0;
-                    invoice.items.forEach((it: InvoiceItem) => {
+                    invoice.items.forEach((it: QuotationItem) => {
                       const subtotal = Number(it.price) * Number(it.quantity);
                       const discountValue = Number(it.discountValue) || 0;
                       const taxValue = Number(it.taxValue) || 0;
@@ -2753,84 +2737,6 @@ const handlePrint = () => {
                     <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
                     <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
                   </tr>
-                </tbody>
-              </table>
-              <!-- Payment Method Table -->
-              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; margin-top:10px; border-collapse:collapse; box-shadow:none; width:100%;">
-                <thead>
-                  <tr>
-                    <td colspan="2" style="font-weight:bold; color:#fff; text-align:center; padding:7px 12px; border:1px solid #000; background:#305496;">تفاصيل طريقة الدفع</td>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${(() => {
-                    if (invoice.paymentMethod === 'متعدد' && invoice.multiplePayment) {
-                      let paymentRows = '';
-                      const multiplePayment = invoice.multiplePayment;
-                      
-                      // النقدي
-                      if (multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
-                        const cashBoxId = multiplePayment.cash.cashBoxId || '';
-                        // البحث عن اسم الصندوق من قائمة الصناديق
-                        const cashBoxObj = Array.isArray(cashBoxes) ? cashBoxes.find(cb => cb.id === cashBoxId) : null;
-                        const cashBoxName = cashBoxObj ? cashBoxObj.nameAr : cashBoxId;
-                        paymentRows += `
-                          <tr>
-                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">نقدي${cashBoxName ? ' - ' + cashBoxName : ''}</td>
-                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.cash.amount || '0').toFixed(2)}</td>
-                          </tr>`;
-                      }
-                      
-                      // البنك
-                      if (multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
-                        const bankId = multiplePayment.bank.bankId || '';
-                        // البحث عن اسم البنك من قائمة البنوك
-                        const bankObj = Array.isArray(banks) ? banks.find(b => b.id === bankId) : null;
-                        const bankName = bankObj ? bankObj.arabicName : bankId;
-                        paymentRows += `
-                          <tr>
-                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">تحويل بنكي${bankName ? ' - ' + bankName : ''}</td>
-                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.bank.amount || '0').toFixed(2)}</td>
-                          </tr>`;
-                      }
-                      
-                      // الشبكة
-                      if (multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
-                        const cardBankId = multiplePayment.card.bankId || '';
-                        // البحث عن اسم البنك من قائمة البنوك
-                        const cardBankObj = Array.isArray(banks) ? banks.find(b => b.id === cardBankId) : null;
-                        const cardBankName = cardBankObj ? cardBankObj.arabicName : cardBankId;
-                        paymentRows += `
-                          <tr>
-                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">شبكة${cardBankName ? ' - ' + cardBankName : ''}</td>
-                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.card.amount || '0').toFixed(2)}</td>
-                          </tr>`;
-                      }
-                      
-                      return paymentRows || `
-                        <tr>
-                          <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">لا توجد بيانات</td>
-                          <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">0.00</td>
-                        </tr>`;
-                    } else {
-                      // طريقة دفع واحدة
-                      let paymentLabel = invoice.paymentMethod || 'غير محدد';
-                      
-                      // إضافة اسم الصندوق النقدي إذا كانت طريقة الدفع نقدي
-                      if (invoice.paymentMethod === 'نقدي' && invoice.cashBox) {
-                        // البحث عن اسم الصندوق من قائمة الصناديق
-                        const cashBoxObj = Array.isArray(cashBoxes) ? cashBoxes.find(cb => cb.id === invoice.cashBox || cb.nameAr === invoice.cashBox) : null;
-                        const cashBoxName = cashBoxObj ? cashBoxObj.nameAr : invoice.cashBox;
-                        paymentLabel = `نقدي - ${cashBoxName}`;
-                      }
-                      
-                      return `
-                        <tr>
-                          <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">${paymentLabel}</td>
-                          <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2) || '0.00'}</td>
-                        </tr>`;
-                    }
-                  })()}
                 </tbody>
               </table>
             </div>
@@ -2948,9 +2854,232 @@ const handlePrint = () => {
     parentId: '' // مهم لربط المستوى الأول
   });
 
+  // دوال إدارة الأصناف
+  const handleAddNewItem = () => {
+    const finalUnit = unit && unit.trim() ? unit : "قطعة";
+    if (
+      !itemCode.trim() ||
+      !itemName.trim() ||
+      !finalUnit.trim() ||
+      !quantity || Number(quantity) <= 0 ||
+      !price || Number(price) <= 0
+    ) {
+      return message.error('يرجى إدخال جميع بيانات الصنف بشكل صحيح');
+    }
+    setAddedItems(items => [...items, { itemCode, itemName, quantity, unit: finalUnit, price, costCenterName }]);
+    setItemCode('');
+    setItemName('');
+    setQuantity('1');
+    setUnit('');
+    setPrice('');
+    setCostCenterName('');
+  };
+
+  // دوال إدارة الإكسل
+  const handleExcelUpload = (info: { file: { status: string; name: string; originFileObj: File } }) => {
+    if (info.file.status === "done") {
+      message.success(`${info.file.name} تم رفع الملف بنجاح`);
+      setExcelFile(info.file.originFileObj);
+      // قراءة ملف الإكسل وتحويله إلى أصناف
+      const reader = new FileReader();
+      reader.onload = (e: ProgressEvent<FileReader>) => {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+        // توقع أن أول صف هو رؤوس الأعمدة أو بيانات مباشرة
+        const items = rows
+          .filter((row: string[]) => Array.isArray(row) && row.length >= 6)
+          .map((row: string[]) => ({
+            itemCode: String(row[0] || ""),
+            itemName: String(row[1] || ""),
+            quantity: String(row[2] || "1"),
+            unit: String(row[3] || "قطعة"),
+            price: String(row[4] || ""),
+            costCenterName: String(row[5] || "")
+          }))
+          .filter(item => item.itemCode && item.itemName && item.quantity && item.unit && item.price);
+        if (!items.length) {
+          message.error("لم يتم العثور على أصناف صالحة في الملف");
+          return;
+        }
+        setAddedItems(prev => [...prev, ...items]);
+      };
+      reader.readAsArrayBuffer(info.file.originFileObj);
+    } else if (info.file.status === "error") {
+      message.error(`${info.file.name} حدث خطأ أثناء رفع الملف`);
+    }
+  };
+
+  // دالة الحفظ والطباعة
+  const handleSaveAndPrint = () => {
+    if (!quotationData.branch) return message.error('يرجى اختيار الفرع');
+    if (!quotationData.warehouse) return message.error('يرجى اختيار المخزن');
+    if (!accountType) return message.error('يرجى اختيار نوع الحساب');
+    if (!quotationData.customerNumber) return message.error('يرجى إدخال رقم الحساب');
+    if (!quotationData.customerName) return message.error('يرجى إدخال اسم الحساب');
+    if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
+
+    // تحويل التواريخ إلى نصوص قبل الحفظ
+    const saveData = {
+      entryNumber: quotationData.entryNumber,
+      periodRange: [
+        periodRange[0] ? periodRange[0].format('YYYY-MM-DD') : null,
+        periodRange[1] ? periodRange[1].format('YYYY-MM-DD') : null
+      ],
+      quotationNumber: quotationData.quotationNumber,
+      date: quotationData.date,
+      refNumber,
+      refDate: refDate ? refDate.format('YYYY-MM-DD') : null,
+      branch: quotationData.branch,
+      warehouse: quotationData.warehouse,
+      movementType,
+      accountType,
+      customerNumber: quotationData.customerNumber,
+      customerName: quotationData.customerName,
+      sideType,
+      sideNumber,
+      sideName,
+      operationClass,
+      statement,
+      items: addedItems
+    };
+    console.log('بيانات الحفظ المرسلة إلى :', saveData);
+    message.success('تم حفظ البيانات بنجاح');
+    setAddedItems([]);
+  };
+
+  // رقم القيد تلقائي
+  const [entryNumber, setEntryNumber] = useState("");
+
+  // توليد رقم قيد تلقائي عند تحميل الصفحة
+  useEffect(() => {
+    // مثال: رقم عشوائي مكون من 8 أرقام ويمكن تعديله حسب النظام
+    const autoNumber = `QU-${Date.now().toString().slice(-6)}`;
+    setEntryNumber(autoNumber);
+  }, []);
+
+  // السنة المالية من السياق
+  const { currentFinancialYear } = useFinancialYear();
+
+  // تعيين الفترة المحاسبية حسب السنة المالية
+  useEffect(() => {
+    if (currentFinancialYear) {
+      const start = dayjs(currentFinancialYear.startDate);
+      const end = dayjs(currentFinancialYear.endDate);
+      setPeriodRange([start, end]);
+    }
+  }, [currentFinancialYear]);
+
+  // رقم عرض السعر تلقائي
+  const [quotationNumber, setQuotationNumber] = useState("");
+
+  // توليد رقم عرض سعر تلقائي عند تحميل الصفحة
+  useEffect(() => {
+    const autoQuotationNumber = `QT-${Date.now().toString().slice(-6)}`;
+    setQuotationNumber(autoQuotationNumber);
+  }, []);
+
+  // تاريخ عرض السعر الافتراضي هو اليوم
+  const [quotationDate, setQuotationDate] = useState(dayjs());
+
+  // جلب بيانات الفروع الحقيقية
+  useEffect(() => {
+    // استخدام بيانات الفروع من الهوك الموجود
+    // setBranches سيتم تحديثها من الهوك
+  }, []);
+
+  // جلب بيانات المخازن الحقيقية
+  useEffect(() => {
+    // استخدام بيانات المخازن من الهوك الموجود
+    // setWarehouses سيتم تحديثها من الهوك
+  }, []);
+
+  // عند تغيير الفرع، فلترة المخازن واختيار أول مخزن مرتبط
+  useEffect(() => {
+    if (!quotationData.branch || !warehouses.length) return;
+    // بعض المخازن قد يكون لها خاصية branch أو branchId أو allowedBranches أو branchCode
+    // سنبحث عن المخزن المرتبط بالفرع المختار
+    const filtered = warehouses.filter(w => {
+      if (w.branch) return w.branch === quotationData.branch;
+      if (w.allowedBranches && Array.isArray(w.allowedBranches)) return w.allowedBranches.includes(quotationData.branch);
+      // دعم branchCode و allowedBranchCodes لو موجودين
+      if ('branchCode' in w && typeof (w as any).branchCode === 'string') return (w as any).branchCode === quotationData.branch;
+      if ('allowedBranchCodes' in w && Array.isArray((w as any).allowedBranchCodes)) return (w as any).allowedBranchCodes.includes(quotationData.branch);
+      return false;
+    });
+    if (filtered.length) {
+      setQuotationData(prev => ({ ...prev, warehouse: filtered[0].id }));
+    } else {
+      setQuotationData(prev => ({ ...prev, warehouse: '' }));
+    }
+  }, [quotationData.branch, warehouses]);
+
+  // جلب بيانات العملاء الحقيقية
+  useEffect(() => {
+    if (showAccountModal && accountModalType === "عميل") {
+      // استخدام customers من الهوك
+      setCustomerAccounts(customers.map(acc => ({
+        code: acc.id || '',
+        nameAr: acc.nameAr || acc.name || '',
+        mobile: acc.mobile || acc.phone || '',
+        taxNumber: acc.taxFileNumber || acc.taxFile || ''
+      })));
+    }
+  }, [showAccountModal, accountModalType, customers]);
+
+  // جلب بيانات الموردين الحقيقية
+  useEffect(() => {
+    if (showAccountModal && accountModalType === "مورد") {
+      // هنا يمكن إضافة جلب بيانات الموردين إذا كانت متوفرة
+      setSupplierAccounts([]);
+    }
+  }, [showAccountModal, accountModalType]);
+
+  // عند تغيير التبويب لصنف جديد، اجعل الكمية 1
+  useEffect(() => {
+    if (activeTab === "new") {
+      setQuantity("1");
+    }
+  }, [activeTab]);
+
+  // أعمدة الجدول
+  const itemColumns = [
+    { title: 'رقم الصنف', dataIndex: 'itemCode', key: 'itemCode', width: 100 },
+    { title: 'اسم الصنف', dataIndex: 'itemName', key: 'itemName', width: 150 },
+    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', width: 80 },
+    { title: 'الوحدة', dataIndex: 'unit', key: 'unit', width: 80 },
+    { title: 'السعر', dataIndex: 'price', key: 'price', width: 100 },
+    { title: 'مركز التكلفة', dataIndex: 'costCenterName', key: 'costCenterName', width: 120 },
+    { 
+      title: 'إجراءات', 
+      key: 'actions', 
+      width: 80, 
+      render: (_: unknown, record: { itemCode: string }, idx: number) => (
+        <Button danger size="small" onClick={() => {
+          setAddedItems(items => items.filter((_, i) => i !== idx));
+        }}>حذف</Button>
+      ) 
+    }
+  ];
+
+  // ستايل مشابه لسند القبض
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: "8px 16px",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.07)",
+    background: "#fff",
+    border: "1.5px solid #d9d9d9",
+    transition: "border-color 0.3s",
+  };
+  const labelStyle = { fontSize: 18, fontWeight: 500 };
+
   const handleAddItem = async () => {
     // التحقق من وجود مخازن متاحة للمبيعات
-    const availableWarehouses = filterWarehousesForSales(warehouses, invoiceData.branch);
+    const availableWarehouses = filterWarehousesForSales(warehouses, quotationData.branch);
     if (availableWarehouses.length === 0) {
       if (typeof message !== 'undefined' && message.warning) {
         message.warning('لا توجد مخازن متاحة للمبيعات. يرجى التحقق من صلاحيات المخازن.');
@@ -2984,91 +3113,435 @@ const handlePrint = () => {
   };
 
   return (
-    <div className="p-2 sm:p-6 w-full max-w-none">
-      {/* إضافة الأنماط للرسائل الاحترافية */}
-      <style>{`
-        @keyframes slideInRight {
-          0% {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          100% {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        
-        @keyframes progressBar {
-          0% {
-            width: 100%;
-          }
-          100% {
-            width: 0%;
-          }
-        }
-        
-        .notification-container {
-          animation: slideInRight 0.3s ease-out;
-        }
-        
-        .notification-container:hover .progress-bar {
-          animation-play-state: paused;
-        }
-      `}</style>
+    <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
+      <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
+        <div className="flex items-center">
+          <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-blue-600 ml-1 sm:ml-3" />
+          <h1 className="text-lg sm:text-2xl font-bold text-gray-800">إضافة عرض سعر</h1>
+        </div>
+        <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة وعرض عروض الأسعار</p>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-blue-500"></div>
+      </div>
+      
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة المبيعات", to: "/management/sales" },
+          { label: "عروض الأسعار", to: "/stores/quotations" },
+          { label: "إضافة عرض سعر" }
+        ]}
+      />
 
-      {/* منطقة عرض الرسائل الاحترافية */}
-      {notifications.length > 0 && (
-        <div style={{ 
-          position: 'fixed',
-          top: 20,
-          right: 20,
-          zIndex: 9999,
-          maxWidth: 400,
-          direction: 'rtl'
-        }}>
-          {notifications.map((notification) => (
-            <div
-              key={notification.id}
-              className="notification-container"
-              style={{
-                marginBottom: 12,
-                padding: '16px 20px',
-                borderRadius: 12,
-                background: notification.type === 'success' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' :
-                          notification.type === 'error' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' :
-                          notification.type === 'warning' ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' :
-                          'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                color: 'white',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                backdropFilter: 'blur(10px)',
-                position: 'relative',
-                overflow: 'hidden',
-                cursor: 'pointer'
-              }}
+      <div className="bg-white rounded-lg shadow-lg p-6 space-y-4">
+        <div className="grid grid-cols-4 gap-6 mb-4">
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>رقم القيد</label>
+            <Input value={entryNumber} disabled placeholder="رقم القيد تلقائي" style={largeControlStyle} size="large" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>الفترة المحاسبية</label>
+            <DatePicker.RangePicker
+              value={periodRange}
+              onChange={setPeriodRange}
+              format="YYYY-MM-DD"
+              placeholder={["من تاريخ", "إلى تاريخ"]}
+              style={largeControlStyle}
+              size="large"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>رقم عرض السعر</label>
+            <Input value={quotationNumber} disabled placeholder="رقم عرض السعر تلقائي" style={largeControlStyle} size="large" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>تاريخ عرض السعر</label>
+            <DatePicker value={quotationDate} onChange={setQuotationDate} format="YYYY-MM-DD" placeholder="تاريخ عرض السعر" style={largeControlStyle} size="large" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-4">
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>رقم المرجع</label>
+            <Input value={refNumber} onChange={e => setRefNumber(e.target.value)} placeholder="رقم المرجع" style={largeControlStyle} size="large" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>تاريخ المرجع</label>
+            <DatePicker value={refDate} onChange={setRefDate} format="YYYY-MM-DD" placeholder="تاريخ المرجع" style={largeControlStyle} size="large" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>الفرع</label>
+            <Select
+              value={quotationData.branch}
+              onChange={(value) => setQuotationData(prev => ({ ...prev, branch: value }))}
+              placeholder="اختر الفرع"
+              allowClear
+              style={largeControlStyle}
+              size="large"
+              showSearch
+              optionFilterProp="children"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
             >
-              {/* خط التقدم */}
-              <div
-                className="progress-bar"
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  height: 3,
-                  background: 'rgba(255,255,255,0.5)',
-                  animation: 'progressBar 5s linear forwards',
-                  borderRadius: '0 0 12px 12px'
-                }}
+              {branches.map(b => (
+                <Select.Option key={b.id} value={b.id}>
+                  {b.name || b.branchNumber || b.code}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>المخزن</label>
+            <Select
+              value={quotationData.warehouse}
+              onChange={(value) => setQuotationData(prev => ({ ...prev, warehouse: value }))}
+              placeholder="اختر المخزن"
+              allowClear
+              style={largeControlStyle}
+              size="large"
+              showSearch
+              optionFilterProp="children"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
+            >
+              {warehouses.map(w => (
+                <Select.Option key={w.id} value={w.id}>
+                  {w.name || w.nameAr || w.nameEn}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-4">
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>نوع الحركة</label>
+            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} size="large"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
+            >
+              <Select.Option value="عرض سعر">عرض سعر - Quotation</Select.Option>
+              <Select.Option value="عرض سعر مبدئي">عرض سعر مبدئي - Preliminary Quote</Select.Option>
+              <Select.Option value="عرض سعر نهائي">عرض سعر نهائي - Final Quote</Select.Option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>نوع الحساب</label>
+            <Select value={accountType} onChange={setAccountType} placeholder="اختر نوع الحساب" allowClear style={largeControlStyle} size="large"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
+            >
+              <Select.Option value="عميل">عميل</Select.Option>
+              <Select.Option value="عميل محتمل">عميل محتمل</Select.Option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>رقم الحساب</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Input 
+                value={quotationData.customerNumber} 
+                onChange={e => setQuotationData(prev => ({ ...prev, customerNumber: e.target.value }))} 
+                placeholder="رقم الحساب" 
+                style={largeControlStyle} 
+                size="large"
+                suffix={
+                  <button
+                    type="button"
+                    style={{
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: 32,
+                      width: 32,
+                      border: 'none',
+                      background: 'transparent'
+                    }}
+                    onClick={() => {
+                      setAccountModalType(accountType || "عميل");
+                      setShowAccountModal(true);
+                    }}
+                  >
+                    <SearchOutlined style={{ color: '#0074D9' }} />
+                  </button>
+                }
               />
-              
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                {/* أيقونة */}
-                <div style={{
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                  borderRadius: '50%',
-                  padding: 8,
-                  display: 'flex',
-                  alignItems: 'center',
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>اسم الحساب</label>
+            <Input 
+              value={quotationData.customerName} 
+              onChange={e => setQuotationData(prev => ({ ...prev, customerName: e.target.value }))} 
+              placeholder="اسم الحساب" 
+              style={largeControlStyle} 
+              size="large"
+              suffix={
+                <button
+                  type="button"
+                  style={{
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: 32,
+                    width: 32,
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0
+                  }}
+                  onClick={() => {
+                    setAccountModalType(accountType || "عميل");
+                    setShowAccountModal(true);
+                  }}
+                >
+                  <GiMagicBroom size={26} color="#0074D9" />
+                </button>
+              }
+            />
+          </div>
+
+          {/* مودال البحث عن الحساب */}
+          <Modal
+            open={showAccountModal}
+            onCancel={() => setShowAccountModal(false)}
+            footer={null}
+            title={accountModalType === "عميل" ? "بحث عن عميل" : "بحث عن عميل محتمل"}
+            width={600}
+          >
+            <Input
+              placeholder="بحث بالاسم أو رقم الحساب..."
+              value={accountSearch}
+              onChange={e => setAccountSearch(e.target.value)}
+              style={{ marginBottom: 12, fontSize: 17, borderRadius: 8, padding: '8px 12px' }}
+              allowClear
+            />
+            <Table
+              dataSource={customerAccounts.filter(acc =>
+                acc.code.includes(accountSearch) || acc.nameAr.includes(accountSearch) || (acc.mobile && acc.mobile.includes(accountSearch))
+              )}
+              columns={[
+                { title: 'رقم الحساب', dataIndex: 'code', key: 'code', width: 120 },
+                { title: 'اسم الحساب', dataIndex: 'nameAr', key: 'nameAr' },
+                { title: 'جوال العميل', dataIndex: 'mobile', key: 'mobile', width: 140, render: (text: any) => text || '-' },
+                { title: 'الرقم الضريبي', dataIndex: 'taxNumber', key: 'taxNumber', width: 160, render: (text: any) => text || '-' }
+              ]}
+              rowKey="code"
+              pagination={{ pageSize: 8 }}
+              size="small"
+              bordered
+              onRow={record => ({
+                onClick: () => {
+                  setQuotationData(prev => ({
+                    ...prev,
+                    customerNumber: record.code,
+                    customerName: record.nameAr
+                  }));
+                  setShowAccountModal(false);
+                },
+                style: { cursor: 'pointer' }
+              })}
+            />
+          </Modal>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-4">
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>نوع الجهة</label>
+            <Select value={sideType} onChange={setSideType} placeholder="اختر نوع الجهة" allowClear style={largeControlStyle} size="large"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
+            >
+              <Select.Option value="موظف">موظف</Select.Option>
+              <Select.Option value="إدارة/قسم">إدارة / قسم</Select.Option>
+              <Select.Option value="مشروع">مشروع</Select.Option>
+              <Select.Option value="موقع">موقع</Select.Option>
+              <Select.Option value="جهة أخرى">جهة أخرى</Select.Option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>رقم الجهة</label>
+            <Input value={sideNumber} onChange={e => setSideNumber(e.target.value)} placeholder="رقم الجهة" style={largeControlStyle} size="large" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>اسم الجهة</label>
+            <Input value={sideName} onChange={e => setSideName(e.target.value)} placeholder="اسم الجهة" style={largeControlStyle} size="large" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>تصنيف العملية</label>
+            <Select value={operationClass} onChange={setOperationClass} placeholder="اختر التصنيف" allowClear style={largeControlStyle} size="large"
+              className={`${styles.dropdown} ${styles.noAntBorder}`}
+            >
+              <Select.Option value="إنشاء عرض سعر">إنشاء عرض سعر</Select.Option>
+              <Select.Option value="تجديد عرض سعر">تجديد عرض سعر</Select.Option>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-4">
+          <div className="flex flex-col gap-2 col-span-3">
+            <label style={labelStyle}>البيان</label>
+            <Input.TextArea value={statement} onChange={e => setStatement(e.target.value)} placeholder="البيان" rows={2} style={{ ...largeControlStyle, minHeight: 48 }} />
+          </div>
+        </div>
+      </div>
+
+      {/* الأصناف */}
+      <div className="bg-white rounded-lg shadow-lg p-6 space-y-4">
+        <div className="flex items-center mb-4">
+          <span className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold ml-3">ص</span>
+          <h2 className="text-xl font-bold text-gray-800">الأصناف</h2>
+        </div>
+        
+        <Tabs activeKey={activeTab} onChange={setActiveTab}>
+          <TabPane tab="صنف جديد" key="new">
+            <div className="flex flex-row flex-wrap gap-4 items-end">
+              <div className="flex flex-col gap-1">
+                <Input
+                  value={itemCode}
+                  onChange={e => setItemCode(e.target.value)}
+                  placeholder="رقم الصنف"
+                  style={{ ...largeControlStyle, width: 200 }}
+                  size="large"
+                  suffix={
+                    <button
+                      type="button"
+                      style={{
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 32,
+                        width: 32,
+                        border: 'none',
+                        background: 'transparent'
+                      }}
+                      onClick={() => setShowItemModal(true)}
+                    >
+                      <SearchOutlined style={{ color: '#0074D9' }} />
+                    </button>
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Input
+                  value={itemName}
+                  onChange={e => setItemName(e.target.value)}
+                  placeholder="اسم الصنف"
+                  style={{ ...largeControlStyle, width: 200 }}
+                  size="large"
+                />
+                <ItemSearchModal
+                  open={showItemModal}
+                  onClose={() => setShowItemModal(false)}
+                  onSelect={item => {
+                    setItemCode(item.itemCode || '');
+                    setItemName(item.name);
+                    setPrice(item.salePrice?.toString() || '');
+                    setShowItemModal(false);
+                  }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Input type="number" min={1} value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="الكمية" style={{...largeControlStyle, width: 90}} size="large" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Select
+                  showSearch
+                  value={unit}
+                  onChange={(value) => setUnit(value)}
+                  style={{ width: 120, fontFamily: 'Cairo, sans-serif' }}
+                  placeholder="الوحدة"
+                  options={units.map(unit => ({ 
+                    label: unit, 
+                    value: unit 
+                  }))}
+                  size="large"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="السعر" style={{...largeControlStyle, width: 110}} size="large" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Input value={costCenterName} onChange={e => setCostCenterName(e.target.value)} placeholder="اسم مركز التكلفة" style={largeControlStyle} size="large" />
+              </div>
+              <Button type="primary" className="bg-blue-600" style={{ height: 48, fontSize: 18, borderRadius: 8, marginRight: 0 }} onClick={handleAddNewItem}>إضافة الصنف</Button>
+            </div>
+
+            {/* جدول الأصناف المضافة */}
+            <div className="mt-8">
+              <Table
+                dataSource={addedItems}
+                columns={itemColumns}
+                rowKey={(record, idx) => idx?.toString() || '0'}
+                pagination={false}
+                bordered
+                locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+              />
+            </div>
+          </TabPane>
+          
+          <TabPane tab="استيراد من ملف إكسل" key="excel">
+            <div className="flex flex-col gap-4 items-start">
+              <label style={labelStyle}>رفع ملف إكسل</label>
+              <Upload 
+                name="excel"
+                accept=".xlsx,.xls"
+                showUploadList={false}
+                customRequest={({ file, onSuccess }) => {
+                  setTimeout(() => {
+                    onSuccess?.(null);
+                  }, 0);
+                }}
+                onChange={handleExcelUpload}
+              >
+                <Button icon={<PlusOutlined />} style={{...largeControlStyle, display: 'flex', alignItems: 'center', gap: 8}}>
+                  اختر ملف إكسل
+                </Button>
+              </Upload>
+              <div style={{marginTop: 8, color: '#d97706', fontSize: 16, fontWeight: 500, background: '#fffbe6', borderRadius: 6, padding: '8px 12px', border: '1px solid #ffe58f', display: 'flex', alignItems: 'center', gap: 8}}>
+                ⚠️ يجب أن يحتوي ملف الإكسل على الأعمدة التالية بالترتيب: رقم كود الصنف، اسم الصنف، الكمية، الوحدة، السعر، مركز التكلفة
+              </div>
+              {excelFile && (
+                <div style={{color: '#16a34a', fontSize: 14, fontWeight: 500}}>
+                  ✅ تم رفع الملف: {excelFile.name}
+                </div>
+              )}
+            </div>
+
+            {/* جدول الأصناف المضافة */}
+            <div className="mt-8">
+              <Table
+                dataSource={addedItems}
+                columns={itemColumns}
+                rowKey={(record, idx) => idx?.toString() || '0'}
+                pagination={false}
+                bordered
+                locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+              />
+            </div>
+          </TabPane>
+        </Tabs>
+
+        {/* أزرار الحفظ والطباعة */}
+        <div className="flex gap-4 mt-8 justify-center">
+          <Button 
+            type="primary" 
+            size="large" 
+            onClick={handleSaveAndPrint}
+            style={{
+              height: 48,
+              fontSize: 18,
+              borderRadius: 8,
+              padding: '0 32px',
+              backgroundColor: '#1890ff',
+              borderColor: '#1890ff'
+            }}
+            icon={<SaveOutlined />}
+          >
+            حفظ وطباعة
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
                   justifyContent: 'center',
                   minWidth: 32,
                   height: 32
@@ -3165,18 +3638,17 @@ const handlePrint = () => {
       <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
           <FileText className="h-8 w-8 text-blue-600 ml-3" />
-          <h1 className="text-2xl font-bold text-gray-800">فاتورة مبيعات</h1>
+          <h1 className="text-2xl font-bold text-gray-800">عرض السعر</h1>
         </div>
-        <p className="text-gray-600 mt-2">إدارة فاتورة المبيعات</p>
+        <p className="text-gray-600 mt-2">إدارة عرض السعر</p>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
 
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-                      { label: "إدارة المبيعات", to: "/management/sales" },
-
-          { label: "فاتورة مبيعات" }
+          { label: "إدارة المبيعات", to: "/management/sales" },
+          { label: "عرض السعر" }
         ]}
       />
       <Spin spinning={fetchingItems}>
@@ -3186,12 +3658,12 @@ const handlePrint = () => {
           title={
             <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 rounded-lg">
               <Select
-                value={invoiceType}
+                value={quotationType}
                 style={{ minWidth: 170, height: 38 }}
-                onChange={setInvoiceType}
+                onChange={setQuotationType}
                 size="middle"
                 placeholder="نوع الفاتورة"
-                disabled={!!invoiceData.branch}
+                disabled={!!quotationData.branch}
                 options={[
                   { label: 'ضريبة مبسطة', value: 'ضريبة مبسطة' },
                   { label: 'ضريبة', value: 'ضريبة' }
@@ -3204,7 +3676,7 @@ const handlePrint = () => {
                 onChange={setWarehouseMode}
                 size="middle"
                 placeholder="نظام المخزن"
-                disabled={!!invoiceData.branch}
+                disabled={!!quotationData.branch}
                 options={[
                   { label: 'مخزن واحد', value: 'single' },
                   { label: 'مخازن متعددة', value: 'multiple' }
@@ -3216,9 +3688,9 @@ const handlePrint = () => {
                 style={{ minWidth: 170, height: 38, fontFamily: 'sans-serif' }}
                 onChange={async (value) => {
                   setPriceType(value);
-                  if (value === 'آخر سعر العميل' && item.itemName && invoiceData.customerName) {
+                  if (value === 'آخر سعر العميل' && item.itemName && quotationData.customerName) {
                     try {
-                      const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, item.itemName);
+                      const lastPrice = await fetchLastCustomerPrice(quotationData.customerName, item.itemName);
                       if (lastPrice) {
                         setItem(prev => ({ ...prev, price: String(lastPrice) }));
                         customMessage.success('تم تطبيق آخر سعر للعميل بنجاح');
@@ -3306,10 +3778,10 @@ const handlePrint = () => {
           
           <Row gutter={16} className="mb-4">
             <Col xs={24} sm={12} md={6}>
-              <Form.Item label="رقم الفاتورة">
+              <Form.Item label="رقم عرض السعر">
                 <Input
-                  value={invoiceData.invoiceNumber || ''}
-                  placeholder="رقم الفاتورة"
+                  value={quotationData.quotationNumber || ''}
+                  placeholder="رقم عرض السعر"
                   disabled
                 />
               </Form.Item>
@@ -3318,7 +3790,7 @@ const handlePrint = () => {
               <Form.Item label="رقم القيد">
                 <Input 
                   name="entryNumber"
-                  value={invoiceData.entryNumber}
+                  value={quotationData.entryNumber}
                   disabled
                   placeholder="رقم القيد" 
                 />
@@ -3328,60 +3800,60 @@ const handlePrint = () => {
               <Form.Item label="التاريخ">
                 <DatePicker
                   style={{ width: '100%' }}
-                  value={invoiceData.date ? dayjs(invoiceData.date) : null}
+                  value={quotationData.date ? dayjs(quotationData.date) : null}
                   onChange={(date, dateString) => {
                     const newDate = Array.isArray(dateString) ? dateString[0] : dateString as string;
                     
                     // التحقق من صحة التاريخ
-                    if (newDate && !handleDateValidation(newDate, 'تاريخ الفاتورة')) {
+                    if (newDate && !handleDateValidation(newDate, 'تاريخ عرض السعر')) {
                       return; // لا تحديث التاريخ إذا كان خارج النطاق
                     }
                     
-                    setInvoiceData({
-                      ...invoiceData, 
+                    setQuotationData({
+                      ...quotationData, 
                       date: newDate,
-                      dueDate: calculateDueDate(newDate) // حساب تاريخ الاستحقاق تلقائياً
+                      validUntil: calculateValidUntilDate(newDate) // حساب تاريخ انتهاء الصلاحية تلقائياً
                     });
                   }}
                   format="YYYY-MM-DD"
                   placeholder="التاريخ"
                   disabledDate={disabledDate}
-                  status={invoiceData.date && !validateDate(invoiceData.date) ? 'error' : undefined}
+                  status={quotationData.date && !validateDate(quotationData.date) ? 'error' : undefined}
                 />
-                {invoiceData.date && !validateDate(invoiceData.date) && (
+                {quotationData.date && !validateDate(quotationData.date) && (
                   <div style={{ color: '#ff4d4f', fontSize: '12px', marginTop: '4px' }}>
-                    {getDateValidationMessage(invoiceData.date)}
+                    {getDateValidationMessage(quotationData.date)}
                   </div>
                 )}
               </Form.Item>
             </Col>
 
             <Col xs={24} sm={12} md={6}>
-              <Form.Item label="تاريخ الاستحقاق">
+              <Form.Item label="صالح حتى">
                 <DatePicker
                   style={{ width: '100%' }}
-                  value={invoiceData.dueDate ? dayjs(invoiceData.dueDate) : null}
+                  value={quotationData.validUntil ? dayjs(quotationData.validUntil) : null}
                   onChange={(date, dateString) => {
-                    const newDueDate = Array.isArray(dateString) ? dateString[0] : dateString as string;
+                    const newValidUntil = Array.isArray(dateString) ? dateString[0] : dateString as string;
                     
                     // التحقق من صحة التاريخ
-                    if (newDueDate && !handleDateValidation(newDueDate, 'تاريخ الاستحقاق')) {
+                    if (newValidUntil && !handleDateValidation(newValidUntil, 'تاريخ انتهاء الصلاحية')) {
                       return; // لا تحديث التاريخ إذا كان خارج النطاق
                     }
                     
-                    setInvoiceData({
-                      ...invoiceData, 
-                      dueDate: newDueDate
+                    setQuotationData({
+                      ...quotationData, 
+                      validUntil: newValidUntil
                     });
                   }}
                   format="YYYY-MM-DD"
-                  placeholder="تاريخ الاستحقاق"
+                  placeholder="صالح حتى"
                   disabledDate={disabledDate}
-                  status={invoiceData.dueDate && !validateDate(invoiceData.dueDate) ? 'error' : undefined}
+                  status={quotationData.validUntil && !validateDate(quotationData.validUntil) ? 'error' : undefined}
                 />
-                {invoiceData.dueDate && !validateDate(invoiceData.dueDate) && (
+                {quotationData.validUntil && !validateDate(quotationData.validUntil) && (
                   <div style={{ color: '#ff4d4f', fontSize: '12px', marginTop: '4px' }}>
-                    {getDateValidationMessage(invoiceData.dueDate)}
+                    {getDateValidationMessage(quotationData.validUntil)}
                   </div>
                 )}
               </Form.Item>
@@ -3393,10 +3865,10 @@ const handlePrint = () => {
               <Form.Item label="البائع">
                 <Select
                   showSearch
-                  value={invoiceData.delegate}
+                  value={quotationData.delegate}
                   onChange={value => {
                     console.log('تم اختيار مندوب جديد:', value);
-                    setInvoiceData({ ...invoiceData, delegate: value });
+                    setQuotationData({ ...quotationData, delegate: value });
                   }}
                   placeholder="اختر البائع"
                   style={{ fontFamily: 'Cairo, sans-serif' }}
@@ -3426,11 +3898,11 @@ const handlePrint = () => {
               <Form.Item label="الفرع">
                 <Select
                   showSearch
-                  value={invoiceData.branch}
+                  value={quotationData.branch}
                   onChange={async (value) => {
                     try {
                       setBranchCode('');
-                      const invoiceNumber = await generateInvoiceNumberAsync(value, branches);
+                      const quotationNumber = await generateQuotationNumberAsync(value, branches);
                       
                       // البحث عن المخزن المرتبط بالفرع المحدد من المخازن المفلترة
                       const filteredWarehouses = filterWarehousesForSales(warehouses, value);
@@ -3443,11 +3915,11 @@ const handlePrint = () => {
                       console.log('المخزن المرتبط:', linkedWarehouse);
                       console.log('معرف المخزن المحدد:', selectedWarehouse);
                       
-                      setInvoiceData(prev => ({
+                      setQuotationData(prev => ({
                         ...prev,
                         branch: value,
                         warehouse: selectedWarehouse,
-                        invoiceNumber
+                        quotationNumber
                       }));
                       
                       // إعادة تعيين المخزن في الـ item أيضاً في حالة المخازن المتعددة
@@ -3486,25 +3958,25 @@ const handlePrint = () => {
                 <Form.Item label="المخزن">
                   <Select
                     showSearch
-                    value={invoiceData.warehouse}
-                    onChange={(value) => setInvoiceData({...invoiceData, warehouse: value})}
-                    disabled={filterWarehousesForSales(warehouses, invoiceData.branch).length === 0}
+                    value={quotationData.warehouse}
+                    onChange={(value) => setQuotationData({...quotationData, warehouse: value})}
+                    disabled={filterWarehousesForSales(warehouses, quotationData.branch).length === 0}
                     placeholder="اختر المخزن"
                     style={{ fontFamily: 'Cairo, sans-serif' }}
                     filterOption={(input, option) =>
                       String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                     }
-                    options={filterWarehousesForSales(warehouses, invoiceData.branch)
+                    options={filterWarehousesForSales(warehouses, quotationData.branch)
                       .sort((a, b) => {
                         // ترتيب المخازن: المرتبطة بالفرع أولاً
-                        const aLinked = a.branch === invoiceData.branch;
-                        const bLinked = b.branch === invoiceData.branch;
+                        const aLinked = a.branch === quotationData.branch;
+                        const bLinked = b.branch === quotationData.branch;
                         if (aLinked && !bLinked) return -1;
                         if (!aLinked && bLinked) return 1;
                         return 0;
                       })
                       .map(warehouse => {
-                        const isLinkedToBranch = warehouse.branch === invoiceData.branch;
+                        const isLinkedToBranch = warehouse.branch === quotationData.branch;
                         return {
                           label: (
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3531,7 +4003,7 @@ const handlePrint = () => {
                       })}
                   />
                   {/* رسالة إعلامية عند عدم وجود مخازن متاحة */}
-                  {filterWarehousesForSales(warehouses, invoiceData.branch).length === 0 && warehouses.length > 0 && (
+                  {filterWarehousesForSales(warehouses, quotationData.branch).length === 0 && warehouses.length > 0 && (
                     <div style={{ 
                       marginTop: 8, 
                       padding: 8, 
@@ -3564,12 +4036,12 @@ const handlePrint = () => {
                 <Space.Compact style={{ display: 'flex', width: '100%' }}>
                   <Select
                     showSearch
-                    value={invoiceData.customerName}
+                    value={quotationData.customerName}
                     placeholder="اسم العميل"
                     onChange={(value) => {
                       const selected = customers.find(c => c.nameAr === value);
-                      setInvoiceData({
-                        ...invoiceData,
+                      setQuotationData({
+                        ...quotationData,
                         customerName: value || '',
                         customerNumber: selected ? (selected.phone || selected.mobile || selected.phoneNumber || '') : '',
                         commercialRecord: selected ? (selected.commercialReg || '') : '',
@@ -3622,7 +4094,7 @@ const handlePrint = () => {
               <Form.Item label="رقم العميل">
                 <Input
                   id="customerNumber"
-                  value={invoiceData.customerNumber}
+                  value={quotationData.customerNumber}
                   placeholder="رقم العميل"
                   disabled
                 />
@@ -3633,7 +4105,7 @@ const handlePrint = () => {
 
 
           {/* معلومات الضريبة (للفاتورة الضريبية فقط) */}
-          {invoiceType === 'ضريبة' && (
+          {quotationType === 'ضريبة' && (
             <>
               <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
                 المعلومات الضريبية
@@ -3643,7 +4115,7 @@ const handlePrint = () => {
                   <Form.Item label="السجل التجاري">
                     <Input
                       id="commercialRecord"
-                      value={invoiceData.commercialRecord}
+                      value={quotationData.commercialRecord}
                       placeholder="السجل التجاري"
                       disabled
                     />
@@ -3653,7 +4125,7 @@ const handlePrint = () => {
                   <Form.Item label="الملف الضريبي">
                     <Input
                       id="taxFile"
-                      value={invoiceData.taxFile}
+                      value={quotationData.taxFile}
                       placeholder="الملف الضريبي"
                       disabled
                     />
@@ -3706,7 +4178,7 @@ const handlePrint = () => {
                     fontFamily: 'Cairo, sans-serif',
                     lineHeight: 1.4
                   }}>
-                    {!invoiceData.branch && (
+                    {!quotationData.branch && (
                       <span style={{ color: '#dc3545', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
@@ -3714,7 +4186,7 @@ const handlePrint = () => {
                         يرجى اختيار الفرع أولاً
                       </span>
                     )}
-                    {invoiceData.branch && !invoiceData.customerName && (
+                    {quotationData.branch && !quotationData.customerName && (
                       <span style={{ color: '#fd7e14', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
@@ -3722,7 +4194,7 @@ const handlePrint = () => {
                         يرجى اختيار العميل
                       </span>
                     )}
-                    {warehouseMode !== 'multiple' && invoiceData.branch && !invoiceData.warehouse && (
+                    {warehouseMode !== 'multiple' && quotationData.branch && !quotationData.warehouse && (
                       <span style={{ color: '#fd7e14', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
@@ -3730,8 +4202,8 @@ const handlePrint = () => {
                         يرجى اختيار المخزن
                       </span>
                     )}
-                    {invoiceData.branch && invoiceData.customerName && 
-                     (warehouseMode === 'multiple' || invoiceData.warehouse) && (
+                    {quotationData.branch && quotationData.customerName && 
+                     (warehouseMode === 'multiple' || quotationData.warehouse) && (
                       <span style={{ color: '#198754', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
@@ -3745,51 +4217,7 @@ const handlePrint = () => {
                           <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 10.95 5.16-1.21 9-5.4 9-10.95V7L12 2z"/>
                           <path d="M10 14l-3-3 1.41-1.41L10 11.17l5.59-5.58L17 7l-7 7z" fill="white"/>
                         </svg>
-                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - يرجى اختيار طريقة الدفع
-                      </span>
-                    )}
-                    {items.length > 0 && invoiceData.paymentMethod && (
-                      <span style={{ color: '#198754', fontWeight: 500, marginLeft: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                        </svg>
-                        تم اختيار طريقة الدفع - الفاتورة جاهزة للحفظ
-                      </span>
-                    )}
-                    {multiplePaymentMode && items.length > 0 && (
-                      <span style={{ 
-                        color: Math.abs(
-                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 ? '#dc2626' : '#059669', 
-                        fontWeight: 500, 
-                        marginLeft: 16, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 6 
-                      }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          {Math.abs(
-                            (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                             parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                             parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                          ) > 0.01 ? (
-                            <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                          ) : (
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                          )}
-                        </svg>
-                        المتبقي: {(totals.afterTax - (
-                          parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                          parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                        )).toFixed(2)} ر.س
-                        {Math.abs(
-                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 && ' - يجب أن يكون 0.00 للحفظ'}
+                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - جاهز للحفظ
                       </span>
                     )}
                   </div>
@@ -3867,8 +4295,8 @@ const handlePrint = () => {
                       }
                       
                       let price = selected && selected.salePrice ? String(selected.salePrice) : '';
-                      if (priceType === 'آخر سعر العميل' && invoiceData.customerName) {
-                        const lastPrice = await fetchLastCustomerPrice(invoiceData.customerName, value);
+                      if (priceType === 'آخر سعر العميل' && quotationData.customerName) {
+                        const lastPrice = await fetchLastCustomerPrice(quotationData.customerName, value);
                         if (lastPrice) price = String(lastPrice);
                       }
                       
@@ -3888,7 +4316,7 @@ const handlePrint = () => {
                       }
                       
                       // إظهار رسالة معلوماتية عن الرصيد المتاح
-                      const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                      const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
                       if (currentWarehouse) {
                         let currentStock;
                         if (warehouseMode === 'single') {
@@ -3924,7 +4352,7 @@ const handlePrint = () => {
                     allowClear
                   >
                     {itemNames.map((i, index) => {
-                      const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                      const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
                       const stockKey = warehouseMode === 'single' ? i.name : `${i.name}-${currentWarehouse}`;
                       const stock = currentWarehouse ? itemStocks[stockKey] : undefined;
                       
@@ -4325,17 +4753,17 @@ const handlePrint = () => {
                       await fetchSingleItemStock(item.itemName, value);
                     }
                   }}
-                  options={filterWarehousesForSales(warehouses, invoiceData.branch)
+                  options={filterWarehousesForSales(warehouses, quotationData.branch)
                     .sort((a, b) => {
                       // ترتيب المخازن: المرتبطة بالفرع أولاً
-                      const aLinked = a.branch === invoiceData.branch;
-                      const bLinked = b.branch === invoiceData.branch;
+                      const aLinked = a.branch === quotationData.branch;
+                      const bLinked = b.branch === quotationData.branch;
                       if (aLinked && !bLinked) return -1;
                       if (!aLinked && bLinked) return 1;
                       return 0;
                     })
                     .map(warehouse => {
-                      const isLinkedToBranch = warehouse.branch === invoiceData.branch;
+                      const isLinkedToBranch = warehouse.branch === quotationData.branch;
                       return {
                         label: (
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4366,7 +4794,7 @@ const handlePrint = () => {
                   allowClear
                 />
                 {/* رسالة إعلامية عند عدم وجود مخازن متاحة في وضع المخازن المتعددة */}
-                {filterWarehousesForSales(warehouses, invoiceData.branch).length === 0 && warehouses.length > 0 && (
+                {filterWarehousesForSales(warehouses, quotationData.branch).length === 0 && warehouses.length > 0 && (
                   <div style={{ 
                     marginTop: 4, 
                     padding: 6, 
@@ -4389,7 +4817,7 @@ const handlePrint = () => {
                 onChange={handleItemChange}
                 placeholder={(() => {
                   if (!item.itemName) return "الكمية";
-                  const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                  const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
                   if (!currentWarehouse) return "اختر المخزن";
                   const stockKey = warehouseMode === 'single' ? item.itemName : `${item.itemName}-${currentWarehouse}`;
                   const stock = itemStocks[stockKey];
@@ -4403,7 +4831,7 @@ const handlePrint = () => {
                   fontSize: 15,
                   borderColor: (() => {
                     if (!item.itemName) return undefined;
-                    const currentWarehouse = warehouseMode === 'single' ? invoiceData.warehouse : item.warehouseId;
+                    const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
                     if (!currentWarehouse) return undefined;
                     const stockKey = warehouseMode === 'single' ? item.itemName : `${item.itemName}-${currentWarehouse}`;
                     const stock = itemStocks[stockKey];
@@ -4474,10 +4902,10 @@ const handlePrint = () => {
                 type="primary"
                 onClick={handleAddItem}
                 disabled={
-                  !invoiceData.branch ||
-                  (warehouseMode !== 'multiple' && !invoiceData.warehouse) ||
-                  !invoiceData.customerName ||
-                  filterWarehousesForSales(warehouses, invoiceData.branch).length === 0
+                  !quotationData.branch ||
+                  (warehouseMode !== 'multiple' && !quotationData.warehouse) ||
+                  !quotationData.customerName ||
+                  filterWarehousesForSales(warehouses, quotationData.branch).length === 0
                 }
                 style={{
                   backgroundColor: editingItemIndex !== null ? '#52c41a' : '#1890ff',
@@ -4607,787 +5035,11 @@ const handlePrint = () => {
             </Col>
           </Row>
 
-          {/* معلومات الدفع */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 24, fontSize: '16px', fontWeight: 600 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                backgroundColor: '#1f2937',
-                borderRadius: '8px',
-                padding: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-                  <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
-                </svg>
-              </div>
-              <span style={{ color: '#1f2937', fontWeight: 600, fontSize: '16px' }}>معلومات الدفع</span>
-            </div>
-          </Divider>
-          
-          {/* بطاقة طريقة الدفع الرئيسية */}
-          <Card 
-            style={{ 
-              marginBottom: 24,
-              border: '1px solid #e5e7eb',
-              borderRadius: '12px',
-              boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
-            }}
-          >
-            <div style={{ 
-              padding: '16px 20px',
-              borderBottom: '1px solid #f3f4f6',
-              marginBottom: '20px'
-            }}>
-              <div style={{ 
-                fontSize: '14px', 
-                fontWeight: 600, 
-                color: '#374151',
-                fontFamily: 'Cairo, sans-serif',
-                marginBottom: '4px'
-              }}>
-                اختيار طريقة الدفع
-              </div>
-              <div style={{ 
-                fontSize: '12px', 
-                color: '#6b7280',
-                fontFamily: 'Cairo, sans-serif'
-              }}>
-                يرجى تحديد الطريقة المناسبة لدفع قيمة الفاتورة
-              </div>
-            </div>
-            
-            <Row gutter={[24, 16]} align="middle">
-              <Col xs={24} sm={12} md={8}>
-                <div style={{ marginBottom: '8px' }}>
-                  <label style={{ 
-                    fontSize: '13px', 
-                    fontWeight: 500, 
-                    color: '#374151',
-                    fontFamily: 'Cairo, sans-serif',
-                    display: 'block',
-                    marginBottom: '6px'
-                  }}>
-                    طريقة الدفع *
-                  </label>
-                  <Select
-                    showSearch
-                    value={invoiceData.paymentMethod}
-                    onChange={(value) => {
-                      const isMultiple = value === 'متعدد';
-                      setMultiplePaymentMode(isMultiple);
-                      setInvoiceData({
-                        ...invoiceData, 
-                        paymentMethod: value,
-                        cashBox: value === 'نقدي' ? invoiceData.cashBox : '',
-                        multiplePayment: isMultiple ? invoiceData.multiplePayment : {}
-                      });
-                    }}
-                    disabled={paymentMethods.length === 0}
-                    placeholder="اختر طريقة الدفع"
-                    style={{ 
-                      width: '100%',
-                      fontFamily: 'Cairo, sans-serif'
-                    }}
-                    size="large"
-                    filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                    options={[
-                      ...paymentMethods.map(method => ({
-                        label: method.name || method.id,
-                        value: method.name || method.id
-                      })),
-                    ]}
-                  />
-                </div>
-              </Col>
-              
-              {/* عرض الصندوق النقدي للدفع النقدي */}
-              {invoiceData.paymentMethod === 'نقدي' && (
-                <Col xs={24} sm={12} md={8}>
-                  <div style={{ marginBottom: '8px' }}>
-                    <label style={{ 
-                      fontSize: '13px', 
-                      fontWeight: 500, 
-                      color: '#374151',
-                      fontFamily: 'Cairo, sans-serif',
-                      display: 'block',
-                      marginBottom: '6px'
-                    }}>
-                      الصندوق النقدي *
-                    </label>
-                    <Select
-                      showSearch
-                      value={invoiceData.cashBox}
-                      onChange={(value) => setInvoiceData({...invoiceData, cashBox: value})}
-                      disabled={cashBoxes.length === 0}
-                      placeholder="اختر الصندوق النقدي"
-                      style={{ 
-                        width: '100%',
-                        fontFamily: 'Cairo, sans-serif'
-                      }}
-                      size="large"
-                      filterOption={(input, option) =>
-                        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      options={cashBoxes
-                        .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
-                        .map(cashBox => ({
-                          label: cashBox.nameAr,
-                          value: cashBox.id || cashBox.nameAr
-                        }))}
-                    />
-                  </div>
-                </Col>
-              )}
-              
-              {/* عرض إجمالي المبلغ للطرق العادية */}
-              {invoiceData.paymentMethod && invoiceData.paymentMethod !== 'متعدد' && (
-                <Col xs={24} sm={12} md={8}>
-                  <div style={{ 
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ 
-                      fontSize: '12px', 
-                      color: '#64748b',
-                      fontWeight: 500,
-                      marginBottom: '4px',
-                      fontFamily: 'Cairo, sans-serif'
-                    }}>
-                      إجمالي المبلغ
-                    </div>
-                    <div style={{ 
-                      fontSize: '20px', 
-                      fontWeight: 700,
-                      color: '#1e293b',
-                      fontFamily: 'Cairo, sans-serif'
-                    }}>
-                      {totals.afterTax.toFixed(2)} ر.س
-                    </div>
-                  </div>
-                </Col>
-              )}
-            </Row>
-          </Card>
+
+
 
           
-          {/* قسم الدفع المتعدد */}
-          {multiplePaymentMode && (
-            <Card 
-              style={{ 
-                marginBottom: 24,
-                border: '2px solid #f59e0b',
-                borderRadius: '12px',
-                overflow: 'hidden'
-              }}
-            >
-              {/* عنوان القسم */}
-              <div style={{ 
-                backgroundColor: '#f59e0b',
-                margin: '-1px -1px 20px -1px',
-                padding: '16px 20px',
-                color: 'white'
-              }}>
-                <Row align="middle" justify="space-between">
-                  <Col>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                        borderRadius: '8px',
-                        padding: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-                          <path d="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v4H3v-4z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <div style={{ 
-                          fontSize: '16px', 
-                          fontWeight: 700,
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          الدفع المتعدد
-                        </div>
-                        <div style={{ 
-                          fontSize: '12px', 
-                          opacity: 0.9,
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          توزيع المبلغ على عدة طرق دفع
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-                  <Col>
-                    <div style={{ 
-                      backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                      padding: '8px 16px',
-                      borderRadius: '8px',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '2px' }}>المبلغ الإجمالي</div>
-                      <div style={{ fontSize: '16px', fontWeight: 700 }}>
-                        {totals.afterTax.toFixed(2)} ر.س
-                      </div>
-                    </div>
-                  </Col>
-                </Row>
-              </div>
 
-              {/* جدول طرق الدفع */}
-              <div style={{ padding: '0 20px 20px 20px' }}>
-                <Row gutter={[20, 20]}>
-                  {/* النقدي */}
-                  <Col xs={24} lg={8}>
-                    <div style={{
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        backgroundColor: '#f9fafb',
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 10
-                        }}>
-                          <div style={{
-                            backgroundColor: '#059669',
-                            borderRadius: '6px',
-                            padding: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                              <path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/>
-                            </svg>
-                          </div>
-                          <span style={{ 
-                            fontWeight: 600, 
-                            color: '#374151',
-                            fontFamily: 'Cairo, sans-serif',
-                            fontSize: '14px'
-                          }}>
-                            الدفع النقدي
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            الصندوق النقدي
-                          </label>
-                          <Select
-                            showSearch
-                            value={invoiceData.multiplePayment.cash?.cashBoxId || ''}
-                            onChange={(value) => setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                cash: {
-                                  ...invoiceData.multiplePayment.cash,
-                                  cashBoxId: value,
-                                  amount: invoiceData.multiplePayment.cash?.amount || ''
-                                }
-                              }
-                            })}
-                            disabled={cashBoxes.length === 0}
-                            placeholder="اختر الصندوق"
-                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                            filterOption={(input, option) =>
-                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={cashBoxes
-                              .filter(cashBox => !invoiceData.branch || cashBox.branch === invoiceData.branch)
-                              .map(cashBox => ({
-                                label: cashBox.nameAr,
-                                value: cashBox.id || cashBox.nameAr
-                              }))}
-                            allowClear
-                          />
-                        </div>
-                        
-                        <div>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            المبلغ النقدي (ر.س)
-                          </label>
-                          <Input
-                            value={invoiceData.multiplePayment.cash?.amount || ''}
-                            onChange={(e) => setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                cash: {
-                                  ...invoiceData.multiplePayment.cash,
-                                  cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
-                                  amount: e.target.value
-                                }
-                              }
-                            })}
-                            onFocus={(e) => {
-                              if (!e.target.value) {
-                                const currentTotal = parseFloat(invoiceData.multiplePayment.bank?.amount || '0') + 
-                                                    parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-                                const remaining = totals.afterTax - currentTotal;
-                                if (remaining > 0) {
-                                  setInvoiceData({
-                                    ...invoiceData, 
-                                    multiplePayment: {
-                                      ...invoiceData.multiplePayment,
-                                      cash: {
-                                        ...invoiceData.multiplePayment.cash,
-                                        cashBoxId: invoiceData.multiplePayment.cash?.cashBoxId || '',
-                                        amount: remaining.toFixed(2)
-                                      }
-                                    }
-                                  });
-                                }
-                              }
-                            }}
-                            placeholder="0.00"
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            disabled={!invoiceData.multiplePayment.cash?.cashBoxId}
-                            style={{ textAlign: 'center', fontWeight: 600 }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-
-                  {/* البنك */}
-                  <Col xs={24} lg={8}>
-                    <div style={{
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        backgroundColor: '#f9fafb',
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 10
-                        }}>
-                          <div style={{
-                            backgroundColor: '#2563eb',
-                            borderRadius: '6px',
-                            padding: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                              <path d="M5 7h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1zM6 10h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1s.45 1 1 1zM3 13h18c.55 0 1-.45 1-1s-.45-1-1-1H3c-.55 0-1 .45-1 1s.45 1 1 1zM4 16h16c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zM5 19h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1z"/>
-                            </svg>
-                          </div>
-                          <span style={{ 
-                            fontWeight: 600, 
-                            color: '#374151',
-                            fontFamily: 'Cairo, sans-serif',
-                            fontSize: '14px'
-                          }}>
-                            التحويل البنكي
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            البنك
-                          </label>
-                          <Select
-                            showSearch
-                            value={invoiceData.multiplePayment.bank?.bankId || ''}
-                            onChange={(value) => setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                bank: {
-                                  ...invoiceData.multiplePayment.bank,
-                                  bankId: value,
-                                  amount: invoiceData.multiplePayment.bank?.amount || ''
-                                }
-                              }
-                            })}
-                            disabled={banks.length === 0}
-                            placeholder="اختر البنك"
-                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                            filterOption={(input, option) =>
-                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={banks.map(bank => ({
-                              label: bank.arabicName,
-                              value: bank.id || bank.arabicName
-                            }))}
-                            allowClear
-                          />
-                        </div>
-                        
-                        <div>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            المبلغ البنكي (ر.س)
-                          </label>
-                          <Input
-                            value={invoiceData.multiplePayment.bank?.amount || ''}
-                            onChange={(e) => setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                bank: {
-                                  ...invoiceData.multiplePayment.bank,
-                                  bankId: invoiceData.multiplePayment.bank?.bankId || '',
-                                  amount: e.target.value
-                                }
-                              }
-                            })}
-                            onFocus={(e) => {
-                              if (!e.target.value) {
-                                const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
-                                                    parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-                                const remaining = totals.afterTax - currentTotal;
-                                if (remaining > 0) {
-                                  setInvoiceData({
-                                    ...invoiceData, 
-                                    multiplePayment: {
-                                      ...invoiceData.multiplePayment,
-                                      bank: {
-                                        ...invoiceData.multiplePayment.bank,
-                                        bankId: invoiceData.multiplePayment.bank?.bankId || '',
-                                        amount: remaining.toFixed(2)
-                                      }
-                                    }
-                                  });
-                                }
-                              }
-                            }}
-                            placeholder="0.00"
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            disabled={!invoiceData.multiplePayment.bank?.bankId}
-                            style={{ textAlign: 'center', fontWeight: 600 }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-
-                  {/* الشبكة */}
-                  <Col xs={24} lg={8}>
-                    <div style={{
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        backgroundColor: '#f9fafb',
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 10
-                        }}>
-                          <div style={{
-                            backgroundColor: '#dc2626',
-                            borderRadius: '6px',
-                            padding: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                              <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
-                            </svg>
-                          </div>
-                          <span style={{ 
-                            fontWeight: 600, 
-                            color: '#374151',
-                            fontFamily: 'Cairo, sans-serif',
-                            fontSize: '14px'
-                          }}>
-                            بطاقة الشبكة
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            بنك الشبكة
-                          </label>
-                          <Select
-                            showSearch
-                            value={invoiceData.multiplePayment.card?.bankId || ''}
-                            onChange={(value) => setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                card: {
-                                  ...invoiceData.multiplePayment.card,
-                                  bankId: value,
-                                  amount: invoiceData.multiplePayment.card?.amount || ''
-                                }
-                              }
-                            })}
-                            disabled={banks.length === 0}
-                            placeholder="اختر البنك"
-                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                            filterOption={(input, option) =>
-                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={banks.map(bank => ({
-                              label: bank.arabicName,
-                              value: bank.id || bank.arabicName
-                            }))}
-                            allowClear
-                          />
-                        </div>
-                        
-                        <div>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            مبلغ الشبكة (ر.س)
-                          </label>
-                          <Input
-                            value={invoiceData.multiplePayment.card?.amount || ''}
-                            onChange={(e) => setInvoiceData({
-                              ...invoiceData, 
-                              multiplePayment: {
-                                ...invoiceData.multiplePayment,
-                                card: {
-                                  ...invoiceData.multiplePayment.card,
-                                  bankId: invoiceData.multiplePayment.card?.bankId || '',
-                                  amount: e.target.value
-                                }
-                              }
-                            })}
-                            onFocus={(e) => {
-                              if (!e.target.value) {
-                                const currentTotal = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') + 
-                                                    parseFloat(invoiceData.multiplePayment.bank?.amount || '0');
-                                const remaining = totals.afterTax - currentTotal;
-                                if (remaining > 0) {
-                                  setInvoiceData({
-                                    ...invoiceData, 
-                                    multiplePayment: {
-                                      ...invoiceData.multiplePayment,
-                                      card: {
-                                        ...invoiceData.multiplePayment.card,
-                                        bankId: invoiceData.multiplePayment.card?.bankId || '',
-                                        amount: remaining.toFixed(2)
-                                      }
-                                    }
-                                  });
-                                }
-                              }
-                            }}
-                            placeholder="0.00"
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            disabled={!invoiceData.multiplePayment.card?.bankId}
-                            style={{ textAlign: 'center', fontWeight: 600 }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-                </Row>
-
-                {/* ملخص الدفع المتعدد */}
-                <div style={{ 
-                  marginTop: '24px',
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  padding: '20px'
-                }}>
-                  <Row gutter={[16, 16]} align="middle">
-                    <Col xs={24} sm={8}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ 
-                          fontSize: '12px', 
-                          color: '#6b7280',
-                          fontWeight: 500,
-                          marginBottom: '4px',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          إجمالي المدفوع
-                        </div>
-                        <div style={{ 
-                          fontSize: '18px', 
-                          fontWeight: 700,
-                          color: '#1f2937',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          {(
-                            parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                            parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                          ).toFixed(2)} ر.س
-                        </div>
-                      </div>
-                    </Col>
-                    <Col xs={24} sm={8}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ 
-                          fontSize: '12px', 
-                          color: '#6b7280',
-                          fontWeight: 500,
-                          marginBottom: '4px',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          المبلغ المتبقي
-                        </div>
-                        <div style={{ 
-                          fontSize: '18px', 
-                          fontWeight: 700,
-                          color: (totals.afterTax - (
-                            parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                            parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                          )) > 0.01 ? '#dc2626' : '#059669',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          {(totals.afterTax - (
-                            parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                            parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                            parseFloat(invoiceData.multiplePayment.card?.amount || '0')
-                          )).toFixed(2)} ر.س
-                        </div>
-                      </div>
-                    </Col>
-                    <Col xs={24} sm={8}>
-                      <div style={{ 
-                        textAlign: 'center',
-                        padding: '12px 16px',
-                        borderRadius: '6px',
-                        backgroundColor: Math.abs(
-                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) <= 0.01 ? '#dcfce7' : '#fef2f2',
-                        border: Math.abs(
-                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) <= 0.01 ? '1px solid #16a34a' : '1px solid #dc2626'
-                      }}>
-                        <div style={{ 
-                          fontSize: '13px', 
-                          fontWeight: 600,
-                          color: Math.abs(
-                            (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                             parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                             parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                          ) <= 0.01 ? '#15803d' : '#dc2626',
-                          fontFamily: 'Cairo, sans-serif',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6
-                        }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            {Math.abs(
-                              (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                               parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                               parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                            ) <= 0.01 ? (
-                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                            ) : (
-                              <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                            )}
-                          </svg>
-                          {Math.abs(
-                            (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                             parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                             parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                          ) <= 0.01 ? 'الدفع مكتمل' : 'الدفع غير مكتمل'}
-                        </div>
-                        {Math.abs(
-                          (parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(invoiceData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 && (
-                          <div style={{ 
-                            fontSize: '11px', 
-                            color: '#dc2626',
-                            marginTop: '4px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            يجب أن يكون المتبقي 0.00 لحفظ الفاتورة
-                          </div>
-                        )}
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              </div>
-            </Card>
-          )}
 
 
 
@@ -5401,52 +5053,11 @@ const handlePrint = () => {
                 onClick={async () => {
                   if (Number(totalsDisplay.net) <= 0) {
                     if (typeof message !== 'undefined' && message.error) {
-                      message.error('لا يمكن حفظ الفاتورة إذا كان الإجمالي النهائي صفر أو أقل');
+                      message.error('لا يمكن حفظ عرض السعر إذا كان الإجمالي النهائي صفر أو أقل');
                     } else {
-                      alert('لا يمكن حفظ الفاتورة إذا كان الإجمالي النهائي صفر أو أقل');
+                      alert('لا يمكن حفظ عرض السعر إذا كان الإجمالي النهائي صفر أو أقل');
                     }
                     return;
-                  }
-                  if (!invoiceData.paymentMethod) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار طريقة الدفع أولاً');
-                    } else {
-                      alert('يرجى اختيار طريقة الدفع أولاً');
-                    }
-                    return;
-                  }
-                  if (invoiceData.paymentMethod === 'نقدي' && !invoiceData.cashBox) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار الصندوق النقدي');
-                    } else {
-                      alert('يرجى اختيار الصندوق النقدي');
-                    }
-                    return;
-                  }
-                  if (multiplePaymentMode && (!invoiceData.multiplePayment.cash?.cashBoxId && !invoiceData.multiplePayment.bank?.bankId && !invoiceData.multiplePayment.card?.bankId)) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار وسائل الدفع للدفع المتعدد');
-                    } else {
-                      alert('يرجى اختيار وسائل الدفع للدفع المتعدد');
-                    }
-                    return;
-                  }
-                  
-                  // التحقق من أن المتبقي يساوي 0.00 في حالة الدفع المتعدد
-                  if (multiplePaymentMode) {
-                    const totalPayments = parseFloat(invoiceData.multiplePayment.cash?.amount || '0') +
-                                         parseFloat(invoiceData.multiplePayment.bank?.amount || '0') +
-                                         parseFloat(invoiceData.multiplePayment.card?.amount || '0');
-                    const remaining = totals.afterTax - totalPayments;
-                    
-                    if (Math.abs(remaining) > 0.01) {
-                      if (typeof message !== 'undefined' && message.error) {
-                        message.error(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
-                      } else {
-                        alert(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
-                      }
-                      return;
-                    }
                   }
                   
                   await handleSave();
@@ -5455,8 +5066,8 @@ const handlePrint = () => {
                     await fetchLists();
                   }
                   // بعد الحفظ: توليد رقم فاتورة جديد للفاتورة التالية
-                  const newInvoiceNumber = await generateInvoiceNumberAsync(invoiceData.branch, branches);
-                  setInvoiceData(prev => ({
+                  const newInvoiceNumber = await generateInvoiceNumberAsync(quotationData.branch, branches);
+                  setQuotationData(prev => ({
                     ...prev,
                     invoiceNumber: newInvoiceNumber
                   }));
@@ -5465,7 +5076,7 @@ const handlePrint = () => {
                 loading={loading}
                 disabled={items.length === 0}
               >
-                حفظ الفاتورة 
+                حفظ عرض السعر 
               </Button>
             </Col>
             <Col>
@@ -5480,7 +5091,7 @@ const handlePrint = () => {
                   </svg>
                 }
                 onClick={handlePrint}
-                disabled={loading || !lastSavedInvoice}
+                disabled={loading || !lastSavedQuotation}
                 style={{ width: 150, backgroundColor: '#60a5fa', borderColor: '#60a5fa', color: '#fff' }}
               >
                 طباعة الفاتورة
@@ -5764,8 +5375,8 @@ const handlePrint = () => {
                 key={customer.id || index}
                 className="formal-customer-card"
                 onClick={() => {
-                  setInvoiceData({
-                    ...invoiceData,
+                  setQuotationData({
+                    ...quotationData,
                     customerName: customer.nameAr || customer.name || customer.nameEn || '',
                     customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
                     commercialRecord: customer.commercialReg || '',
@@ -5833,8 +5444,8 @@ const handlePrint = () => {
                     className="select-button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setInvoiceData({
-                        ...invoiceData,
+                      setQuotationData({
+                        ...quotationData,
                         customerName: customer.nameAr || customer.name || customer.nameEn || '',
                         customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
                         commercialRecord: customer.commercialReg || '',
@@ -5948,8 +5559,8 @@ const handlePrint = () => {
               await fetchBasicData(); // Refresh data from hook
 
               // تحديد العميل الجديد في الفاتورة
-              setInvoiceData({
-                ...invoiceData,
+              setQuotationData({
+                ...quotationData,
                 customerName: newCustomer.nameAr,
                 customerNumber: newCustomer.phone,
                 commercialRecord: '',

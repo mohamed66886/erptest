@@ -38,7 +38,7 @@ const ItemSearchModal: React.FC<ItemSearchModalProps> = ({ open, onClose, onSele
             nameAr: doc.data().nameAr || doc.data().name || '',
             nameEn: doc.data().nameEn || '',
             unitName: doc.data().unitName || '',
-            price: doc.data().purchasePrice || 0,
+            price: doc.data().salePrice || 0,
             type: doc.data().type || ''
           }));
           setItemAccounts(itemsData);
@@ -80,7 +80,7 @@ const ItemSearchModal: React.FC<ItemSearchModalProps> = ({ open, onClose, onSele
         columns={[ 
           { title: 'كود الصنف', dataIndex: 'code', key: 'code', width: 140 },
           { title: 'اسم الصنف (عربي)', dataIndex: 'nameAr', key: 'nameAr' },
-          { title: 'سعر الشراء', dataIndex: 'price', key: 'price', width: 100, render: (text: number | undefined) => typeof text === 'number' && text > 0 ? `${text} ر.س` : '-' }
+          { title: 'سعر البيع', dataIndex: 'price', key: 'price', width: 100, render: (text: number | undefined) => typeof text === 'number' && text > 0 ? `${text} ر.س` : '-' }
         ]}
         rowKey="id"
         pagination={{ pageSize: 8 }}
