@@ -394,13 +394,42 @@ const AddQuotationPage: React.FC = () => {
 
   // أعمدة الجدول
   const itemColumns = [
-    { title: 'رقم الصنف', dataIndex: 'itemCode', key: 'itemCode', width: 100 },
+    { title: 'كود الصنف', dataIndex: 'itemCode', key: 'itemCode', width: 100 },
     { title: 'اسم الصنف', dataIndex: 'itemName', key: 'itemName', width: 150 },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', width: 80 },
     { title: 'الوحدة', dataIndex: 'unit', key: 'unit', width: 80 },
+    { title: 'المخزن', dataIndex: 'warehouse', key: 'warehouse', width: 120, render: (_: any, record: any) => quotationData.warehouse ? (warehouses.find(w => w.id === quotationData.warehouse)?.nameAr || warehouses.find(w => w.id === quotationData.warehouse)?.name || '-') : '-' },
     { title: 'السعر', dataIndex: 'price', key: 'price', width: 100 },
     { title: 'نسبة الخصم %', dataIndex: 'discountPercent', key: 'discountPercent', width: 100 },
+    { title: 'قيمة الخصم', key: 'discountValue', width: 100, render: (_: any, record: any) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      return ((qty * price * discount) / 100).toFixed(2);
+    } },
+    { title: 'الإجمالي بعد الخصم', key: 'afterDiscount', width: 120, render: (_: any, record: any) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      return (qty * price * (1 - discount / 100)).toFixed(2);
+    } },
     { title: 'نسبة الضريبة %', dataIndex: 'taxPercent', key: 'taxPercent', width: 100 },
+    { title: 'قيمة الضريبة', key: 'taxValue', width: 100, render: (_: any, record: any) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      const afterDiscount = qty * price * (1 - discount / 100);
+      const tax = Number(record.taxPercent) || 0;
+      return ((afterDiscount * tax) / 100).toFixed(2);
+    } },
+    { title: 'الإجمالي', key: 'total', width: 120, render: (_: any, record: any) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      const afterDiscount = qty * price * (1 - discount / 100);
+      const tax = Number(record.taxPercent) || 0;
+      return (afterDiscount + (afterDiscount * tax) / 100).toFixed(2);
+    } },
     { 
       title: 'إجراءات', 
       key: 'actions', 
@@ -766,6 +795,66 @@ const AddQuotationPage: React.FC = () => {
                 bordered
                 locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
               />
+              {/* الإجماليات */}
+              <div style={{
+                marginTop: 24,
+                fontSize: 15,
+                fontWeight: 700,
+                background: '#fff',
+                borderRadius: 16,
+                padding: '18px 32px',
+                border: '2px solid #e5e7eb',
+                boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                maxWidth: 328,
+                marginRight: 'auto',
+                marginLeft: 0,
+                direction: 'rtl',
+                textAlign: 'right',
+                lineHeight: 1.7
+
+              }}>
+                <div style={{ color: '#2563eb' }}>
+                  <span style={{ marginRight: 8 }}>الإجمالي:</span>
+                  <span style={{ fontWeight: 900 }}>
+                    {addedItems.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price)), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ color: '#dc2626' }}>
+                  <span style={{ marginRight: 8 }}>الخصم:</span>
+                  <span style={{ fontWeight: 900 }}>
+                    {addedItems.reduce((sum, item) => sum + ((Number(item.quantity) * Number(item.price) * Number(item.discountPercent || 0)) / 100), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ color: '#ea580c' }}>
+                                    <span style={{ marginRight: 8 }}>الإجمالي بعد الخصم:</span>
+
+                  <span style={{ fontWeight: 900 }}>
+                    {addedItems.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent || 0) / 100)), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ color: '#a21caf' }}>
+                                   <span style={{ marginRight: 8 }}>قيمة الضريبة:</span>
+
+                  <span style={{ fontWeight: 900 }}>
+                    {addedItems.reduce((sum, item) => {
+                      const afterDiscount = Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent || 0) / 100);
+                      return sum + (afterDiscount * Number(item.taxPercent || 0) / 100);
+                    }, 0).toFixed(2)}
+                  </span>
+                </div>
+                <hr style={{ margin: '16px 0', borderTop: '2px solid #e5e7eb' }} />
+                <div style={{ color: '#16a34a', fontWeight: 900, fontSize: 20 }}>
+                                   <span style={{ marginRight: 8, fontWeight: 700, fontSize: 20 }}>الإجمالي النهائي:</span>
+
+                  <span>
+                    {addedItems.reduce((sum, item) => {
+                      const afterDiscount = Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent || 0) / 100);
+                      const tax = (afterDiscount * Number(item.taxPercent || 0) / 100);
+                      return sum + afterDiscount + tax;
+                    }, 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
             </div>
           </TabPane>
           
