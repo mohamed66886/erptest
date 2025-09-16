@@ -39,12 +39,6 @@ interface Warehouse {
   status?: 'active' | 'inactive' | 'suspended';
 }
 
-interface PaymentMethod {
-  id: string;
-  name?: string;
-  value?: string;
-}
-
 interface Customer {
   id: string;
   nameAr?: string;
@@ -99,9 +93,7 @@ interface QuotationData {
   quotationNumber: string;
   entryNumber: string;
   date: string;
-  paymentMethod: string;
   cashBox: string;
-  multiplePayment: MultiplePayment;
   branch: string;
   warehouse: string;
   customerNumber: string;
@@ -128,7 +120,6 @@ const useSalesData = () => {
   const [delegates, setDelegates] = useState<Delegate[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [units, setUnits] = useState<string[]>([]);
   const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
@@ -146,7 +137,6 @@ const useSalesData = () => {
         delegatesSnapshot,
         branchesSnapshot,
         warehousesSnapshot,
-        paymentMethodsSnapshot,
         inventorySnapshot,
         customersSnapshot,
         companySnapshot
@@ -154,7 +144,6 @@ const useSalesData = () => {
         getDocs(collection(db, 'salesRepresentatives')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'branches')),
         getDocs(collection(db, 'warehouses')),
-        getDocs(collection(db, 'paymentMethods')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'inventory_items')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'customers')),
         getDocs(collection(db, 'companies')) // تم تصحيح اسم المجموعة
@@ -170,7 +159,6 @@ const useSalesData = () => {
       setDelegates(delegatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Delegate[]);
       setBranches(branchesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Branch[]);
       setWarehouses(warehousesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Warehouse[]);
-      setPaymentMethods(paymentMethodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PaymentMethod[]);
       setCashBoxes(cashBoxesData as CashBox[]);
       setCustomers(customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Customer[]);
       
@@ -201,7 +189,6 @@ const useSalesData = () => {
     delegates,
     branches,
     warehouses,
-    paymentMethods,
     cashBoxes,
     units,
     itemNames,
@@ -241,20 +228,6 @@ interface Bank {
   subAccountCode?: string;
 }
 
-interface MultiplePayment {
-  cash?: {
-    cashBoxId: string;
-    amount: string;
-  };
-  bank?: {
-    bankId: string;
-    amount: string;
-  };
-  card?: {
-    bankId: string;
-    amount: string;
-  };
-}
 
 interface Supplier {
   id: string;
@@ -1082,15 +1055,12 @@ interface CompanyData {
 
   const [quotationType, setQuotationType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
   const [warehouseMode, setWarehouseMode] = useState<'single' | 'multiple'>('single');
-  const [multiplePaymentMode, setMultiplePaymentMode] = useState<boolean>(false);
   const [branchCode, setBranchCode] = useState<string>('');
   const [quotationData, setQuotationData] = useState<QuotationData>({
     quotationNumber: '',
     entryNumber: generateEntryNumber(),
     date: getTodayString(),
-    paymentMethod: '',
     cashBox: '',
-    multiplePayment: {},
     branch: '',
     warehouse: '',
     customerNumber: '',
@@ -1141,7 +1111,6 @@ interface CompanyData {
     delegates,
     branches,
     warehouses,
-    paymentMethods,
     cashBoxes,
     units,
     itemNames,
@@ -5509,47 +5478,6 @@ const handlePrint = () => {
                       alert('لا يمكن حفظ عرض السعر إذا كان الإجمالي النهائي صفر أو أقل');
                     }
                     return;
-                  }
-                  if (!quotationData.paymentMethod) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار طريقة الدفع أولاً');
-                    } else {
-                      alert('يرجى اختيار طريقة الدفع أولاً');
-                    }
-                    return;
-                  }
-                  if (quotationData.paymentMethod === 'نقدي' && !quotationData.cashBox) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار الصندوق النقدي');
-                    } else {
-                      alert('يرجى اختيار الصندوق النقدي');
-                    }
-                    return;
-                  }
-                  if (multiplePaymentMode && (!quotationData.multiplePayment.cash?.cashBoxId && !quotationData.multiplePayment.bank?.bankId && !quotationData.multiplePayment.card?.bankId)) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار وسائل الدفع للدفع المتعدد');
-                    } else {
-                      alert('يرجى اختيار وسائل الدفع للدفع المتعدد');
-                    }
-                    return;
-                  }
-                  
-                  // التحقق من أن المتبقي يساوي 0.00 في حالة الدفع المتعدد
-                  if (multiplePaymentMode) {
-                    const totalPayments = parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                                         parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                                         parseFloat(quotationData.multiplePayment.card?.amount || '0');
-                    const remaining = totals.afterTax - totalPayments;
-                    
-                    if (Math.abs(remaining) > 0.01) {
-                      if (typeof message !== 'undefined' && message.error) {
-                        message.error(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
-                      } else {
-                        alert(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
-                      }
-                      return;
-                    }
                   }
                   
                   await handleSave();

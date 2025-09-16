@@ -38,11 +38,7 @@ interface Warehouse {
   status?: 'active' | 'inactive' | 'suspended';
 }
 
-interface PaymentMethod {
-  id: string;
-  name?: string;
-  value?: string;
-}
+
 
 interface Customer {
   id: string;
@@ -98,9 +94,6 @@ interface QuotationData {
   quotationNumber: string;
   entryNumber: string;
   date: string;
-  paymentMethod: string;
-  cashBox: string;
-  multiplePayment: MultiplePayment;
   branch: string;
   warehouse: string;
   customerNumber: string;
@@ -127,7 +120,6 @@ const useSalesData = () => {
   const [delegates, setDelegates] = useState<Delegate[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [units, setUnits] = useState<string[]>([]);
   const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
@@ -145,7 +137,6 @@ const useSalesData = () => {
         delegatesSnapshot,
         branchesSnapshot,
         warehousesSnapshot,
-        paymentMethodsSnapshot,
         inventorySnapshot,
         customersSnapshot,
         companySnapshot
@@ -153,7 +144,6 @@ const useSalesData = () => {
         getDocs(collection(db, 'salesRepresentatives')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'branches')),
         getDocs(collection(db, 'warehouses')),
-        getDocs(collection(db, 'paymentMethods')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'inventory_items')), // تم تصحيح اسم المجموعة
         getDocs(collection(db, 'customers')),
         getDocs(collection(db, 'companies')) // تم تصحيح اسم المجموعة
@@ -169,7 +159,6 @@ const useSalesData = () => {
       setDelegates(delegatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Delegate[]);
       setBranches(branchesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Branch[]);
       setWarehouses(warehousesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Warehouse[]);
-      setPaymentMethods(paymentMethodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PaymentMethod[]);
       setCashBoxes(cashBoxesData as CashBox[]);
       setCustomers(customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Customer[]);
       
@@ -200,7 +189,6 @@ const useSalesData = () => {
     delegates,
     branches,
     warehouses,
-    paymentMethods,
     cashBoxes,
     units,
     itemNames,
@@ -240,20 +228,6 @@ interface Bank {
   subAccountCode?: string;
 }
 
-interface MultiplePayment {
-  cash?: {
-    cashBoxId: string;
-    amount: string;
-  };
-  bank?: {
-    bankId: string;
-    amount: string;
-  };
-  card?: {
-    bankId: string;
-    amount: string;
-  };
-}
 
 interface Supplier {
   id: string;
@@ -498,8 +472,8 @@ const AddQuotationPage: React.FC = () => {
 
   // زر توليد 3000 فاتورة عشوائية
   const generateRandomInvoices = async () => {
-    if (!branches.length || !warehouses.length || !paymentMethods.length || !customers.length || !itemNames.length) {
-      customMessage.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف وطرق الدفع أولاً');
+    if (!branches.length || !warehouses.length || !customers.length || !itemNames.length) {
+      customMessage.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف أولاً');
       return;
     }
     const { addDoc, collection } = await import('firebase/firestore');
@@ -512,7 +486,6 @@ const AddQuotationPage: React.FC = () => {
       for (let i = 0; i < 3000; i++) {
         const branch = randomFrom(branches);
         const warehouse = randomFrom(warehouses);
-        const paymentMethod = randomFrom(paymentMethods);
         const customer = randomFrom(customers);
         const item = randomFrom(itemNames);
         const discountPercent = randomDiscount();
@@ -529,7 +502,6 @@ const AddQuotationPage: React.FC = () => {
           invoiceNumber,
           entryNumber: `EN-${Math.floor(100000 + Math.random() * 900000)}`,
           date: today,
-          paymentMethod: paymentMethod.name || paymentMethod.value || paymentMethod,
           branch: branch.id,
           warehouse: warehouse.id,
           customerNumber: customer.phone || customer.phoneNumber || '',
@@ -870,7 +842,6 @@ interface CompanyData {
         'العميل': inv.customer,
         'تليفون العميل': inv.customerPhone,
         'البائع': getDelegateName(inv.seller),
-        'طريقة الدفع': inv.paymentMethod,
         'نوع الفاتورة': inv.quotationType
       };
     });
@@ -904,7 +875,6 @@ interface CompanyData {
       'العميل': '',
       'تليفون العميل': '',
       'البائع': '',
-      'طريقة الدفع': '',
       'نوع الفاتورة': ''
     };
 
@@ -1065,15 +1035,11 @@ interface CompanyData {
 
   const [quotationType, setQuotationType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
   const [warehouseMode, setWarehouseMode] = useState<'single' | 'multiple'>('single');
-  const [multiplePaymentMode, setMultiplePaymentMode] = useState<boolean>(false);
   const [branchCode, setBranchCode] = useState<string>('');
   const [quotationData, setQuotationData] = useState<QuotationData>({
     quotationNumber: '',
     entryNumber: generateEntryNumber(),
     date: getTodayString(),
-    paymentMethod: '',
-    cashBox: '',
-    multiplePayment: {},
     branch: '',
     warehouse: '',
     customerNumber: '',
@@ -1124,7 +1090,6 @@ interface CompanyData {
     delegates,
     branches,
     warehouses,
-    paymentMethods,
     cashBoxes,
     units,
     itemNames,
@@ -1169,9 +1134,6 @@ interface SavedQuotation {
   invoiceNumber: string;
   entryNumber: string;
   date: string;
-  paymentMethod: string;
-  cashBox?: string;
-  multiplePayment?: MultiplePayment;
   branch: string;
   warehouse: string;
   customerNumber: string;
@@ -2127,12 +2089,6 @@ interface SavedQuotation {
       render: (seller: string) => getDelegateName(seller)
     },
     {
-      title: 'طريقة الدفع',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod',
-      width: 120
-    },
-    {
       title: 'نوع الفاتورة',
       dataIndex: 'quotationType',
       key: 'quotationType',
@@ -2580,7 +2536,7 @@ const handlePrint = () => {
           <!-- Info Row Section: Invoice info (right), QR (center), Customer info (left) -->
           <div class="info-row-container">
             <table class="info-row-table right">
-              <tr><td class="label">طريقة الدفع</td><td class="value">${invoice.paymentMethod || ''}</td></tr>
+
               <tr><td class="label">رقم الفاتورة</td><td class="value">${invoice.invoiceNumber || ''}</td></tr>
               <tr><td class="label">تاريخ الفاتورة</td><td class="value">${invoice.date || ''}</td></tr>
               <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${invoice.dueDate || ''}</td></tr>
@@ -2740,84 +2696,6 @@ const handlePrint = () => {
                     <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
                     <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
                   </tr>
-                </tbody>
-              </table>
-              <!-- Payment Method Table -->
-              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; margin-top:10px; border-collapse:collapse; box-shadow:none; width:100%;">
-                <thead>
-                  <tr>
-                    <td colspan="2" style="font-weight:bold; color:#fff; text-align:center; padding:7px 12px; border:1px solid #000; background:#305496;">تفاصيل طريقة الدفع</td>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${(() => {
-                    if (invoice.paymentMethod === 'متعدد' && invoice.multiplePayment) {
-                      let paymentRows = '';
-                      const multiplePayment = invoice.multiplePayment;
-                      
-                      // النقدي
-                      if (multiplePayment.cash && parseFloat(multiplePayment.cash.amount || '0') > 0) {
-                        const cashBoxId = multiplePayment.cash.cashBoxId || '';
-                        // البحث عن اسم الصندوق من قائمة الصناديق
-                        const cashBoxObj = Array.isArray(cashBoxes) ? cashBoxes.find(cb => cb.id === cashBoxId) : null;
-                        const cashBoxName = cashBoxObj ? cashBoxObj.nameAr : cashBoxId;
-                        paymentRows += `
-                          <tr>
-                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">نقدي${cashBoxName ? ' - ' + cashBoxName : ''}</td>
-                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.cash.amount || '0').toFixed(2)}</td>
-                          </tr>`;
-                      }
-                      
-                      // البنك
-                      if (multiplePayment.bank && parseFloat(multiplePayment.bank.amount || '0') > 0) {
-                        const bankId = multiplePayment.bank.bankId || '';
-                        // البحث عن اسم البنك من قائمة البنوك
-                        const bankObj = Array.isArray(banks) ? banks.find(b => b.id === bankId) : null;
-                        const bankName = bankObj ? bankObj.arabicName : bankId;
-                        paymentRows += `
-                          <tr>
-                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">تحويل بنكي${bankName ? ' - ' + bankName : ''}</td>
-                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.bank.amount || '0').toFixed(2)}</td>
-                          </tr>`;
-                      }
-                      
-                      // الشبكة
-                      if (multiplePayment.card && parseFloat(multiplePayment.card.amount || '0') > 0) {
-                        const cardBankId = multiplePayment.card.bankId || '';
-                        // البحث عن اسم البنك من قائمة البنوك
-                        const cardBankObj = Array.isArray(banks) ? banks.find(b => b.id === cardBankId) : null;
-                        const cardBankName = cardBankObj ? cardBankObj.arabicName : cardBankId;
-                        paymentRows += `
-                          <tr>
-                            <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">شبكة${cardBankName ? ' - ' + cardBankName : ''}</td>
-                            <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${parseFloat(multiplePayment.card.amount || '0').toFixed(2)}</td>
-                          </tr>`;
-                      }
-                      
-                      return paymentRows || `
-                        <tr>
-                          <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">لا توجد بيانات</td>
-                          <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">0.00</td>
-                        </tr>`;
-                    } else {
-                      // طريقة دفع واحدة
-                      let paymentLabel = invoice.paymentMethod || 'غير محدد';
-                      
-                      // إضافة اسم الصندوق النقدي إذا كانت طريقة الدفع نقدي
-                      if (invoice.paymentMethod === 'نقدي' && invoice.cashBox) {
-                        // البحث عن اسم الصندوق من قائمة الصناديق
-                        const cashBoxObj = Array.isArray(cashBoxes) ? cashBoxes.find(cb => cb.id === invoice.cashBox || cb.nameAr === invoice.cashBox) : null;
-                        const cashBoxName = cashBoxObj ? cashBoxObj.nameAr : invoice.cashBox;
-                        paymentLabel = `نقدي - ${cashBoxName}`;
-                      }
-                      
-                      return `
-                        <tr>
-                          <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">${paymentLabel}</td>
-                          <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2) || '0.00'}</td>
-                        </tr>`;
-                    }
-                  })()}
                 </tbody>
               </table>
             </div>
@@ -3731,51 +3609,7 @@ const handlePrint = () => {
                           <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 10.95 5.16-1.21 9-5.4 9-10.95V7L12 2z"/>
                           <path d="M10 14l-3-3 1.41-1.41L10 11.17l5.59-5.58L17 7l-7 7z" fill="white"/>
                         </svg>
-                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - يرجى اختيار طريقة الدفع
-                      </span>
-                    )}
-                    {items.length > 0 && quotationData.paymentMethod && (
-                      <span style={{ color: '#198754', fontWeight: 500, marginLeft: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                        </svg>
-                        تم اختيار طريقة الدفع - الفاتورة جاهزة للحفظ
-                      </span>
-                    )}
-                    {multiplePaymentMode && items.length > 0 && (
-                      <span style={{ 
-                        color: Math.abs(
-                          (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 ? '#dc2626' : '#059669', 
-                        fontWeight: 500, 
-                        marginLeft: 16, 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 6 
-                      }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          {Math.abs(
-                            (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                             parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                             parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                          ) > 0.01 ? (
-                            <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                          ) : (
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                          )}
-                        </svg>
-                        المتبقي: {(totals.afterTax - (
-                          parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                          parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                          parseFloat(quotationData.multiplePayment.card?.amount || '0')
-                        )).toFixed(2)} ر.س
-                        {Math.abs(
-                          (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 && ' - يجب أن يكون 0.00 للحفظ'}
+                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - جاهز للحفظ
                       </span>
                     )}
                   </div>
@@ -4593,787 +4427,11 @@ const handlePrint = () => {
             </Col>
           </Row>
 
-          {/* معلومات الدفع */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 24, fontSize: '16px', fontWeight: 600 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                backgroundColor: '#1f2937',
-                borderRadius: '8px',
-                padding: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-                  <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
-                </svg>
-              </div>
-              <span style={{ color: '#1f2937', fontWeight: 600, fontSize: '16px' }}>معلومات الدفع</span>
-            </div>
-          </Divider>
-          
-          {/* بطاقة طريقة الدفع الرئيسية */}
-          <Card 
-            style={{ 
-              marginBottom: 24,
-              border: '1px solid #e5e7eb',
-              borderRadius: '12px',
-              boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
-            }}
-          >
-            <div style={{ 
-              padding: '16px 20px',
-              borderBottom: '1px solid #f3f4f6',
-              marginBottom: '20px'
-            }}>
-              <div style={{ 
-                fontSize: '14px', 
-                fontWeight: 600, 
-                color: '#374151',
-                fontFamily: 'Cairo, sans-serif',
-                marginBottom: '4px'
-              }}>
-                اختيار طريقة الدفع
-              </div>
-              <div style={{ 
-                fontSize: '12px', 
-                color: '#6b7280',
-                fontFamily: 'Cairo, sans-serif'
-              }}>
-                يرجى تحديد الطريقة المناسبة لدفع قيمة الفاتورة
-              </div>
-            </div>
-            
-            <Row gutter={[24, 16]} align="middle">
-              <Col xs={24} sm={12} md={8}>
-                <div style={{ marginBottom: '8px' }}>
-                  <label style={{ 
-                    fontSize: '13px', 
-                    fontWeight: 500, 
-                    color: '#374151',
-                    fontFamily: 'Cairo, sans-serif',
-                    display: 'block',
-                    marginBottom: '6px'
-                  }}>
-                    طريقة الدفع *
-                  </label>
-                  <Select
-                    showSearch
-                    value={quotationData.paymentMethod}
-                    onChange={(value) => {
-                      const isMultiple = value === 'متعدد';
-                      setMultiplePaymentMode(isMultiple);
-                      setQuotationData({
-                        ...quotationData, 
-                        paymentMethod: value,
-                        cashBox: value === 'نقدي' ? quotationData.cashBox : '',
-                        multiplePayment: isMultiple ? quotationData.multiplePayment : {}
-                      });
-                    }}
-                    disabled={paymentMethods.length === 0}
-                    placeholder="اختر طريقة الدفع"
-                    style={{ 
-                      width: '100%',
-                      fontFamily: 'Cairo, sans-serif'
-                    }}
-                    size="large"
-                    filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                    options={[
-                      ...paymentMethods.map(method => ({
-                        label: method.name || method.id,
-                        value: method.name || method.id
-                      })),
-                    ]}
-                  />
-                </div>
-              </Col>
-              
-              {/* عرض الصندوق النقدي للدفع النقدي */}
-              {quotationData.paymentMethod === 'نقدي' && (
-                <Col xs={24} sm={12} md={8}>
-                  <div style={{ marginBottom: '8px' }}>
-                    <label style={{ 
-                      fontSize: '13px', 
-                      fontWeight: 500, 
-                      color: '#374151',
-                      fontFamily: 'Cairo, sans-serif',
-                      display: 'block',
-                      marginBottom: '6px'
-                    }}>
-                      الصندوق النقدي *
-                    </label>
-                    <Select
-                      showSearch
-                      value={quotationData.cashBox}
-                      onChange={(value) => setQuotationData({...quotationData, cashBox: value})}
-                      disabled={cashBoxes.length === 0}
-                      placeholder="اختر الصندوق النقدي"
-                      style={{ 
-                        width: '100%',
-                        fontFamily: 'Cairo, sans-serif'
-                      }}
-                      size="large"
-                      filterOption={(input, option) =>
-                        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                      }
-                      options={cashBoxes
-                        .filter(cashBox => !quotationData.branch || cashBox.branch === quotationData.branch)
-                        .map(cashBox => ({
-                          label: cashBox.nameAr,
-                          value: cashBox.id || cashBox.nameAr
-                        }))}
-                    />
-                  </div>
-                </Col>
-              )}
-              
-              {/* عرض إجمالي المبلغ للطرق العادية */}
-              {quotationData.paymentMethod && quotationData.paymentMethod !== 'متعدد' && (
-                <Col xs={24} sm={12} md={8}>
-                  <div style={{ 
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ 
-                      fontSize: '12px', 
-                      color: '#64748b',
-                      fontWeight: 500,
-                      marginBottom: '4px',
-                      fontFamily: 'Cairo, sans-serif'
-                    }}>
-                      إجمالي المبلغ
-                    </div>
-                    <div style={{ 
-                      fontSize: '20px', 
-                      fontWeight: 700,
-                      color: '#1e293b',
-                      fontFamily: 'Cairo, sans-serif'
-                    }}>
-                      {totals.afterTax.toFixed(2)} ر.س
-                    </div>
-                  </div>
-                </Col>
-              )}
-            </Row>
-          </Card>
+
+
 
           
-          {/* قسم الدفع المتعدد */}
-          {multiplePaymentMode && (
-            <Card 
-              style={{ 
-                marginBottom: 24,
-                border: '2px solid #f59e0b',
-                borderRadius: '12px',
-                overflow: 'hidden'
-              }}
-            >
-              {/* عنوان القسم */}
-              <div style={{ 
-                backgroundColor: '#f59e0b',
-                margin: '-1px -1px 20px -1px',
-                padding: '16px 20px',
-                color: 'white'
-              }}>
-                <Row align="middle" justify="space-between">
-                  <Col>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                        borderRadius: '8px',
-                        padding: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-                          <path d="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v4H3v-4z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <div style={{ 
-                          fontSize: '16px', 
-                          fontWeight: 700,
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          الدفع المتعدد
-                        </div>
-                        <div style={{ 
-                          fontSize: '12px', 
-                          opacity: 0.9,
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          توزيع المبلغ على عدة طرق دفع
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-                  <Col>
-                    <div style={{ 
-                      backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                      padding: '8px 16px',
-                      borderRadius: '8px',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '2px' }}>المبلغ الإجمالي</div>
-                      <div style={{ fontSize: '16px', fontWeight: 700 }}>
-                        {totals.afterTax.toFixed(2)} ر.س
-                      </div>
-                    </div>
-                  </Col>
-                </Row>
-              </div>
 
-              {/* جدول طرق الدفع */}
-              <div style={{ padding: '0 20px 20px 20px' }}>
-                <Row gutter={[20, 20]}>
-                  {/* النقدي */}
-                  <Col xs={24} lg={8}>
-                    <div style={{
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        backgroundColor: '#f9fafb',
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 10
-                        }}>
-                          <div style={{
-                            backgroundColor: '#059669',
-                            borderRadius: '6px',
-                            padding: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                              <path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/>
-                            </svg>
-                          </div>
-                          <span style={{ 
-                            fontWeight: 600, 
-                            color: '#374151',
-                            fontFamily: 'Cairo, sans-serif',
-                            fontSize: '14px'
-                          }}>
-                            الدفع النقدي
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            الصندوق النقدي
-                          </label>
-                          <Select
-                            showSearch
-                            value={quotationData.multiplePayment.cash?.cashBoxId || ''}
-                            onChange={(value) => setQuotationData({
-                              ...quotationData, 
-                              multiplePayment: {
-                                ...quotationData.multiplePayment,
-                                cash: {
-                                  ...quotationData.multiplePayment.cash,
-                                  cashBoxId: value,
-                                  amount: quotationData.multiplePayment.cash?.amount || ''
-                                }
-                              }
-                            })}
-                            disabled={cashBoxes.length === 0}
-                            placeholder="اختر الصندوق"
-                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                            filterOption={(input, option) =>
-                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={cashBoxes
-                              .filter(cashBox => !quotationData.branch || cashBox.branch === quotationData.branch)
-                              .map(cashBox => ({
-                                label: cashBox.nameAr,
-                                value: cashBox.id || cashBox.nameAr
-                              }))}
-                            allowClear
-                          />
-                        </div>
-                        
-                        <div>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            المبلغ النقدي (ر.س)
-                          </label>
-                          <Input
-                            value={quotationData.multiplePayment.cash?.amount || ''}
-                            onChange={(e) => setQuotationData({
-                              ...quotationData, 
-                              multiplePayment: {
-                                ...quotationData.multiplePayment,
-                                cash: {
-                                  ...quotationData.multiplePayment.cash,
-                                  cashBoxId: quotationData.multiplePayment.cash?.cashBoxId || '',
-                                  amount: e.target.value
-                                }
-                              }
-                            })}
-                            onFocus={(e) => {
-                              if (!e.target.value) {
-                                const currentTotal = parseFloat(quotationData.multiplePayment.bank?.amount || '0') + 
-                                                    parseFloat(quotationData.multiplePayment.card?.amount || '0');
-                                const remaining = totals.afterTax - currentTotal;
-                                if (remaining > 0) {
-                                  setQuotationData({
-                                    ...quotationData, 
-                                    multiplePayment: {
-                                      ...quotationData.multiplePayment,
-                                      cash: {
-                                        ...quotationData.multiplePayment.cash,
-                                        cashBoxId: quotationData.multiplePayment.cash?.cashBoxId || '',
-                                        amount: remaining.toFixed(2)
-                                      }
-                                    }
-                                  });
-                                }
-                              }
-                            }}
-                            placeholder="0.00"
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            disabled={!quotationData.multiplePayment.cash?.cashBoxId}
-                            style={{ textAlign: 'center', fontWeight: 600 }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-
-                  {/* البنك */}
-                  <Col xs={24} lg={8}>
-                    <div style={{
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        backgroundColor: '#f9fafb',
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 10
-                        }}>
-                          <div style={{
-                            backgroundColor: '#2563eb',
-                            borderRadius: '6px',
-                            padding: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                              <path d="M5 7h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1zM6 10h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1s.45 1 1 1zM3 13h18c.55 0 1-.45 1-1s-.45-1-1-1H3c-.55 0-1 .45-1 1s.45 1 1 1zM4 16h16c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zM5 19h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1z"/>
-                            </svg>
-                          </div>
-                          <span style={{ 
-                            fontWeight: 600, 
-                            color: '#374151',
-                            fontFamily: 'Cairo, sans-serif',
-                            fontSize: '14px'
-                          }}>
-                            التحويل البنكي
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            البنك
-                          </label>
-                          <Select
-                            showSearch
-                            value={quotationData.multiplePayment.bank?.bankId || ''}
-                            onChange={(value) => setQuotationData({
-                              ...quotationData, 
-                              multiplePayment: {
-                                ...quotationData.multiplePayment,
-                                bank: {
-                                  ...quotationData.multiplePayment.bank,
-                                  bankId: value,
-                                  amount: quotationData.multiplePayment.bank?.amount || ''
-                                }
-                              }
-                            })}
-                            disabled={banks.length === 0}
-                            placeholder="اختر البنك"
-                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                            filterOption={(input, option) =>
-                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={banks.map(bank => ({
-                              label: bank.arabicName,
-                              value: bank.id || bank.arabicName
-                            }))}
-                            allowClear
-                          />
-                        </div>
-                        
-                        <div>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            المبلغ البنكي (ر.س)
-                          </label>
-                          <Input
-                            value={quotationData.multiplePayment.bank?.amount || ''}
-                            onChange={(e) => setQuotationData({
-                              ...quotationData, 
-                              multiplePayment: {
-                                ...quotationData.multiplePayment,
-                                bank: {
-                                  ...quotationData.multiplePayment.bank,
-                                  bankId: quotationData.multiplePayment.bank?.bankId || '',
-                                  amount: e.target.value
-                                }
-                              }
-                            })}
-                            onFocus={(e) => {
-                              if (!e.target.value) {
-                                const currentTotal = parseFloat(quotationData.multiplePayment.cash?.amount || '0') + 
-                                                    parseFloat(quotationData.multiplePayment.card?.amount || '0');
-                                const remaining = totals.afterTax - currentTotal;
-                                if (remaining > 0) {
-                                  setQuotationData({
-                                    ...quotationData, 
-                                    multiplePayment: {
-                                      ...quotationData.multiplePayment,
-                                      bank: {
-                                        ...quotationData.multiplePayment.bank,
-                                        bankId: quotationData.multiplePayment.bank?.bankId || '',
-                                        amount: remaining.toFixed(2)
-                                      }
-                                    }
-                                  });
-                                }
-                              }
-                            }}
-                            placeholder="0.00"
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            disabled={!quotationData.multiplePayment.bank?.bankId}
-                            style={{ textAlign: 'center', fontWeight: 600 }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-
-                  {/* الشبكة */}
-                  <Col xs={24} lg={8}>
-                    <div style={{
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        backgroundColor: '#f9fafb',
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 10
-                        }}>
-                          <div style={{
-                            backgroundColor: '#dc2626',
-                            borderRadius: '6px',
-                            padding: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                              <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
-                            </svg>
-                          </div>
-                          <span style={{ 
-                            fontWeight: 600, 
-                            color: '#374151',
-                            fontFamily: 'Cairo, sans-serif',
-                            fontSize: '14px'
-                          }}>
-                            بطاقة الشبكة
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            بنك الشبكة
-                          </label>
-                          <Select
-                            showSearch
-                            value={quotationData.multiplePayment.card?.bankId || ''}
-                            onChange={(value) => setQuotationData({
-                              ...quotationData, 
-                              multiplePayment: {
-                                ...quotationData.multiplePayment,
-                                card: {
-                                  ...quotationData.multiplePayment.card,
-                                  bankId: value,
-                                  amount: quotationData.multiplePayment.card?.amount || ''
-                                }
-                              }
-                            })}
-                            disabled={banks.length === 0}
-                            placeholder="اختر البنك"
-                            style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                            filterOption={(input, option) =>
-                              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                            }
-                            options={banks.map(bank => ({
-                              label: bank.arabicName,
-                              value: bank.id || bank.arabicName
-                            }))}
-                            allowClear
-                          />
-                        </div>
-                        
-                        <div>
-                          <label style={{ 
-                            fontSize: '12px', 
-                            color: '#6b7280',
-                            fontWeight: 500,
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            مبلغ الشبكة (ر.س)
-                          </label>
-                          <Input
-                            value={quotationData.multiplePayment.card?.amount || ''}
-                            onChange={(e) => setQuotationData({
-                              ...quotationData, 
-                              multiplePayment: {
-                                ...quotationData.multiplePayment,
-                                card: {
-                                  ...quotationData.multiplePayment.card,
-                                  bankId: quotationData.multiplePayment.card?.bankId || '',
-                                  amount: e.target.value
-                                }
-                              }
-                            })}
-                            onFocus={(e) => {
-                              if (!e.target.value) {
-                                const currentTotal = parseFloat(quotationData.multiplePayment.cash?.amount || '0') + 
-                                                    parseFloat(quotationData.multiplePayment.bank?.amount || '0');
-                                const remaining = totals.afterTax - currentTotal;
-                                if (remaining > 0) {
-                                  setQuotationData({
-                                    ...quotationData, 
-                                    multiplePayment: {
-                                      ...quotationData.multiplePayment,
-                                      card: {
-                                        ...quotationData.multiplePayment.card,
-                                        bankId: quotationData.multiplePayment.card?.bankId || '',
-                                        amount: remaining.toFixed(2)
-                                      }
-                                    }
-                                  });
-                                }
-                              }
-                            }}
-                            placeholder="0.00"
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            disabled={!quotationData.multiplePayment.card?.bankId}
-                            style={{ textAlign: 'center', fontWeight: 600 }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-                </Row>
-
-                {/* ملخص الدفع المتعدد */}
-                <div style={{ 
-                  marginTop: '24px',
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  padding: '20px'
-                }}>
-                  <Row gutter={[16, 16]} align="middle">
-                    <Col xs={24} sm={8}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ 
-                          fontSize: '12px', 
-                          color: '#6b7280',
-                          fontWeight: 500,
-                          marginBottom: '4px',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          إجمالي المدفوع
-                        </div>
-                        <div style={{ 
-                          fontSize: '18px', 
-                          fontWeight: 700,
-                          color: '#1f2937',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          {(
-                            parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                            parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                            parseFloat(quotationData.multiplePayment.card?.amount || '0')
-                          ).toFixed(2)} ر.س
-                        </div>
-                      </div>
-                    </Col>
-                    <Col xs={24} sm={8}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ 
-                          fontSize: '12px', 
-                          color: '#6b7280',
-                          fontWeight: 500,
-                          marginBottom: '4px',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          المبلغ المتبقي
-                        </div>
-                        <div style={{ 
-                          fontSize: '18px', 
-                          fontWeight: 700,
-                          color: (totals.afterTax - (
-                            parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                            parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                            parseFloat(quotationData.multiplePayment.card?.amount || '0')
-                          )) > 0.01 ? '#dc2626' : '#059669',
-                          fontFamily: 'Cairo, sans-serif'
-                        }}>
-                          {(totals.afterTax - (
-                            parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                            parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                            parseFloat(quotationData.multiplePayment.card?.amount || '0')
-                          )).toFixed(2)} ر.س
-                        </div>
-                      </div>
-                    </Col>
-                    <Col xs={24} sm={8}>
-                      <div style={{ 
-                        textAlign: 'center',
-                        padding: '12px 16px',
-                        borderRadius: '6px',
-                        backgroundColor: Math.abs(
-                          (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) <= 0.01 ? '#dcfce7' : '#fef2f2',
-                        border: Math.abs(
-                          (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) <= 0.01 ? '1px solid #16a34a' : '1px solid #dc2626'
-                      }}>
-                        <div style={{ 
-                          fontSize: '13px', 
-                          fontWeight: 600,
-                          color: Math.abs(
-                            (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                             parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                             parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                          ) <= 0.01 ? '#15803d' : '#dc2626',
-                          fontFamily: 'Cairo, sans-serif',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6
-                        }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            {Math.abs(
-                              (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                               parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                               parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                            ) <= 0.01 ? (
-                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                            ) : (
-                              <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                            )}
-                          </svg>
-                          {Math.abs(
-                            (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                             parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                             parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                          ) <= 0.01 ? 'الدفع مكتمل' : 'الدفع غير مكتمل'}
-                        </div>
-                        {Math.abs(
-                          (parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                           parseFloat(quotationData.multiplePayment.card?.amount || '0')) - totals.afterTax
-                        ) > 0.01 && (
-                          <div style={{ 
-                            fontSize: '11px', 
-                            color: '#dc2626',
-                            marginTop: '4px',
-                            fontFamily: 'Cairo, sans-serif'
-                          }}>
-                            يجب أن يكون المتبقي 0.00 لحفظ الفاتورة
-                          </div>
-                        )}
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              </div>
-            </Card>
-          )}
 
 
 
@@ -5392,47 +4450,6 @@ const handlePrint = () => {
                       alert('لا يمكن حفظ عرض السعر إذا كان الإجمالي النهائي صفر أو أقل');
                     }
                     return;
-                  }
-                  if (!quotationData.paymentMethod) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار طريقة الدفع أولاً');
-                    } else {
-                      alert('يرجى اختيار طريقة الدفع أولاً');
-                    }
-                    return;
-                  }
-                  if (quotationData.paymentMethod === 'نقدي' && !quotationData.cashBox) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار الصندوق النقدي');
-                    } else {
-                      alert('يرجى اختيار الصندوق النقدي');
-                    }
-                    return;
-                  }
-                  if (multiplePaymentMode && (!quotationData.multiplePayment.cash?.cashBoxId && !quotationData.multiplePayment.bank?.bankId && !quotationData.multiplePayment.card?.bankId)) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('يرجى اختيار وسائل الدفع للدفع المتعدد');
-                    } else {
-                      alert('يرجى اختيار وسائل الدفع للدفع المتعدد');
-                    }
-                    return;
-                  }
-                  
-                  // التحقق من أن المتبقي يساوي 0.00 في حالة الدفع المتعدد
-                  if (multiplePaymentMode) {
-                    const totalPayments = parseFloat(quotationData.multiplePayment.cash?.amount || '0') +
-                                         parseFloat(quotationData.multiplePayment.bank?.amount || '0') +
-                                         parseFloat(quotationData.multiplePayment.card?.amount || '0');
-                    const remaining = totals.afterTax - totalPayments;
-                    
-                    if (Math.abs(remaining) > 0.01) {
-                      if (typeof message !== 'undefined' && message.error) {
-                        message.error(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
-                      } else {
-                        alert(`لا يمكن حفظ الفاتورة. المتبقي يجب أن يكون 0.00 (المتبقي الحالي: ${remaining.toFixed(2)})`);
-                      }
-                      return;
-                    }
                   }
                   
                   await handleSave();

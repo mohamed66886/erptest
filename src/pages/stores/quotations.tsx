@@ -99,8 +99,6 @@ const Quotations: React.FC = () => {
     expiredQuotations: 0
   });
 
-  // ...existing code...
-
   // جلب البيانات الأساسية
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -509,17 +507,7 @@ const Quotations: React.FC = () => {
       width: 120,
       sorter: (a: QuotationRecord, b: QuotationRecord) => a.branchName.localeCompare(b.branchName),
     },
-    {
-      title: 'طريقة الدفع',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod',
-      width: 120,
-      render: (paymentMethodId: string) => {
-        const paymentMethod = paymentMethods.find(pm => pm.id === paymentMethodId);
-        return paymentMethod?.name || paymentMethodId;
-      },
-      sorter: (a: QuotationRecord, b: QuotationRecord) => a.paymentMethod.localeCompare(b.paymentMethod),
-    },
+    // تم حذف عمود طريقة الدفع بناءً على طلب المستخدم
     // تم حذف عمود المخزن بناءً على طلب المستخدم
     {
       title: 'المندوب',
@@ -614,8 +602,6 @@ const Quotations: React.FC = () => {
         ]}
       />
 
-      {/* ...existing code... */}
-
       {/* خيارات البحث */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
@@ -625,9 +611,21 @@ const Quotations: React.FC = () => {
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
         
-        <h3 className="text-lg font-semibold text-gray-700 mb-2 flex items-center gap-2">
-          <SearchOutlined className="text-blue-600 text-lg" /> خيارات البحث
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2 m-0">
+            <SearchOutlined className="text-blue-600 text-lg" /> خيارات البحث
+          </h3>
+          <Button
+            icon={<PlusOutlined />}
+            onClick={() => {
+              navigate('/stores/quotations/new');
+              window.scrollTo(0, 0);
+            }}
+            className="bg-blue-600 hover:bg-green-700 border-green-600 hover:border-green-700 text-white"
+          >
+            إضافة عرض سعر جديد
+          </Button>
+        </div>
         
         <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="flex flex-col">
@@ -803,16 +801,7 @@ const Quotations: React.FC = () => {
           >
             بحث
           </Button>
-          <Button
-            icon={<PlusOutlined />}
-            onClick={() => {
-              navigate('/stores/quotations/new');
-              window.scrollTo(0, 0);
-            }}
-            className="bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700 text-white"
-          >
-            إضافة عرض سعر جديد
-          </Button>
+
         </div>
       </motion.div>
 
