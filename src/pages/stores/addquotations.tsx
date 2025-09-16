@@ -134,6 +134,7 @@ const AddQuotationPage: React.FC = () => {
   const [unit, setUnit] = useState("قطعة");
   const [price, setPrice] = useState("");
   const [discountPercent, setDiscountPercent] = useState(0);
+  const [taxPercent, setTaxPercent] = useState(0);
   const [showItemModal, setShowItemModal] = useState(false);
   const [addedItems, setAddedItems] = useState<Array<{
     itemCode: string;
@@ -142,6 +143,7 @@ const AddQuotationPage: React.FC = () => {
     unit: string;
     price: string;
     discountPercent: number;
+    taxPercent: number;
   }>>([]);
 
   // متغيرات مودال البحث عن العميل
@@ -188,13 +190,14 @@ const AddQuotationPage: React.FC = () => {
     ) {
       return message.error('يرجى إدخال جميع بيانات الصنف بشكل صحيح');
     }
-    setAddedItems(items => [...items, { itemCode, itemName, quantity, unit: finalUnit, price, discountPercent }]);
+    setAddedItems(items => [...items, { itemCode, itemName, quantity, unit: finalUnit, price, discountPercent, taxPercent }]);
     setItemCode('');
     setItemName('');
     setQuantity('1');
     setUnit('');
     setPrice('');
     setDiscountPercent(0);
+    setTaxPercent(0);
   };
 
   // دوال إدارة الإكسل
@@ -221,7 +224,8 @@ const AddQuotationPage: React.FC = () => {
               quantity: String(row[2] || "1"),
               unit: String(row[3] || "قطعة"),
               price: String(row[4] || ""),
-              discountPercent: Number(row[5] || 0)
+              discountPercent: Number(row[5] || 0),
+              taxPercent: 0 // افتراضيًا صفر ويمكن تعديله يدويًا بعد الإضافة
             }))
             .filter(item => item.itemCode && item.itemName && item.quantity && item.unit && item.price);
           if (!items.length) {
@@ -396,6 +400,7 @@ const AddQuotationPage: React.FC = () => {
     { title: 'الوحدة', dataIndex: 'unit', key: 'unit', width: 80 },
     { title: 'السعر', dataIndex: 'price', key: 'price', width: 100 },
     { title: 'نسبة الخصم %', dataIndex: 'discountPercent', key: 'discountPercent', width: 100 },
+    { title: 'نسبة الضريبة %', dataIndex: 'taxPercent', key: 'taxPercent', width: 100 },
     { 
       title: 'إجراءات', 
       key: 'actions', 
@@ -463,18 +468,14 @@ const AddQuotationPage: React.FC = () => {
             <label style={labelStyle}>تاريخ عرض السعر</label>
             <DatePicker value={quotationDate} onChange={setQuotationDate} format="YYYY-MM-DD" placeholder="تاريخ عرض السعر" style={largeControlStyle} size="large" />
           </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-4">
-          {/* حذف رقم المرجع بالكامل */}
-          {/* <div className="flex flex-col gap-2">
-            <label style={labelStyle}>رقم المرجع</label>
-            <Input value={refNumber} onChange={e => setRefNumber(e.target.value)} placeholder="رقم المرجع" style={largeControlStyle} size="large" />
-          </div> */}
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>تاريخ الانتهاء</label>
             <DatePicker value={refDate} onChange={setRefDate} format="YYYY-MM-DD" placeholder="تاريخ الانتهاء" style={largeControlStyle} size="large" />
           </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-4">
+
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>الفرع</label>
             <Select
@@ -521,9 +522,6 @@ const AddQuotationPage: React.FC = () => {
               <Select.Option value="عرض سعر نهائي">عرض سعر نهائي - Final Quote</Select.Option>
             </Select>
           </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-4">
 
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحساب</label>
@@ -532,6 +530,10 @@ const AddQuotationPage: React.FC = () => {
               <Select.Option value="عميل محتمل">عميل محتمل</Select.Option>
             </Select>
           </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-4">
+
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>رقم الحساب</label>
             <div style={{ display: "flex", gap: 8 }}>
@@ -609,6 +611,10 @@ const AddQuotationPage: React.FC = () => {
               disabled
             />
           </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>البيان</label>
+            <Input.TextArea value={statement} onChange={e => setStatement(e.target.value)} placeholder="البيان" rows={2} style={{ ...largeControlStyle, minHeight: 48 }} />
+          </div>
           {/* مودال البحث عن الحساب */}
           <Modal
             open={showAccountModal}
@@ -653,16 +659,8 @@ const AddQuotationPage: React.FC = () => {
           </Modal>
         </div>
 
-        <div className="grid grid-cols-4 gap-6 mb-4">
-          {/* تم حذف نوع الجهة، رقم الجهة، اسم الجهة، وتصنيف العملية بناءً على طلب المستخدم */}
-        </div>
 
-        <div className="grid grid-cols-4 gap-6 mb-4">
-          <div className="flex flex-col gap-2 col-span-3">
-            <label style={labelStyle}>البيان</label>
-            <Input.TextArea value={statement} onChange={e => setStatement(e.target.value)} placeholder="البيان" rows={2} style={{ ...largeControlStyle, minHeight: 48 }} />
-          </div>
-        </div>
+
       </div>
 
       {/* الأصناف */}
@@ -735,11 +733,10 @@ const AddQuotationPage: React.FC = () => {
                   value={unit}
                   onChange={(value) => setUnit(value)}
                   placeholder="الوحدة"
-                    allowClear
+                  allowClear
               style={largeControlStyle}
               size="large"
                   options={units.map(unit => ({ label: unit, value: unit }))}
-                  size="large"
                 />
               </div>
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
@@ -749,6 +746,10 @@ const AddQuotationPage: React.FC = () => {
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
                 <label style={labelStyle}>نسبة الخصم %</label>
                 <Input type="number" min={0} max={100} value={discountPercent} onChange={e => setDiscountPercent(Number(e.target.value))} placeholder="نسبة الخصم %" style={{...largeControlStyle, width: '100%'}} size="large" />
+              </div>
+              <div className="flex-1 min-w-[90px] flex flex-col gap-1">
+                <label style={labelStyle}>نسبة الضريبة %</label>
+                <Input type="number" min={0} max={100} value={taxPercent} onChange={e => setTaxPercent(Number(e.target.value))} placeholder="نسبة الضريبة %" style={{...largeControlStyle, width: '100%'}} size="large" />
               </div>
               <div className="flex-1 min-w-[120px] flex flex-col gap-1 justify-end">
                 <label style={{ visibility: 'hidden', height: 0 }}>إضافة الصنف</label>
