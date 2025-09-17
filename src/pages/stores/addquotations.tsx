@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspens
 import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined, FileTextOutlined } from '@ant-design/icons';
 import { FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/useAuth';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, orderBy } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider, Tabs } from 'antd';
 import Breadcrumb from "../../components/Breadcrumb";
@@ -52,26 +52,48 @@ interface Customer {
   taxFileNumber?: string;
 }
 
+interface InventoryItem {
+  id: string;
+  numericId?: number;
+  name: string;
+  type?: 'رئيسي' | 'مستوى أول' | 'مستوى ثاني';
+  parentId?: number;
+  itemCode?: string;
+  salePrice?: number;
+  purchasePrice?: number;
+  discount?: number;
+  isVatIncluded?: boolean;
+  tempCodes?: boolean;
+  allowNegative?: boolean;
+  minOrder?: number;
+  supplier?: string;
+  unit?: string;
+  createdAt?: string;
+}
+
+interface CompanyData {
+  arabicName?: string;
+  englishName?: string;
+  companyType?: string;
+  commercialRegistration?: string;
+  taxFile?: string;
+  city?: string;
+  region?: string;
+  street?: string;
+  district?: string;
+  buildingNumber?: string;
+  postalCode?: string;
+  phone?: string;
+  mobile?: string;
+  logoUrl?: string;
+  website?: string;
+  taxRate?: string;
+}
+
 interface Delegate {
   id: string;
   name?: string;
   email?: string;
-}
-
-interface CompanyData {
-  taxRate?: string;
-}
-
-interface InventoryItem {
-  id: string;
-  name: string;
-  itemCode?: string;
-  salePrice?: number;
-  discount?: number;
-  isVatIncluded?: boolean;
-  type?: string;
-  tempCodes?: boolean;
-  allowNegative?: boolean;
 }
 
 interface QuotationItem {
@@ -160,7 +182,9 @@ const AddQuotationPage: React.FC = () => {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [items, setItems] = useState<InventoryItem[]>([]);
   const [units, setUnits] = useState<string[]>(['قطعة', 'كيلو', 'لتر', 'متر', 'صندوق', 'عبوة']);
+  const [companyData, setCompanyData] = useState<CompanyData>({});
 
   // بيانات عرض السعر
   const [quotationData, setQuotationData] = useState<QuotationData>({
@@ -179,6 +203,38 @@ const AddQuotationPage: React.FC = () => {
   });
 
   // دوال إدارة الأصناف
+  const handleItemSelect = (selectedItemName: string) => {
+    const selectedItem = items.find(item => item.name === selectedItemName);
+    
+    if (selectedItem) {
+      // التحقق من أن الصنف غير موقوف مؤقتاً
+      if (selectedItem.tempCodes) {
+        message.warning(`تم إيقاف الصنف "${selectedItemName}" مؤقتاً ولا يمكن إضافته لعرض السعر`);
+        setItemName('');
+        setItemCode('');
+        setPrice('');
+        setDiscountPercent(0);
+        setTaxPercent(0);
+        return;
+      }
+
+      // تعبئة البيانات تلقائياً
+      setItemName(selectedItemName);
+      setItemCode(selectedItem.itemCode || '');
+      setPrice(selectedItem.salePrice ? String(selectedItem.salePrice) : '');
+      setDiscountPercent(selectedItem.discount || 0);
+      
+      // الحصول على نسبة الضريبة من إعدادات الشركة
+      const taxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+      setTaxPercent(taxRate);
+      
+      // تعيين الوحدة إذا كانت متوفرة
+      if (selectedItem.unit) {
+        setUnit(selectedItem.unit);
+      }
+    }
+  };
+
   const handleAddNewItem = () => {
     const finalUnit = unit && unit.trim() ? unit : "قطعة";
     if (
@@ -277,9 +333,483 @@ const AddQuotationPage: React.FC = () => {
     setAddedItems([]);
   };
 
-  // دالة الطباعة (مبدئية)
-  const handlePrint = () => {
-    message.info('تم استدعاء الطباعة (يرجى ربطها بوظيفة الطباعة لاحقًا)');
+  // دالة الطباعة لعرض السعر
+  const handlePrint = async () => {
+    // التحقق من وجود البيانات المطلوبة
+    if (!quotationData.branch) return message.error('يرجى اختيار الفرع');
+    if (!quotationData.warehouse) return message.error('يرجى اختيار المخزن');
+    if (!quotationData.customerName) return message.error('يرجى إدخال اسم العميل');
+    if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
+
+    // جلب بيانات الشركة من الإعدادات (إذا لم تكن محملة بالفعل)
+    let currentCompanyData = companyData;
+    if (!currentCompanyData.arabicName) {
+      try {
+        const snapshot = await getDocs(collection(db, 'companies'));
+        if (!snapshot.empty) {
+          currentCompanyData = snapshot.docs[0].data() as CompanyData;
+        }
+      } catch (error) {
+        console.error('Error fetching company data for print:', error);
+        // استخدام بيانات افتراضية في حالة الخطأ
+        currentCompanyData = {
+          arabicName: 'شركة ERP90',
+          englishName: 'ERP90 Company',
+          companyType: 'شركة ذات مسؤولية محدودة',
+          commercialRegistration: '1234567890',
+          taxFile: '123456789012345',
+          city: 'الرياض',
+          region: 'منطقة الرياض',
+          street: 'شارع الملك فهد',
+          district: 'حي العليا',
+          buildingNumber: '123',
+          postalCode: '12345',
+          phone: '+966112345678',
+          mobile: '+966501234567',
+          logoUrl: 'https://via.placeholder.com/150x80?text=LOGO',
+          website: 'www.erp90.com'
+        };
+      }
+    }
+
+    // بيانات عرض السعر
+    const quotationTotals = {
+      subtotal: addedItems.reduce((sum, item) => {
+        const qty = Number(item.quantity) || 0;
+        const price = Number(item.price) || 0;
+        return sum + (qty * price);
+      }, 0),
+      totalDiscount: addedItems.reduce((sum, item) => {
+        const qty = Number(item.quantity) || 0;
+        const price = Number(item.price) || 0;
+        const discount = Number(item.discountPercent) || 0;
+        return sum + ((qty * price * discount) / 100);
+      }, 0),
+      totalTax: addedItems.reduce((sum, item) => {
+        const qty = Number(item.quantity) || 0;
+        const price = Number(item.price) || 0;
+        const discount = Number(item.discountPercent) || 0;
+        const afterDiscount = qty * price * (1 - discount / 100);
+        const tax = Number(item.taxPercent) || 0;
+        return sum + ((afterDiscount * tax) / 100);
+      }, 0)
+    };
+
+    const afterDiscount = quotationTotals.subtotal - quotationTotals.totalDiscount;
+    const finalTotal = afterDiscount + quotationTotals.totalTax;
+
+    try {
+      // Generate QR code data URL (using qrcode library)
+      let qrDataUrl = '';
+      try {
+        // Dynamically import qrcode library
+        const QRCode = (await import('qrcode')).default;
+        const qrContent = JSON.stringify({
+          quotationNumber: quotationNumber,
+          company: currentCompanyData.arabicName,
+          date: quotationDate.format('YYYY-MM-DD'),
+          total: finalTotal,
+          customer: quotationData.customerName
+        });
+        qrDataUrl = await QRCode.toDataURL(qrContent, { width: 120, margin: 1 });
+      } catch (e) {
+        console.error('Error generating QR code:', e);
+        qrDataUrl = '';
+      }
+
+      // إنشاء عنصر div مخفي للطباعة
+      const printContainer = document.createElement('div');
+      printContainer.id = 'print-container';
+      printContainer.style.position = 'absolute';
+      printContainer.style.left = '-9999px';
+      printContainer.style.top = '-9999px';
+      printContainer.style.width = '210mm';
+      printContainer.style.height = 'auto';
+      
+      // إضافة محتوى عرض السعر
+      printContainer.innerHTML = `
+        <html>
+        <head>
+          <title>عرض سعر | Quotation</title>
+          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+          <style>
+            @page { 
+              size: A4; 
+              margin: 8mm; 
+            }
+            @media print {
+              html, body { 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                height: auto !important;
+                overflow: hidden !important;
+              }
+              * { 
+                -webkit-print-color-adjust: exact; 
+                color-adjust: exact; 
+                box-sizing: border-box;
+              }
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              height: auto;
+              overflow: visible;
+              background-color: #fff !important;
+            }
+            body {
+              font-family: 'Tajawal', sans-serif;
+              direction: rtl;
+              padding: 4mm;
+              color: #000;
+              font-size: 11px;
+              line-height: 1.3;
+              max-width: 100%;
+              box-sizing: border-box;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 4mm;
+              border-bottom: 1px solid #000;
+              padding-bottom: 2mm;
+              page-break-inside: avoid;
+            }
+            .header-section {
+              flex: 1;
+              min-width: 0;
+              padding: 0 8px;
+              box-sizing: border-box;
+            }
+            .header-section.center {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              flex: 0 0 120px;
+              max-width: 120px;
+              min-width: 100px;
+            }
+            .logo {
+              width: 150px;
+              height: auto;
+              margin-bottom: 8px;
+            }
+            .company-info-ar {
+              text-align: right;
+              font-size: 11px;
+              font-weight: 500;
+              line-height: 1.4;
+            }
+            .company-info-en {
+              text-align: left;
+              font-family: Arial, sans-serif;
+              direction: ltr;
+              font-size: 10px;
+              font-weight: 500;
+              line-height: 1.4;
+            }
+            .info-row-table {
+              border: 1px solid #bbb;
+              border-radius: 4px;
+              margin-bottom: 0;
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 12px;
+              margin-top: 0;
+            }
+            .info-row-table td {
+              border: none;
+              padding: 2px 8px;
+              vertical-align: middle;
+              font-weight: 500;
+            }
+            .info-row-table .label {
+              color: #444;
+              font-weight: bold;
+              min-width: 80px;
+              text-align: right;
+            }
+            .info-row-table .value {
+              color: #222;
+              text-align: left;
+            }
+            .info-row-container {
+              display: flex;
+              flex-direction: row;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 3mm;
+              gap: 12px;
+              page-break-inside: avoid;
+            }
+            .info-row-table.left {
+              direction: rtl;
+            }
+            .info-row-table.right {
+              direction: rtl;
+            }
+            .qr-center {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              min-width: 100px;
+              max-width: 120px;
+              flex: 0 0 120px;
+            }
+            .qr-code {
+              width: 80px;
+              height: 80px;
+              border: 1px solid #ddd;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-family: Arial;
+              font-size: 8px;
+              text-align: center;
+              margin-top: 4px;
+            }
+            .quotation-title { text-align: center; font-size: 16px; font-weight: bold; margin: 5mm 0; border: 1px solid #000; padding: 2mm; background-color: #f3f3f3; }
+            .customer-info { margin-bottom: 5mm; border: 1px solid #ddd; padding: 3mm; }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-bottom: 3mm; 
+              font-size: 10px;
+              page-break-inside: avoid;
+            }
+            th, td { border: 1px solid #000; padding: 1.5mm; text-align: center; }
+            th {
+              background-color: #eae6e6;
+              color: #000;
+              font-weight: bold;
+              font-size: 11px;
+              letter-spacing: 0.3px;
+            }
+            .totals { 
+              margin-top: 3mm; 
+              border-top: 1px solid #000; 
+              padding-top: 2mm; 
+              font-weight: bold;
+              page-break-inside: avoid;
+            }
+            .signature { 
+              margin-top: 3mm; 
+              display: flex; 
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+            .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 2mm; }
+            .footer { 
+              margin-top: 3mm; 
+              text-align: center; 
+              font-size: 9px;
+              page-break-inside: avoid;
+            }
+            .totals-container {
+              display: flex;
+              justify-content: flex-end;
+              margin-top: 3mm;
+              page-break-inside: avoid;
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Header Section: Arabic (right), Logo (center), English (left) -->
+          <div class="header">
+            <div class="header-section company-info-ar">
+              <div>${currentCompanyData.arabicName || ''}</div>
+              <div>${currentCompanyData.companyType || ''}</div>
+              <div>السجل التجاري: ${currentCompanyData.commercialRegistration || ''}</div>
+              <div>الملف الضريبي: ${currentCompanyData.taxFile || ''}</div>
+              <div>العنوان: ${currentCompanyData.city || ''} ${currentCompanyData.region || ''} ${currentCompanyData.street || ''} ${currentCompanyData.district || ''} ${currentCompanyData.buildingNumber || ''}</div>
+              <div>الرمز البريدي: ${currentCompanyData.postalCode || ''}</div>
+              <div>الهاتف: ${currentCompanyData.phone || ''}</div>
+              <div>الجوال: ${currentCompanyData.mobile || ''}</div>
+            </div>
+            <div class="header-section center">
+              <img src="${currentCompanyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+              <div style="text-align: center; font-size: 12px; margin-top: 8px; padding: 4px 8px; border-radius: 4px;">
+                عرض سعر
+              </div>
+            </div>
+            <div class="header-section company-info-en">
+              <div>${currentCompanyData.englishName || ''}</div>
+              <div>${currentCompanyData.companyType || ''}</div>
+              <div>Commercial Reg.: ${currentCompanyData.commercialRegistration || ''}</div>
+              <div>Tax File: ${currentCompanyData.taxFile || ''}</div>
+              <div>Address: ${currentCompanyData.city || ''} ${currentCompanyData.region || ''} ${currentCompanyData.street || ''} ${currentCompanyData.district || ''} ${currentCompanyData.buildingNumber || ''}</div>
+              <div>Postal Code: ${currentCompanyData.postalCode || ''}</div>
+              <div>Phone: ${currentCompanyData.phone || ''}</div>
+              <div>Mobile: ${currentCompanyData.mobile || ''}</div>
+            </div>
+          </div>
+          
+          <!-- Info Row Section: Quotation info (right), QR (center), Customer info (left) -->
+          <div class="info-row-container">
+            <table class="info-row-table right">
+              <tr><td class="label">رقم عرض السعر</td><td class="value">${quotationNumber || ''}</td></tr>
+              <tr><td class="label">تاريخ عرض السعر</td><td class="value">${quotationDate.format('YYYY-MM-DD') || ''}</td></tr>
+              <tr><td class="label">تاريخ الانتهاء</td><td class="value">${refDate ? refDate.format('YYYY-MM-DD') : ''}</td></tr>
+              <tr><td class="label">نوع الحركة</td><td class="value">${movementType || ''}</td></tr>
+            </table>
+            <div class="qr-center">
+              <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">
+                ${(() => {
+                  const branch = branches.find(b => b.id === quotationData.branch);
+                  return branch ? (branch.name || branch.id) : (quotationData.branch || '');
+                })()}
+              </div>
+              <div class="qr-code">
+                ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR Code" style="width:80px;height:80px;" />` : 'QR Code'}
+              </div>
+            </div>
+            <table class="info-row-table left">
+              <tr><td class="label">اسم العميل</td><td class="value">${quotationData.customerName || ''}</td></tr>
+              <tr><td class="label">رقم العميل</td><td class="value">${quotationData.customerNumber || ''}</td></tr>
+              <tr><td class="label">نوع الحساب</td><td class="value">${accountType || ''}</td></tr>
+              <tr><td class="label">رقم الموبايل</td><td class="value">${(() => {
+                const customer = customers.find(c => c.id === quotationData.customerNumber);
+                return customer?.mobile || customer?.phone || '';
+              })()}</td></tr>
+            </table>
+          </div>
+          
+          <!-- Items Table -->
+          <table>
+            <thead>
+              <tr>
+                <th>الرقم</th>
+                <th>كود الصنف</th>
+                <th>اسم الصنف</th>
+                <th>الكمية</th>
+                <th>الوحدة</th>
+                <th>السعر</th>
+                <th>نسبة الخصم %</th>
+                <th>مبلغ الخصم</th>
+                <th>الإجمالي قبل الضريبة</th>
+                <th>نسبة الضريبة %</th>
+                <th>قيمة الضريبة</th>
+                <th>الإجمالي النهائي</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${addedItems.map((item, idx) => {
+                const subtotal = Number(item.price) * Number(item.quantity);
+                const discountValue = (subtotal * Number(item.discountPercent)) / 100;
+                const afterDiscount = subtotal - discountValue;
+                const taxValue = (afterDiscount * Number(item.taxPercent)) / 100;
+                const total = afterDiscount + taxValue;
+                return `<tr>
+                  <td>${idx + 1}</td>
+                  <td>${item.itemCode || ''}</td>
+                  <td>${item.itemName || ''}</td>
+                  <td>${item.quantity || ''}</td>
+                  <td>${item.unit || ''}</td>
+                  <td>${Number(item.price).toFixed(2)}</td>
+                  <td>${item.discountPercent || '0'}</td>
+                  <td>${discountValue.toFixed(2)}</td>
+                  <td>${afterDiscount.toFixed(2)}</td>
+                  <td>${item.taxPercent || '0'}</td>
+                  <td>${taxValue.toFixed(2)}</td>
+                  <td>${total.toFixed(2)}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+          
+          <!-- Totals Section -->
+          <div class="totals-container">
+            <table style="border:1.5px solid #000; border-radius:6px; font-size:12px; min-width:300px; max-width:380px; border-collapse:collapse;">
+              <tbody>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">إجمالي عرض السعر</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${quotationTotals.subtotal.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${quotationTotals.totalDiscount.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">الإجمالي بعد الخصم</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${afterDiscount.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">قيمة الضريبة</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${quotationTotals.totalTax.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">الإجمالي النهائي</td>
+                  <td style="text-align:left; font-weight:700; padding:6px 10px; border:1px solid #000; background:#fff;">${finalTotal.toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Signature Section -->
+          <div class="signature">
+            <div class="signature-box">
+              <div>اسم العميل: ${quotationData.customerName || ''}</div>
+              <div>التوقيع: ___________________</div>
+            </div>
+            <div class="signature-box">
+              <div>المندوب: ${quotationData.delegate || ''}</div>
+              <div>التاريخ: ${quotationDate.format('YYYY-MM-DD') || ''}</div>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div class="footer">
+            ${currentCompanyData.website ? `لزيارة متجرنا الإلكتروني / Visit our e-shop: ${currentCompanyData.website}` : ''}
+          </div>
+        </body>
+        </html>
+      `;
+
+      // إضافة العنصر إلى الصفحة
+      document.body.appendChild(printContainer);
+
+      // إنشاء stylesheet مخصص للطباعة
+      const printStyleElement = document.createElement('style');
+      printStyleElement.innerHTML = `
+        @media print {
+          body * { visibility: hidden; }
+          #print-container, #print-container * { visibility: visible; }
+          #print-container {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: hidden !important;
+          }
+          @page {
+            margin: 8mm !important;
+            size: A4 !important;
+          }
+          html, body {
+            height: auto !important;
+            overflow: hidden !important;
+          }
+        }
+      `;
+      document.head.appendChild(printStyleElement);
+
+      // طباعة المستند
+      window.print();
+
+      // إزالة العناصر المؤقتة بعد الطباعة
+      setTimeout(() => {
+        document.body.removeChild(printContainer);
+        document.head.removeChild(printStyleElement);
+      }, 1000);
+
+    } catch (error) {
+      console.error('خطأ في الطباعة:', error);
+      message.error('حدث خطأ أثناء الطباعة');
+    }
   };
 
   // السنة المالية من السياق
@@ -297,12 +827,49 @@ const AddQuotationPage: React.FC = () => {
   // رقم عرض السعر تلقائي
   const [quotationNumber, setQuotationNumber] = useState("");
 
-  // توليد رقم عرض سعر تلقائي عند تحميل الصفحة
-  useEffect(() => {
-    const autoQuotationNumber = `QT-${Date.now().toString().slice(-6)}`;
-    setQuotationNumber(autoQuotationNumber);
-    setQuotationData(prev => ({ ...prev, quotationNumber: autoQuotationNumber }));
-  }, []);
+  // دالة توليد رقم عرض سعر جديد بناءً على رقم الفرع والسنة والتسلسل
+  const generateQuotationNumberAsync = async (branchId: string, branchesData: Branch[] = []): Promise<string> => {
+    const date = new Date();
+    const y = date.getFullYear();
+    
+    // البحث عن رقم الفرع الحقيقي من بيانات الفروع
+    const branchObj = branchesData.find(b => b.id === branchId);
+    const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
+    
+    try {
+      // جلب عدد عروض الأسعار لنفس الفرع في نفس السنة
+      const q = query(
+        collection(db, 'quotations'),
+        where('branch', '==', branchId)
+      );
+      const snapshot = await getDocs(q);
+      
+      // فلترة النتائج في الكود بدلاً من قاعدة البيانات لتجنب مشكلة الفهرس
+      const currentYearQuotations = snapshot.docs.filter(doc => {
+        const quotationDate = doc.data().date;
+        if (!quotationDate) return false;
+        const quotationYear = new Date(quotationDate).getFullYear();
+        return quotationYear === y;
+      });
+      
+      const count = currentYearQuotations.length + 1;
+      const serial = count;
+      
+      return `QUO-${branchNumber}-${y}-${serial}`;
+    } catch (error) {
+      console.error('خطأ في توليد رقم عرض السعر:', error);
+      // في حالة الخطأ، استخدم رقم عشوائي
+      const randomSerial = Math.floor(Math.random() * 1000) + 1;
+      return `QUO-${branchNumber}-${y}-${randomSerial}`;
+    }
+  };
+
+  // دالة توليد وتعيين رقم عرض السعر
+  const generateAndSetQuotationNumber = useCallback(async (branchIdValue: string) => {
+    const quotationNumber = await generateQuotationNumberAsync(branchIdValue, branches);
+    setQuotationNumber(quotationNumber);
+    setQuotationData(prev => ({ ...prev, quotationNumber }));
+  }, [branches]);
 
   // تاريخ عرض السعر الافتراضي هو اليوم
   const [quotationDate, setQuotationDate] = useState(dayjs());
@@ -358,7 +925,45 @@ const AddQuotationPage: React.FC = () => {
     fetchCustomers();
   }, []);
 
-  // عند تغيير الفرع، فلترة المخازن واختيار أول مخزن مرتبط
+  // جلب بيانات الأصناف
+  useEffect(() => {
+    const fetchItems = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'inventory_items'));
+        const itemsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as InventoryItem[];
+        setItems(itemsData);
+      } catch (error) {
+        console.error('Error fetching items:', error);
+      }
+    };
+    fetchItems();
+  }, []);
+
+  // جلب بيانات الشركة
+  useEffect(() => {
+    const fetchCompanyData = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'companies'));
+        if (!snapshot.empty) {
+          const companyDataDoc = snapshot.docs[0].data();
+          setCompanyData(companyDataDoc);
+          
+          // تحديث نسبة الضريبة الافتراضية
+          if (companyDataDoc.taxRate) {
+            setTaxPercent(parseFloat(companyDataDoc.taxRate));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching company data:', error);
+      }
+    };
+    fetchCompanyData();
+  }, []);
+
+  // عند تغيير الفرع، فلترة المخازن واختيار أول مخزن مرتبط وتوليد رقم عرض سعر جديد
   useEffect(() => {
     if (!quotationData.branch || !warehouses.length) return;
     const filtered = warehouses.filter(w => {
@@ -371,7 +976,19 @@ const AddQuotationPage: React.FC = () => {
     } else {
       setQuotationData(prev => ({ ...prev, warehouse: '' }));
     }
-  }, [quotationData.branch, warehouses]);
+    
+    // توليد رقم عرض سعر جديد عند تغيير الفرع
+    if (quotationData.branch && branches.length) {
+      generateAndSetQuotationNumber(quotationData.branch);
+    }
+  }, [quotationData.branch, warehouses, branches.length, generateAndSetQuotationNumber]);
+
+  // توليد رقم عرض سعر تلقائي عند تحميل البيانات لأول مرة
+  useEffect(() => {
+    if (branches.length && !quotationNumber && quotationData.branch) {
+      generateAndSetQuotationNumber(quotationData.branch);
+    }
+  }, [branches, quotationNumber, quotationData.branch, generateAndSetQuotationNumber]);
 
   // جلب بيانات العملاء للمودال
   useEffect(() => {
@@ -392,29 +1009,40 @@ const AddQuotationPage: React.FC = () => {
     }
   }, [activeTab]);
 
+  // تعريف نوع العنصر
+  interface ItemRecord {
+    itemCode: string;
+    itemName: string;
+    quantity: string;
+    unit: string;
+    price: string;
+    discountPercent: number;
+    taxPercent: number;
+  }
+
   // أعمدة الجدول
   const itemColumns = [
     { title: 'كود الصنف', dataIndex: 'itemCode', key: 'itemCode', width: 100 },
     { title: 'اسم الصنف', dataIndex: 'itemName', key: 'itemName', width: 150 },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', width: 80 },
     { title: 'الوحدة', dataIndex: 'unit', key: 'unit', width: 80 },
-    { title: 'المخزن', dataIndex: 'warehouse', key: 'warehouse', width: 120, render: (_: any, record: any) => quotationData.warehouse ? (warehouses.find(w => w.id === quotationData.warehouse)?.nameAr || warehouses.find(w => w.id === quotationData.warehouse)?.name || '-') : '-' },
+    { title: 'المخزن', dataIndex: 'warehouse', key: 'warehouse', width: 120, render: () => quotationData.warehouse ? (warehouses.find(w => w.id === quotationData.warehouse)?.nameAr || warehouses.find(w => w.id === quotationData.warehouse)?.name || '-') : '-' },
     { title: 'السعر', dataIndex: 'price', key: 'price', width: 100 },
     { title: 'نسبة الخصم %', dataIndex: 'discountPercent', key: 'discountPercent', width: 100 },
-    { title: 'قيمة الخصم', key: 'discountValue', width: 100, render: (_: any, record: any) => {
+    { title: 'قيمة الخصم', key: 'discountValue', width: 100, render: (_: unknown, record: ItemRecord) => {
       const qty = Number(record.quantity) || 0;
       const price = Number(record.price) || 0;
       const discount = Number(record.discountPercent) || 0;
       return ((qty * price * discount) / 100).toFixed(2);
     } },
-    { title: 'الإجمالي بعد الخصم', key: 'afterDiscount', width: 120, render: (_: any, record: any) => {
+    { title: 'الإجمالي بعد الخصم', key: 'afterDiscount', width: 120, render: (_: unknown, record: ItemRecord) => {
       const qty = Number(record.quantity) || 0;
       const price = Number(record.price) || 0;
       const discount = Number(record.discountPercent) || 0;
       return (qty * price * (1 - discount / 100)).toFixed(2);
     } },
     { title: 'نسبة الضريبة %', dataIndex: 'taxPercent', key: 'taxPercent', width: 100 },
-    { title: 'قيمة الضريبة', key: 'taxValue', width: 100, render: (_: any, record: any) => {
+    { title: 'قيمة الضريبة', key: 'taxValue', width: 100, render: (_: unknown, record: ItemRecord) => {
       const qty = Number(record.quantity) || 0;
       const price = Number(record.price) || 0;
       const discount = Number(record.discountPercent) || 0;
@@ -422,7 +1050,7 @@ const AddQuotationPage: React.FC = () => {
       const tax = Number(record.taxPercent) || 0;
       return ((afterDiscount * tax) / 100).toFixed(2);
     } },
-    { title: 'الإجمالي', key: 'total', width: 120, render: (_: any, record: any) => {
+    { title: 'الإجمالي', key: 'total', width: 120, render: (_: unknown, record: ItemRecord) => {
       const qty = Number(record.quantity) || 0;
       const price = Number(record.price) || 0;
       const discount = Number(record.discountPercent) || 0;
@@ -434,7 +1062,7 @@ const AddQuotationPage: React.FC = () => {
       title: 'إجراءات', 
       key: 'actions', 
       width: 80, 
-      render: (_: unknown, record: { itemCode: string }, idx: number) => (
+      render: (_: unknown, record: ItemRecord, idx: number) => (
         <Button danger size="small" onClick={() => {
           setAddedItems(items => items.filter((_, i) => i !== idx));
         }}>حذف</Button>
@@ -702,7 +1330,7 @@ const AddQuotationPage: React.FC = () => {
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
           <TabPane tab="صنف جديد" key="new">
             <div className="flex flex-row flex-wrap gap-3 items-end w-full">
-              <div className="flex-1 min-w-[110px] flex flex-col gap-1">
+              <div className="flex-1 min-w-[180px] flex flex-col gap-1">
                 <label style={labelStyle}>رقم الصنف</label>
                 <Input
                   value={itemCode}
@@ -731,14 +1359,66 @@ const AddQuotationPage: React.FC = () => {
                   }
                 />
               </div>
-              <div className="flex-1 min-w-[140px] flex flex-col gap-1">
+              <div className="flex-1 min-w-[400px] flex flex-col gap-1">
                 <label style={labelStyle}>اسم الصنف</label>
-                <Input
+                <Select
+                  showSearch
                   value={itemName}
-                  onChange={e => setItemName(e.target.value)}
-                  placeholder="اسم الصنف"
+                  onChange={handleItemSelect}
+                  placeholder="اختر الصنف"
                   style={{ ...largeControlStyle, width: '100%' }}
                   size="large"
+                  allowClear
+                  filterOption={(input, option) => {
+                    const itemName = String(option?.label ?? '').toLowerCase();
+                    const selectedItem = items
+                      .filter(i => i.type === 'مستوى ثاني')
+                      .find(i => i.name === option?.value);
+                    const itemCode = String(selectedItem?.itemCode ?? '').toLowerCase();
+                    const searchTerm = input.toLowerCase();
+                    return itemName.includes(searchTerm) || itemCode.includes(searchTerm);
+                  }}
+                  options={items
+                    .filter(item => item.type === 'مستوى ثاني' && item.name?.trim())
+                    .map(item => ({
+                      label: item.name,
+                      value: item.name,
+                      disabled: !!item.tempCodes
+                    }))}
+                  optionRender={(option) => {
+                    const item = items
+                      .filter(i => i.type === 'مستوى ثاني')
+                      .find(i => i.name === option.value);
+                    return (
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        opacity: item?.tempCodes ? 0.5 : 1
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                          <span style={{ fontWeight: 600 }}>
+                            {item?.name}
+                            {item?.tempCodes && (
+                              <span style={{ color: '#ff4d4f', fontSize: '12px', marginRight: 8 }}>
+                                (إيقاف مؤقت)
+                              </span>
+                            )}
+                          </span>
+                          {item?.itemCode && (
+                            <span style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                              كود: {item.itemCode}
+                            </span>
+                          )}
+                          {item?.salePrice && (
+                            <span style={{ fontSize: '12px', color: '#52c41a' }}>
+                              السعر: {item.salePrice} ر.س
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }}
                 />
                 <ItemSearchModal
                   open={showItemModal}
@@ -773,12 +1453,12 @@ const AddQuotationPage: React.FC = () => {
                 <Input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="السعر" style={{...largeControlStyle, width: '100%'}} size="large" />
               </div>
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
-                <label style={labelStyle}>نسبة الخصم %</label>
+                <label style={labelStyle}> الخصم %</label>
                 <Input type="number" min={0} max={100} value={discountPercent} onChange={e => setDiscountPercent(Number(e.target.value))} placeholder="نسبة الخصم %" style={{...largeControlStyle, width: '100%'}} size="large" />
               </div>
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
-                <label style={labelStyle}>نسبة الضريبة %</label>
-                <Input type="number" min={0} max={100} value={taxPercent} onChange={e => setTaxPercent(Number(e.target.value))} placeholder="نسبة الضريبة %" style={{...largeControlStyle, width: '100%'}} size="large" />
+                <label style={labelStyle}> الضريبة %</label>
+                <Input type="number" min={0} max={100} value={taxPercent} onChange={e => setTaxPercent(Number(e.target.value))} placeholder="نسبة الضريبة %" style={{...largeControlStyle, width: '100%'}} size="large" disabled />
               </div>
               <div className="flex-1 min-w-[120px] flex flex-col gap-1 justify-end">
                 <label style={{ visibility: 'hidden', height: 0 }}>إضافة الصنف</label>
