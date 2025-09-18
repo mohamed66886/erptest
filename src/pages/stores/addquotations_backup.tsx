@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspens
 import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined, FileTextOutlined } from '@ant-design/icons';
 import { FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/useAuth';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, orderBy } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider, Tabs } from 'antd';
 import Breadcrumb from "../../components/Breadcrumb";
@@ -16,10 +16,6 @@ import * as XLSX from 'xlsx';
 import { Upload } from 'antd';
 import ItemSearchModal from '@/components/ItemSearchModal';
 import styles from '@/styles/SelectStyles.module.css';
-
-// Lazy load heavy components
-const ItemSelect = lazy(() => import('@/components/ItemSelect'));
-const CustomerSelect = lazy(() => import('@/components/CustomerSelect'));
 
 // Type definitions
 interface Branch {
@@ -35,15 +31,13 @@ interface Warehouse {
   name?: string;
   nameAr?: string;
   nameEn?: string;
-  branch?: string; // هذا هو الحقل الصحيح المستخدم لربط المخزن بالفرع
+  branch?: string;
   documentType?: 'invoice' | 'warehouse';
   quotationTypes?: string[];
   allowedUsers?: string[];
   allowedBranches?: string[];
   status?: 'active' | 'inactive' | 'suspended';
 }
-
-
 
 interface Customer {
   id: string;
@@ -58,27 +52,48 @@ interface Customer {
   taxFileNumber?: string;
 }
 
+interface InventoryItem {
+  id: string;
+  numericId?: number;
+  name: string;
+  type?: 'رئيسي' | 'مستوى أول' | 'مستوى ثاني';
+  parentId?: number;
+  itemCode?: string;
+  salePrice?: number;
+  purchasePrice?: number;
+  discount?: number;
+  isVatIncluded?: boolean;
+  tempCodes?: boolean;
+  allowNegative?: boolean;
+  minOrder?: number;
+  supplier?: string;
+  unit?: string;
+  createdAt?: string;
+}
+
+interface CompanyData {
+  arabicName?: string;
+  englishName?: string;
+  companyType?: string;
+  commercialRegistration?: string;
+  taxFile?: string;
+  city?: string;
+  region?: string;
+  street?: string;
+  district?: string;
+  buildingNumber?: string;
+  postalCode?: string;
+  phone?: string;
+  mobile?: string;
+  logoUrl?: string;
+  website?: string;
+  taxRate?: string;
+}
+
 interface Delegate {
   id: string;
   name?: string;
   email?: string;
-}
-
-interface CompanyData {
-  taxRate?: string;
-}
-
-// تعريف نوع العنصر
-interface InventoryItem {
-  id: string;
-  name: string;
-  itemCode?: string;
-  salePrice?: number;
-  discount?: number;
-  isVatIncluded?: boolean;
-  type?: string;
-  tempCodes?: boolean;
-  allowNegative?: boolean;
 }
 
 interface QuotationItem {
@@ -97,7 +112,6 @@ interface QuotationItem {
 
 interface QuotationData {
   quotationNumber: string;
-  entryNumber: string;
   date: string;
   branch: string;
   warehouse: string;
@@ -108,7 +122,7 @@ interface QuotationData {
   commercialRecord: string;
   taxFile: string;
   dueDate?: string;
-  validUntil?: string; // تاريخ انتهاء صلاحية عرض السعر
+  validUntil?: string;
 }
 
 interface Totals {
@@ -118,1056 +132,29 @@ interface Totals {
   tax: number;
 }
 
-// Custom Hook for Sales Data Management
-const useSalesData = () => {
-  const [loading, setLoading] = useState(false);
-  const [fetchingItems, setFetchingItems] = useState(false);
-  const [delegates, setDelegates] = useState<Delegate[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
-  const [units, setUnits] = useState<string[]>([]);
-  const [itemNames, setItemNames] = useState<InventoryItem[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [companyData, setCompanyData] = useState<CompanyData>({});
-
-  // Cache for better performance
-  const [dataCache, setDataCache] = useState<Map<string, unknown>>(new Map());
-
-  const fetchBasicData = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Fetch all basic data in parallel
-      const [
-        delegatesSnapshot,
-        branchesSnapshot,
-        warehousesSnapshot,
-        inventorySnapshot,
-        customersSnapshot,
-        companySnapshot
-      ] = await Promise.all([
-        getDocs(collection(db, 'salesRepresentatives')), // تم تصحيح اسم المجموعة
-        getDocs(collection(db, 'branches')),
-        getDocs(collection(db, 'warehouses')),
-        getDocs(collection(db, 'inventory_items')), // تم تصحيح اسم المجموعة
-        getDocs(collection(db, 'customers')),
-        getDocs(collection(db, 'companies')) // تم تصحيح اسم المجموعة
-      ]);
-
-      // Fetch cash boxes and banks separately
-      const [cashBoxesData, banksData] = await Promise.all([
-        fetchCashBoxes(),
-        fetchBankAccounts()
-      ]);
-
-      // Process data
-      setDelegates(delegatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Delegate[]);
-      setBranches(branchesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Branch[]);
-      setWarehouses(warehousesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Warehouse[]);
-      setCashBoxes(cashBoxesData as CashBox[]);
-      setCustomers(customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Customer[]);
-      
-      const inventoryData = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InventoryItem[];
-      const filteredItems = inventoryData.filter(item => item.type === 'مستوى ثاني' && item.name?.trim());
-      
-      setItemNames(filteredItems);
-
-      if (!companySnapshot.empty) {
-        const companyDataDoc = companySnapshot.docs[0].data();
-        setCompanyData(companyDataDoc);
-      }
-
-      setUnits(['قطعة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة', 'كرتون', 'حبة']);
-      
-    } catch (error) {
-      console.error('خطأ في جلب البيانات:', error);
-      message.error('حدث خطأ في تحميل البيانات');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  return {
-    loading,
-    fetchingItems,
-    setFetchingItems,
-    delegates,
-    branches,
-    warehouses,
-    cashBoxes,
-    units,
-    itemNames,
-    customers,
-    companyData,
-    fetchBasicData,
-    taxRate: companyData.taxRate || '15'
-  };
-};
-
-interface Delegate {
-  id: string;
-  name?: string;
-  email?: string;
-  phone?: string;
-  status?: 'active' | 'inactive';
-  uid?: string;
-}
-
-interface CashBox {
-  id?: string;
-  nameAr: string;
-  nameEn: string;
-  branch: string;
-  mainAccount?: string;
-  subAccountId?: string;
-  subAccountCode?: string;
-}
-
-interface Bank {
-  id?: string;
-  arabicName: string;
-  englishName: string;
-  branch?: string;
-  mainAccount?: string;
-  subAccountId?: string;
-  subAccountCode?: string;
-}
-
-
-interface Supplier {
-  id: string;
-  name: string;
-}
-
-interface ItemData {
-  id?: string;
-  name?: string;
-  itemCode?: string;
-  salePrice?: number;
-  purchasePrice?: number;
-  cost?: number;
-  unit?: string;
-  type?: string;
-  parentId?: string;
-  tempCodes?: boolean;
-  [key: string]: unknown;
-}
-
-interface InvoiceRecord {
-  key: string;
-  invoiceNumber: string;
-  entryNumber?: string;
-  date: string;
-  dueDate?: string; // إضافة تاريخ الاستحقاق
-  branch: string; // إضافة الفرع
-  itemNumber: string;
-  itemName: string;
-  mainCategory: string;
-  quantity: number;
-  price: number;
-  total: number;
-  discountValue: number;
-  discountPercent: number;
-  taxValue: number;
-  taxPercent: number;
-  net: number;
-  cost: number;
-  profit: number;
-  warehouse: string;
-  customer: string;
-  customerNumber?: string;
-  customerName?: string;
-  customerPhone: string;
-  seller: string;
-  delegate?: string;
-  paymentMethod: string;
-  quotationType: string;
-  priceRule?: string;
-  commercialRecord?: string;
-  taxFile?: string;
-  items?: QuotationItem[];
-  totals?: Totals;
-  extraDiscount?: number;
-  itemData?: ItemData; // لإظهار بيانات الصنف المؤقتة
-}
-
-const initialItem: QuotationItem = {
-  itemNumber: '',
-  itemName: '',
-  quantity: '',
-  unit: 'قطعة',
-  price: '',
-  discountPercent: '0',
-  discountValue: 0,
-  // تم حذف الخصم الإضافي
-  taxPercent: '15',
-  taxValue: 0,
-  total: 0,
-  isNewItem: false
-}
-
-
-// دالة توليد رقم فاتورة جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
-async function generateInvoiceNumberAsync(branchId: string, branches: Branch[] = []): Promise<string> {
-  const date = new Date();
-  const y = date.getFullYear();
-  
-  // البحث عن رقم الفرع الحقيقي من بيانات الفروع
-  const branchObj = branches.find(b => b.id === branchId);
-  const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
-  
-  try {
-    // جلب عدد الفواتير لنفس الفرع في نفس السنة - استعلام مبسط
-    const { getDocs, collection, query, where } = await import('firebase/firestore');
-    const q = query(
-      collection(db, 'sales_invoices'),
-      where('branch', '==', branchId)
-    );
-    const snapshot = await getDocs(q);
-    
-    // فلترة النتائج في الكود بدلاً من قاعدة البيانات لتجنب مشكلة الفهرس
-    const currentYearInvoices = snapshot.docs.filter(doc => {
-      const invoiceDate = doc.data().date;
-      if (!invoiceDate) return false;
-      const invoiceYear = new Date(invoiceDate).getFullYear();
-      return invoiceYear === y;
-    });
-    
-    const count = currentYearInvoices.length + 1;
-    const serial = count;
-    
-    return `INV-${branchNumber}-${y}-${serial}`;
-  } catch (error) {
-    console.error('خطأ في توليد رقم الفاتورة:', error);
-    // في حالة الخطأ، استخدم رقم عشوائي
-    const randomSerial = Math.floor(Math.random() * 1000) + 1;
-    return `INV-${branchNumber}-${y}-${randomSerial}`;
-  }
-}
-
-// دالة توليد رقم عرض سعر جديد بناءً على رقم الفرع والتاريخ والتسلسل اليومي
-async function generateQuotationNumberAsync(branchId: string, branches: Branch[] = []): Promise<string> {
-  const date = new Date();
-  const y = date.getFullYear();
-  
-  // البحث عن رقم الفرع الحقيقي من بيانات الفروع
-  const branchObj = branches.find(b => b.id === branchId);
-  const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
-  
-  try {
-    // جلب عدد عروض الأسعار لنفس الفرع في نفس السنة
-    const { getDocs, collection, query, where } = await import('firebase/firestore');
-    const q = query(
-      collection(db, 'quotations'),
-      where('branch', '==', branchId)
-    );
-    const snapshot = await getDocs(q);
-    
-    // فلترة النتائج في الكود بدلاً من قاعدة البيانات لتجنب مشكلة الفهرس
-    const currentYearQuotations = snapshot.docs.filter(doc => {
-      const quotationDate = doc.data().date;
-      if (!quotationDate) return false;
-      const quotationYear = new Date(quotationDate).getFullYear();
-      return quotationYear === y;
-    });
-    
-    const count = currentYearQuotations.length + 1;
-    const serial = count;
-    
-    return `QUO-${branchNumber}-${y}-${serial}`;
-  } catch (error) {
-    console.error('خطأ في توليد رقم عرض السعر:', error);
-    // في حالة الخطأ، استخدم رقم عشوائي
-    const randomSerial = Math.floor(Math.random() * 1000) + 1;
-    return `QUO-${branchNumber}-${y}-${randomSerial}`;
-  }
-}
-
-function getTodayString(): string {
-  return dayjs().format('YYYY-MM-DD');
-}
-
-// دالة للحصول على تاريخ صالح ضمن السنة المالية
-function getValidDateForFinancialYear(financialYear: FinancialYear | null): string {
-  const today = dayjs();
-  
-  if (!financialYear) {
-    return today.format('YYYY-MM-DD');
-  }
-  
-  const startDate = dayjs(financialYear.startDate);
-  const endDate = dayjs(financialYear.endDate);
-  
-  // إذا كان اليوم ضمن السنة المالية، استخدمه
-  if (today.isSameOrAfter(startDate, 'day') && today.isSameOrBefore(endDate, 'day')) {
-    return today.format('YYYY-MM-DD');
-  }
-  
-  // إذا كان اليوم قبل بداية السنة المالية، استخدم تاريخ البداية
-  if (today.isBefore(startDate, 'day')) {
-    return startDate.format('YYYY-MM-DD');
-  }
-  
-  // إذا كان اليوم بعد نهاية السنة المالية، استخدم تاريخ النهاية
-  return endDate.format('YYYY-MM-DD');
-}
-
-// دالة حساب تاريخ الاستحقاق (بعد 12 يوم من تاريخ الفاتورة)
-function calculateDueDate(invoiceDate: string): string {
-  if (!invoiceDate) return '';
-  return dayjs(invoiceDate).add(12, 'day').format('YYYY-MM-DD');
-}
-
-// دالة حساب تاريخ انتهاء صلاحية عرض السعر (بعد 30 يوم من تاريخ عرض السعر)
-function calculateValidUntilDate(quotationDate: string): string {
-  if (!quotationDate) return '';
-  return dayjs(quotationDate).add(30, 'day').format('YYYY-MM-DD');
-}
+const { TabPane } = Tabs;
 
 const AddQuotationPage: React.FC = () => {
-  // حالة الرسائل
-  const [notifications, setNotifications] = useState<Array<{
-    id: string;
-    type: 'success' | 'error' | 'warning' | 'info';
-    title: string;
-    message: string;
-    timestamp: Date;
-  }>>([]);
-
-  // دالة إضافة رسالة جديدة
-  const addNotification = useCallback((type: 'success' | 'error' | 'warning' | 'info', title: string, msg: string) => {
-    const newNotification = {
-      id: Date.now().toString(),
-      type,
-      title,
-      message: msg,
-      timestamp: new Date()
-    };
-    setNotifications(prev => {
-      // إضافة الرسالة الجديدة في المقدمة والاحتفاظ بآخر 4 رسائل فقط
-      const updated = [newNotification, ...prev.slice(0, 3)];
-      return updated;
-    });
-    
-    // إزالة الرسالة تلقائياً بعد 5 ثواني
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== newNotification.id));
-    }, 5000);
-  }, []);
-
-  // إنشاء كائن message مخصص
-  const customMessage = useMemo(() => ({
-    success: (msg: string) => {
-      addNotification('success', 'نجح العملية', msg);
-      message.success(msg);
-    },
-    error: (msg: string) => {
-      addNotification('error', 'خطأ في العملية', msg);
-      message.error(msg);
-    },
-    warning: (msg: string) => {
-      addNotification('warning', 'تحذير', msg);
-      message.warning(msg);
-    },
-    info: (msg: string) => {
-      addNotification('info', 'معلومات', msg);
-      message.info(msg);
-    }
-  }), [addNotification]);
-
-  // زر توليد 3000 فاتورة عشوائية
-  const generateRandomInvoices = async () => {
-    if (!branches.length || !warehouses.length || !customers.length || !itemNames.length) {
-      customMessage.error('يجب توفر بيانات الفروع والمخازن والعملاء والأصناف أولاً');
-      return;
-    }
-    const { addDoc, collection } = await import('firebase/firestore');
-    const randomFrom = arr => arr[Math.floor(Math.random() * arr.length)];
-    const randomDiscount = () => Math.floor(Math.random() * 21); // 0-20%
-    const randomQty = () => Math.floor(Math.random() * 10) + 1; // 1-10
-    const today = getTodayString();
-    setLoading(true);
-    try {
-      for (let i = 0; i < 3000; i++) {
-        const branch = randomFrom(branches);
-        const warehouse = randomFrom(warehouses);
-        const customer = randomFrom(customers);
-        const item = randomFrom(itemNames);
-        const discountPercent = randomDiscount();
-        const quantity = randomQty();
-        const price = item.salePrice || 10;
-        const subtotal = price * quantity;
-        const discountValue = subtotal * (discountPercent / 100);
-        const taxableAmount = subtotal - discountValue;
-        const taxPercent = 15;
-        const taxValue = taxableAmount * (taxPercent / 100);
-        const total = subtotal;
-        const invoiceNumber = `RND-${branch.id}-${today.replace(/-/g, '')}-${i+1}`;
-        const quotationData = {
-          invoiceNumber,
-          entryNumber: `EN-${Math.floor(100000 + Math.random() * 900000)}`,
-          date: today,
-          branch: branch.id,
-          warehouse: warehouse.id,
-          customerNumber: customer.phone || customer.phoneNumber || '',
-          customerName: customer.nameAr || customer.name || customer.nameEn || '',
-          delegate: '',
-          priceRule: '',
-          commercialRecord: customer.commercialReg || '',
-          taxFile: customer.taxFileNumber || customer.taxFile || '',
-          items: [
-            {
-              itemNumber: item.itemCode || '',
-              itemName: item.name,
-              quantity: String(quantity),
-              unit: item.unit || 'قطعة',
-              price: String(price),
-              discountPercent: String(discountPercent),
-              discountValue,
-              taxPercent: String(taxPercent),
-              taxValue,
-              total,
-              isNewItem: false
-            }
-          ],
-          totals: {
-            afterDiscount: subtotal - discountValue,
-            afterTax: taxableAmount + taxValue,
-            total: subtotal,
-            tax: taxValue
-          },
-          type: 'ضريبة'
-        };
-        await addDoc(collection(db, 'sales_invoices'), quotationData);
-      }
-      customMessage.success('تم توليد 3000 فاتورة عشوائية بنجاح');
-      if (fetchInvoices) {
-        fetchInvoices();
-      }
-    } catch (err) {
-      customMessage.error('حدث خطأ أثناء توليد الفواتير');
-    } finally {
-      setLoading(false);
-    }
-  };
-  // حالة مودال إضافة صنف جديد
-  const [showAddItemModal, setShowAddItemModal] = useState(false);
-
-  // قائمة الموردين
-  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
-  const [addItemLoading, setAddItemLoading] = useState(false);
-
-  // جلب الموردين من قاعدة البيانات عند تحميل الصفحة
-  useEffect(() => {
-    const fetchSuppliers = async () => {
-      try {
-        const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
-        const suppliersData = suppliersSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...(doc.data() as { name: string })
-        }));
-        // فقط الاسم والمعرف
-        setSuppliers(suppliersData.map(s => ({ id: s.id, name: s.name })));
-      } catch (error) {
-        console.error('Error fetching suppliers:', error);
-      }
-    };
-    fetchSuppliers();
-  }, []);
-
-  // دالة إضافة صنف جديد
-  const handleAddNewItem = async () => {
-    if (!addItemForm.name.trim() || !addItemForm.salePrice.trim() || !addItemForm.unit.trim()) return;
-    setAddItemLoading(true);
-    try {
-      // بناء بيانات الصنف الجديد
-      const newItemData = {
-        name: addItemForm.name.trim(),
-        itemCode: addItemForm.itemCode?.trim() || '',
-        salePrice: addItemForm.salePrice ? Number(addItemForm.salePrice) : 0,
-        discount: addItemForm.discount ? Number(addItemForm.discount) : 0,
-        isVatIncluded: !!addItemForm.isVatIncluded,
-        tempCodes: !!addItemForm.tempCodes,
-        type: 'مستوى ثاني',
-        purchasePrice: addItemForm.purchasePrice ? Number(addItemForm.purchasePrice) : 0,
-        minOrder: addItemForm.minOrder ? Number(addItemForm.minOrder) : 0,
-        allowNegative: !!addItemForm.allowNegative,
-        supplier: addItemForm.supplier || '',
-        unit: addItemForm.unit || '',
-        createdAt: new Date().toISOString()
-      };
-
-      // إضافة الصنف إلى قاعدة البيانات
-      const docRef = await addDoc(collection(db, 'inventory_items'), newItemData);
-      
-      // بناء بيانات الصنف مع المعرف الحقيقي
-      const newItem: InventoryItem = {
-        id: docRef.id,
-        ...newItemData
-      };
-
-      // تحديث القوائم المحلية فوراً
-      // setItemNames((prev: InventoryItem[]) => [...prev, newItem]); // Now handled by hook
-      setAllItems((prev: InventoryItem[]) => [...prev, newItem]);
-      await fetchBasicData(); // Refresh data from hook
-      
-      // إغلاق المودال وإعادة تعيين النموذج
-      setShowAddItemModal(false);
-      setAddItemForm({
-        name: '',
-        itemCode: '',
-        purchasePrice: '',
-        salePrice: '',
-        minOrder: '',
-        discount: '',
-        allowNegative: false,
-        isVatIncluded: false,
-        tempCodes: false,
-        supplier: '',
-        unit: '',
-        type: '',
-        parentId: ''
-      });
-      
-      // تحديد الصنف الجديد في القائمة المنسدلة
-      setItem({
-        ...item,
-        itemName: newItem.name,
-        itemNumber: newItem.itemCode || '',
-        price: String(newItem.salePrice || ''),
-        discountPercent: String(newItem.discount || '0'),
-        taxPercent: taxRate,
-        quantity: '1'
-      });
-      
-      customMessage.success('تمت إضافة الصنف بنجاح وتم تحديد اختياره');
-      
-    } catch (e) {
-      console.error('خطأ في إضافة الصنف:', e);
-      message.error('حدث خطأ أثناء إضافة الصنف');
-    } finally {
-      setAddItemLoading(false);
-    }
-  };
-  // دالة تحديث قائمة العملاء
-  const refreshCustomers = async () => {
-    try {
-      setFetchingItems(true);
-      const customersSnap = await getDocs(collection(db, 'customers'));
-      const customersData = customersSnap.docs.map(doc => {
-        const data = doc.data();
-        return { id: doc.id, ...data, taxFile: data.taxFile || '' };
-      });
-      // setCustomers(customersData); // Now handled by hook
-      await fetchBasicData(); // Refresh data from hook
-      customMessage.success('تم تحديث قائمة العملاء بنجاح');
-    } catch (error) {
-      console.error('خطأ في تحديث العملاء:', error);
-      message.error('حدث خطأ أثناء تحديث قائمة العملاء');
-    } finally {
-      setFetchingItems(false);
-    }
-  };
-
-  // دالة تحديث قائمة الأصناف
-  const refreshItems = async () => {
-    try {
-      setFetchingItems(true);
-      const itemsSnap = await getDocs(collection(db, 'inventory_items'));
-      const allItemsData = itemsSnap.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name || '',
-          itemCode: data.itemCode || '',
-          salePrice: data.salePrice || 0,
-          discount: data.discount || 0,
-          isVatIncluded: data.isVatIncluded || false,
-          type: data.type || '',
-          tempCodes: data.tempCodes || false,
-          allowNegative: data.allowNegative || false
-        };
-      }).filter(item => item.name);
-      
-      setAllItems(allItemsData);
-      const secondLevelItems = allItemsData.filter(item => item.type === 'مستوى ثاني');
-      // setItemNames(secondLevelItems); // Now handled by hook - will be updated via fetchBasicData
-      await fetchBasicData(); // Refresh data from hook
-      customMessage.success('تم تحديث قائمة الأصناف بنجاح');
-    } catch (error) {
-      console.error('خطأ في تحديث الأصناف:', error);
-      message.error('حدث خطأ أثناء تحديث قائمة الأصناف');
-    } finally {
-      setFetchingItems(false);
-    }
-  };
-
-  // --- Add Customer Modal State (fix: must be inside component, before return) ---
-  const businessTypes = ["شركة", "مؤسسة", "فرد"];
-  const initialAddCustomer = {
-    nameAr: '',
-    phone: '',
-    businessType: '',
-    commercialReg: '',
-    taxFileNumber: ''
-  };
-  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
-  const [addCustomerForm, setAddCustomerForm] = useState(initialAddCustomer);
-  const [addCustomerLoading, setAddCustomerLoading] = useState(false);
-  const handleAddCustomerChange = (field, value) => {
-    setAddCustomerForm(prev => ({ ...prev, [field]: value }));
-  };
-  const handleAddCustomer = async () => {
-    if (!addCustomerForm.nameAr || !addCustomerForm.phone || !addCustomerForm.businessType) {
-      message.error('يرجى ملء جميع الحقول المطلوبة');
-      return;
-    }
-    if ((addCustomerForm.businessType === 'شركة' || addCustomerForm.businessType === 'مؤسسة') && (!addCustomerForm.commercialReg || !addCustomerForm.taxFileNumber)) {
-      message.error('يرجى ملء السجل التجاري والملف الضريبي');
-      return;
-    }
-    setAddCustomerLoading(true);
-    try {
-      const maxNum = customers
-        .map(c => {
-          const match = /^c-(\d{4})$/.exec(c.id);
-          return match ? parseInt(match[1], 10) : 0;
-        })
-        .reduce((a, b) => Math.max(a, b), 0);
-      const nextNum = maxNum + 1;
-      const newId = `c-${nextNum.toString().padStart(4, '0')}`;
-      const docData = {
-        id: newId,
-        nameAr: addCustomerForm.nameAr,
-        phone: addCustomerForm.phone,
-        businessType: addCustomerForm.businessType,
-        commercialReg: addCustomerForm.businessType === 'فرد' ? '' : addCustomerForm.commercialReg,
-        taxFileNumber: addCustomerForm.businessType === 'فرد' ? '' : addCustomerForm.taxFileNumber,
-        status: 'نشط',
-        createdAt: new Date().toISOString(),
-      };
-      
-      const docRef = await addDoc(collection(db, 'customers'), docData);
-      
-      // بناء بيانات العميل الجديد مع المعرف الحقيقي
-      const newCustomer = {
-        id: docRef.id,
-        ...docData,
-        taxFile: docData.taxFileNumber || ''
-      };
-      
-      // تحديث قائمة العملاء فوراً
-      // setCustomers(prev => [...prev, newCustomer]); // Now handled by hook
-      await fetchBasicData(); // Refresh data from hook
-      
-      // تحديد العميل الجديد في الفاتورة
-      setQuotationData(prev => ({
-        ...prev,
-        customerName: newCustomer.nameAr,
-        customerNumber: newCustomer.phone || '',
-        commercialRecord: newCustomer.commercialReg || '',
-        taxFile: newCustomer.taxFile || ''
-      }));
-      
-      customMessage.success('تم إضافة العميل بنجاح وتم تحديد اختياره في الفاتورة!');
-      setShowAddCustomerModal(false);
-      setAddCustomerForm(initialAddCustomer);
-      
-    } catch (err) {
-      console.error('خطأ في إضافة العميل:', err);
-      message.error('حدث خطأ أثناء إضافة العميل');
-    } finally {
-      setAddCustomerLoading(false);
-    }
-  };
-interface CompanyData {
-  arabicName?: string;
-  englishName?: string;
-  logoUrl?: string;
-  commercialRegistration?: string;
-  taxFile?: string;
-  registrationDate?: string;
-  issuingAuthority?: string;
-  companyType?: string;
-  activityType?: string;
-  nationality?: string;
-  city?: string;
-  region?: string;
-  street?: string;
-  district?: string;
-  buildingNumber?: string;
-  postalCode?: string;
-  countryCode?: string;
-  phone?: string;
-  mobile?: string;
-  fiscalYear?: string;
-  taxRate?: string;
-  website?: string;
-}
-
-  // دالة تصدير سجل الفواتير إلى ملف Excel
-  const exportInvoicesToExcel = () => {
-    if (!invoices.length) {
-      message.info('لا يوجد بيانات للتصدير');
-      return;
-    }
-    // تجهيز البيانات
-    const data = invoices.map(inv => {
-      // البحث عن اسم المخزن بناءً على id
-      let warehouseName = inv.warehouse;
-      if (warehouses && Array.isArray(warehouses)) {
-        const found = warehouses.find(w => w.id === inv.warehouse);
-        if (found) warehouseName = found.name || found.id;
-      }
-      // البحث عن اسم الفرع بناءً على id
-      let branchName = inv.branch;
-      if (branches && Array.isArray(branches)) {
-        const foundBranch = branches.find(b => b.id === inv.branch);
-        if (foundBranch) branchName = foundBranch.name || foundBranch.id;
-      }
-      return {
-        'رقم الفاتورة': inv.invoiceNumber,
-        'التاريخ': inv.date,
-        'الفرع': branchName,
-        'كود الصنف': inv.itemNumber,
-        'اسم الصنف': inv.itemName,
-        'المجموعة الرئيسية': inv.firstLevelCategory || '',
-        'المستوى الأول': inv.mainCategory || '',
-        'الكمية': inv.quantity,
-        'السعر': inv.price,
-        'الإجمالي': inv.total,
-        'قيمة الخصم': inv.discountValue,
-        '% الخصم': inv.discountPercent,
-        'قيمة الضريبة': inv.taxValue,
-        '% الضريبة': inv.taxPercent,
-        'الصافي': inv.net,
-        'التكلفة': inv.cost,
-        'ربح الصنف': inv.profit,
-        'المخزن': warehouseName,
-        'العميل': inv.customer,
-        'تليفون العميل': inv.customerPhone,
-        'البائع': getDelegateName(inv.seller),
-        'نوع الفاتورة': inv.quotationType
-      };
-    });
-
-    // بيانات الشركة (يمكنك التعديل)
-    const companyInfo = ['شركة حساب عربي', 'الهاتف: 01000000000', 'العنوان: القاهرة - مصر'];
-    const companyTitle = 'سجل فواتير المبيعات';
-    const userName = (user?.displayName || user?.name || user?.email || '');
-    const exportDate = new Date().toLocaleString('ar-EG');
-
-    // إجماليات
-    const totalsRow = {
-      'رقم الفاتورة': 'الإجماليات',
-      'التاريخ': '',
-      'الفرع': '',
-      'كود الصنف': '',
-      'اسم الصنف': '',
-      'المجموعة الرئيسية': '',
-      'المستوى الأول': '',
-      'الكمية': data.reduce((sum, r) => sum + Number(r['الكمية'] || 0), 0),
-      'السعر': '',
-      'الإجمالي': data.reduce((sum, r) => sum + Number(r['الإجمالي'] || 0), 0),
-      'قيمة الخصم': data.reduce((sum, r) => sum + Number(r['قيمة الخصم'] || 0), 0),
-      '% الخصم': '',
-      'قيمة الضريبة': data.reduce((sum, r) => sum + Number(r['قيمة الضريبة'] || 0), 0),
-      '% الضريبة': '',
-      'الصافي': data.reduce((sum, r) => sum + Number(r['الصافي'] || 0), 0),
-      'التكلفة': data.reduce((sum, r) => sum + Number(r['التكلفة'] || 0), 0),
-      'ربح الصنف': data.reduce((sum, r) => sum + Number(r['ربح الصنف'] || 0), 0),
-      'المخزن': '',
-      'العميل': '',
-      'تليفون العميل': '',
-      'البائع': '',
-      'نوع الفاتورة': ''
-    };
-
-    // Excel export function (temporarily disabled for performance optimization)
-    message.info('وظيفة التصدير إلى Excel سيتم تفعيلها قريباً');
-    return;
-    
-    // TODO: Re-implement Excel export with better performance
-    /*
-    // Simple CSV export as fallback
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + data.map(row => Object.values(row).join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `invoices_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    */
-
-    /*
-    // تنسيق العنوان الرئيسي
-    const titleCell = ws[XLSX.utils.encode_cell({ r: 0, c: 0 })];
-    if (titleCell) {
-      titleCell.s = {
-        font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '305496' } },
-        alignment: { horizontal: 'center', vertical: 'center' }
-      };
-    }
-    // تنسيق بيانات الشركة
-    const infoCell = ws[XLSX.utils.encode_cell({ r: 1, c: 0 })];
-    if (infoCell) {
-      infoCell.s = {
-        font: { bold: true, sz: 12, color: { rgb: '305496' } },
-        alignment: { horizontal: 'center', vertical: 'center' }
-      };
-    }
-    // تنسيق صف العناوين
-    const headerRow = 3; // الصف الرابع (A4)
-    for (let c = 0; c < colCount; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: headerRow, c })];
-      if (cell) {
-        cell.s = {
-          font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } },
-          fill: { fgColor: { rgb: '4472C4' } },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: {
-            top: { style: 'thin', color: { rgb: 'AAAAAA' } },
-            bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
-            left: { style: 'thin', color: { rgb: 'AAAAAA' } },
-            right: { style: 'thin', color: { rgb: 'AAAAAA' } }
-          }
-        };
-      }
-    }
-    // تنسيق الأرقام وتوسيط الأعمدة وإضافة حدود
-    const rowCount = data.length;
-    for (let r = headerRow + 1; r <= headerRow + rowCount + 1; r++) {
-      for (let c = 0; c < colCount; c++) {
-        const cell = ws[XLSX.utils.encode_cell({ r, c })];
-        if (cell) {
-          // تنسيق الأرقام لبعض الأعمدة
-          if ([6,7,8,9,10,11,12,13,14,15,16].includes(c)) {
-            cell.z = '#,##0.00';
-          }
-          // إبراز الصافي والربح في صف الإجماليات
-          if (r === headerRow + rowCount + 1 && (c === 13 || c === 15)) {
-            cell.s = {
-              font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } },
-              fill: { fgColor: { rgb: c === 13 ? '70AD47' : 'FFC000' } },
-              alignment: { horizontal: 'center', vertical: 'center' },
-              border: {
-                top: { style: 'thin', color: { rgb: 'AAAAAA' } },
-                bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
-                left: { style: 'thin', color: { rgb: 'AAAAAA' } },
-                right: { style: 'thin', color: { rgb: 'AAAAAA' } }
-              }
-            };
-          } else {
-            cell.s = {
-              alignment: { horizontal: 'center', vertical: 'center' },
-              border: {
-                top: { style: 'thin', color: { rgb: 'AAAAAA' } },
-                bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
-                left: { style: 'thin', color: { rgb: 'AAAAAA' } },
-                right: { style: 'thin', color: { rgb: 'AAAAAA' } }
-              }
-            };
-          }
-        }
-      }
-    }
-    // ترويسة التصدير
-    const footerCell = ws[XLSX.utils.encode_cell({ r: data.length + 6, c: 0 })];
-    if (footerCell) {
-      footerCell.s = {
-        font: { italic: true, sz: 11, color: { rgb: '888888' } },
-        alignment: { horizontal: 'right', vertical: 'center' }
-      };
-    }
-    // ضبط عرض الأعمدة تلقائيًا حسب المحتوى
-    ws['!cols'] = Object.keys(data[0]).map((k, i) => {
-      const maxLen = Math.max(
-        k.length,
-        ...data.map(row => String(row[k] ?? '').length),
-        String(totalsRow[k] ?? '').length
-      );
-      return { wch: Math.min(Math.max(maxLen + 2, 12), 30) };
-    });
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'سجل الفواتير');
-    XLSX.writeFile(wb, `سجل_الفواتير_${new Date().toISOString().slice(0,10)}.xlsx`);
-    */
-  };
   const { user } = useAuth();
-
-  // دالة فلترة المخازن بناءً على الشروط المطلوبة
-  const filterWarehousesForSales = (warehouses: Warehouse[], selectedBranch: string = '') => {
-    return warehouses.filter(warehouse => {
-      // التحقق من حالة المخزن (يجب أن يكون نشط)
-      if (warehouse.status && warehouse.status !== 'active') {
-        return false;
-      }
-
-      // التحقق من نوع الاستخدام (يجب أن يكون فاتورة أو غير محدد)
-      if (warehouse.documentType && warehouse.documentType !== 'invoice') {
-        return false;
-      }
-
-      // التحقق من أنواع الفواتير (يجب أن تحتوي على مبيعات أو الكل أو غير محددة)
-      if (warehouse.quotationTypes && warehouse.quotationTypes.length > 0) {
-        const hasValidInvoiceType = warehouse.quotationTypes.includes('sales') || 
-                                  warehouse.quotationTypes.includes('all');
-        if (!hasValidInvoiceType) {
-          return false;
-        }
-      }
-
-      // التحقق من المستخدمين المسموح لهم
-      if (warehouse.allowedUsers && warehouse.allowedUsers.length > 0 && user?.uid) {
-        if (!warehouse.allowedUsers.includes(user.uid)) {
-          return false;
-        }
-      }
-
-      // التحقق من الفروع المسموح بها (إذا تم تحديد فرع)
-      if (selectedBranch && warehouse.allowedBranches && warehouse.allowedBranches.length > 0) {
-        if (!warehouse.allowedBranches.includes(selectedBranch)) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  };
-
-  const [quotationType, setQuotationType] = useState<'ضريبة مبسطة' | 'ضريبة'>('ضريبة مبسطة');
-  const [warehouseMode, setWarehouseMode] = useState<'single' | 'multiple'>('single');
-  const [branchCode, setBranchCode] = useState<string>('');
-  const [quotationData, setQuotationData] = useState<QuotationData>({
-    quotationNumber: '',
-    entryNumber: generateEntryNumber(),
-    date: getTodayString(),
-    branch: '',
-    warehouse: '',
-    customerNumber: '',
-    customerName: '',
-    delegate: '', // سيتم تعيين المندوب المناسب في useEffect
-    priceRule: '',
-    commercialRecord: '',
-    taxFile: '',
-    dueDate: '', // سيتم حسابه لاحقاً
-    validUntil: '' // تاريخ انتهاء صلاحية عرض السعر
-  });
-
-  // توليد رقم فاتورة جديد عند كل إعادة تعيين أو تغيير الفرع
-  // دالة توليد رقم قيد تلقائي
-  function generateEntryNumber() {
-    // رقم عشوائي بين 100000 و 999999
-    return 'EN-' + Math.floor(100000 + Math.random() * 900000);
-  }
-
-  const generateAndSetQuotationNumber = async (branchIdValue: string) => {
-    const quotationNumber = await generateQuotationNumberAsync(branchIdValue, branches);
-    setQuotationData(prev => ({ ...prev, quotationNumber, entryNumber: generateEntryNumber() }));
-  };
-
-  // توليد رقم عرض سعر عند تحميل الصفحة لأول مرة إذا كان رقم الفرع موجود
-  useEffect(() => {
-    if (branchCode) {
-      generateAndSetQuotationNumber(branchCode);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchCode]);
   
-  // استخدام hook السنة المالية
-  const { 
-    currentFinancialYear, 
-    validateDate, 
-    getDateValidationMessage, 
-    getMinDate, 
-    getMaxDate,
-    isWithinFinancialYear 
-  } = useFinancialYear();
+  // السنة المالية من السياق
+  const { currentFinancialYear } = useFinancialYear();
+
+  // رقم عرض السعر تلقائي
+  const [quotationNumber, setQuotationNumber] = useState("");
   
-  // استخدام custom hook للبيانات المحسنة
-  const {
-    loading: dataLoading,
-    fetchingItems,
-    setFetchingItems,
-    delegates,
-    branches,
-    warehouses,
-    cashBoxes,
-    units,
-    itemNames,
-    customers,
-    companyData,
-    fetchBasicData,
-    taxRate
-  } = useSalesData();
-  
-  // Additional state variables not in hook
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [priceRules, setPriceRules] = useState<string[]>([]);
-  const [allItems, setAllItems] = useState<InventoryItem[]>([]); // جميع الأصناف للاستخدام في النماذج
-  const [loading, setLoading] = useState<boolean>(false);
-  const [item, setItem] = useState<QuotationItem & { warehouseId?: string }>(initialItem);
-  const [items, setItems] = useState<QuotationItem[]>([]);
-  const [totals, setTotals] = useState<Totals>({
-    afterDiscount: 0,
-    afterTax: 0,
-    total: 0,
-    tax: 0
-  });
+  // تاريخ عرض السعر الافتراضي هو اليوم
+  const [quotationDate, setQuotationDate] = useState(dayjs());
 
-  const [priceType, setPriceType] = useState<'سعر البيع' | 'آخر سعر العميل'>('سعر البيع');
-  const [invoices, setInvoices] = useState<(InvoiceRecord & { firstLevelCategory?: string })[]>([]);
-  const [invoicesLoading, setInvoicesLoading] = useState<boolean>(false);
-interface FirebaseQuotationItem {
-  itemNumber?: string;
-  itemName?: string;
-  quantity?: string | number;
-  price?: string | number;
-  total?: string | number;
-  discountValue?: string | number;
-  discountPercent?: string | number;
-  taxValue?: string | number;
-  taxPercent?: string | number;
-  cost?: string | number;
-  [key: string]: unknown;
-}
+  // حالة التحميل
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-interface SavedQuotation {
-  invoiceNumber: string;
-  entryNumber: string;
-  date: string;
-  branch: string;
-  warehouse: string;
-  customerNumber: string;
-  customerName: string;
-  delegate: string;
-  priceRule: string;
-  commercialRecord: string;
-  taxFile: string;
-  items: QuotationItem[];
-  totals: Totals;
-  type: string;
-  createdAt: string;
-  source: string;
-  dueDate?: string;
-  customerAddress?: string;
-  [key: string]: unknown;
-}
-
-  // حالة المودال بعد الحفظ
-  const [showPrintModal, setShowPrintModal] = useState(false);
-  const [lastSavedQuotation, setLastSavedQuotation] = useState<SavedQuotation | null>(null);
-
-  // حالة تتبع الصنف المحدد للتعديل
   // المتغيرات الجديدة للواجهة المطلوبة
   const [periodRange, setPeriodRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
-  const [refNumber, setRefNumber] = useState("");
   const [refDate, setRefDate] = useState<dayjs.Dayjs | null>(null);
-  const [movementType, setMovementType] = useState<string | null>(null);
-  const [accountType, setAccountType] = useState<string | null>(null);
+  const [movementType, setMovementType] = useState<string | null>("عرض سعر");
+  const [accountType, setAccountType] = useState<string | null>("عميل");
   const [sideType, setSideType] = useState<string | null>(null);
   const [sideNumber, setSideNumber] = useState("");
   const [sideName, setSideName] = useState("");
@@ -1179,9 +166,10 @@ interface SavedQuotation {
   const [itemCode, setItemCode] = useState("");
   const [itemName, setItemName] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [unit, setUnit] = useState("");
+  const [unit, setUnit] = useState("قطعة");
   const [price, setPrice] = useState("");
-  const [costCenterName, setCostCenterName] = useState("");
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [taxPercent, setTaxPercent] = useState(0);
   const [showItemModal, setShowItemModal] = useState(false);
   const [addedItems, setAddedItems] = useState<Array<{
     itemCode: string;
@@ -1189,7 +177,8 @@ interface SavedQuotation {
     quantity: string;
     unit: string;
     price: string;
-    costCenterName: string;
+    discountPercent: number;
+    taxPercent: number;
   }>>([]);
 
   // متغيرات مودال البحث عن العميل
@@ -1202,1174 +191,527 @@ interface SavedQuotation {
   // متغيرات الإكسل
   const [excelFile, setExcelFile] = useState<File | null>(null);
 
-  // المتغيرات المحذوفة المطلوبة
-  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
-  const [itemStocks, setItemStocks] = useState<{[key: string]: number}>({});
-  const [loadingStocks, setLoadingStocks] = useState(false);
+  // البيانات الأساسية
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [units, setUnits] = useState<string[]>(['قطعة', 'كيلو', 'لتر', 'متر', 'صندوق', 'عبوة']);
+  const [companyData, setCompanyData] = useState<CompanyData>({});
 
-  const { TabPane } = Tabs;
-
-  // دالة للتحقق من صحة التاريخ وإظهار التحذير
-  const handleDateValidation = useCallback((date: string | dayjs.Dayjs, fieldName: string) => {
-    if (!date) return true;
-    
-    const isValid = validateDate(date);
-    if (!isValid && currentFinancialYear) {
-      const errorMessage = getDateValidationMessage(date);
-      customMessage.warning(
-        `${fieldName}: ${errorMessage}. السنة المالية المحددة من ${currentFinancialYear.startDate} إلى ${currentFinancialYear.endDate}`
-      );
-      return false;
-    }
-    return true;
-  }, [validateDate, getDateValidationMessage, currentFinancialYear, customMessage]);
-
-  // دالة لحساب تاريخ الاستحقاق مع التحقق من السنة المالية
-  const calculateDueDate = useCallback((invoiceDate: string): string => {
-    if (!invoiceDate) return '';
-    
-    // حساب تاريخ الاستحقاق بعد 30 يوم من تاريخ الفاتورة
-    const dueDate = dayjs(invoiceDate).add(30, 'day');
-    
-    // التحقق من أن تاريخ الاستحقاق ضمن السنة المالية
-    if (currentFinancialYear) {
-      const maxDate = dayjs(currentFinancialYear.endDate);
-      if (dueDate.isAfter(maxDate)) {
-        // إذا كان تاريخ الاستحقاق المحسوب خارج السنة المالية، استخدم آخر يوم في السنة المالية
-        return maxDate.format('YYYY-MM-DD');
-      }
-    }
-    
-    return dueDate.format('YYYY-MM-DD');
-  }, [currentFinancialYear]);
-
-  // دالة لفلترة التواريخ المسموحة في DatePicker
-  const disabledDate = useCallback((current: dayjs.Dayjs) => {
-    if (!currentFinancialYear) return false;
-    
-    const startDate = dayjs(currentFinancialYear.startDate);
-    const endDate = dayjs(currentFinancialYear.endDate);
-    
-    return current.isBefore(startDate, 'day') || current.isAfter(endDate, 'day');
-  }, [currentFinancialYear]);
-
-  // تحديث التاريخ الافتراضي عند تغيير السنة المالية
-  useEffect(() => {
-    if (currentFinancialYear) {
-      const validDate = getValidDateForFinancialYear(currentFinancialYear);
-      setQuotationData(prev => ({
-        ...prev,
-        date: validDate,
-        dueDate: calculateDueDate(validDate)
-      }));
-    }
-  }, [currentFinancialYear, calculateDueDate]);
-
-  // دالة لجلب رصيد صنف واحد في مخزن محدد (للاستخدام في حالة المخازن المتعددة)
-  const fetchSingleItemStock = async (itemName: string, warehouseId: string): Promise<number> => {
-    if (!itemName || !warehouseId) return 0;
-    
-    try {
-      const stock = await checkStockAvailability(itemName, warehouseId);
-      // تحديث الرصيد في الحالة
-      setItemStocks(prev => ({
-        ...prev,
-        [`${itemName}-${warehouseId}`]: stock
-      }));
-      return stock;
-    } catch (error) {
-      console.error('خطأ في جلب رصيد الصنف:', error);
-      return 0;
-    }
-  };
-
-  // دالة لجلب أرصدة جميع الأصناف في المخزن المحدد
-  const fetchItemStocks = useCallback(async (warehouseId: string) => {
-    if (!warehouseId || itemNames.length === 0) return;
-    
-    setLoadingStocks(true);
-    const stocks: {[key: string]: number} = {};
-    
-    try {
-      // جلب الأرصدة لجميع الأصناف بشكل متوازي
-      const stockPromises = itemNames.map(async (item) => {
-        const stock = await checkStockAvailability(item.name, warehouseId);
-        stocks[item.name] = stock;
-      });
-      
-      await Promise.all(stockPromises);
-      setItemStocks(stocks);
-    } catch (error) {
-      console.error('خطأ في جلب الأرصدة:', error);
-    } finally {
-      setLoadingStocks(false);
-    }
-  }, [itemNames]);
-
-  // تحديث الأرصدة عند تغيير المخزن أو الأصناف
-  useEffect(() => {
-    if (warehouseMode === 'single' && quotationData.warehouse) {
-      fetchItemStocks(quotationData.warehouse);
-    }
-  }, [quotationData.warehouse, itemNames, warehouseMode, fetchItemStocks]);
-
-  // دالة فحص المخزون المتاح
-  const checkStockAvailability = async (itemName: string, warehouseId: string): Promise<number> => {
-    try {
-      // جلب فواتير المشتريات (وارد)
-      const purchasesSnap = await getDocs(collection(db, "purchases_invoices"));
-      const allPurchases = purchasesSnap.docs.map(doc => doc.data());
-      
-      // جلب فواتير المبيعات (منصرف)
-      const salesSnap = await getDocs(collection(db, "sales_invoices"));
-      const allSales = salesSnap.docs.map(doc => doc.data());
-      
-      // جلب مرتجعات المبيعات (وارد)
-      const salesReturnsSnap = await getDocs(collection(db, "sales_returns"));
-      const allSalesReturns = salesReturnsSnap.docs.map(doc => doc.data());
-      
-      let totalIncoming = 0;
-      let totalOutgoing = 0;
-      
-      // حساب الوارد من المشتريات
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      allPurchases.forEach((purchase: any) => {
-        if (Array.isArray(purchase.items)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          purchase.items.forEach((item: any) => {
-            if ((item.itemName === itemName) && 
-                ((purchase.warehouse === warehouseId) || (item.warehouseId === warehouseId))) {
-              totalIncoming += Number(item.quantity) || 0;
-            }
-          });
-        }
-      });
-      
-      // حساب الوارد من مرتجعات المبيعات
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      allSalesReturns.forEach((returnDoc: any) => {
-        if (Array.isArray(returnDoc.items)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          returnDoc.items.forEach((item: any) => {
-            const returnWarehouse = item.warehouseId || item.warehouse || returnDoc.warehouse;
-            if ((item.itemName === itemName) && (returnWarehouse === warehouseId)) {
-              const returnedQty = typeof item.returnedQty !== 'undefined' ? Number(item.returnedQty) : 0;
-              totalIncoming += returnedQty;
-            }
-          });
-        }
-      });
-      
-      // حساب المنصرف من المبيعات
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      allSales.forEach((sale: any) => {
-        if (Array.isArray(sale.items)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sale.items.forEach((item: any) => {
-            if ((item.itemName === itemName) && 
-                ((sale.warehouse === warehouseId) || (item.warehouseId === warehouseId))) {
-              totalOutgoing += Number(item.quantity) || 0;
-            }
-          });
-        }
-      });
-      
-      return totalIncoming - totalOutgoing;
-    } catch (error) {
-      console.error('خطأ في فحص المخزون:', error);
-      return 0;
-    }
-  };
-
-  // جلب الفواتير من Firebase
-  const fetchInvoices = async () => {
-    try {
-      setInvoicesLoading(true);
-      const invoicesSnap = await getDocs(collection(db, 'sales_invoices'));
-      const invoicesData: (InvoiceRecord & { firstLevelCategory?: string })[] = [];
-      // جلب الأصناف لتعريف المستويات
-      let inventoryItems: ItemData[] = [];
-      try {
-        const itemsSnap = await getDocs(collection(db, 'inventory_items'));
-        inventoryItems = itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch {
-        // Handle error silently
-      }
-      
-      invoicesSnap.forEach(doc => {
-        const data = doc.data();
-        if (Array.isArray(data.items)) {
-          data.items.forEach((item: FirebaseQuotationItem) => {
-            // البحث عن الصنف لجلب المستويات
-            const foundItem = inventoryItems.find(i => i.name === item.itemName);
-            // البحث عن اسم الصنف الرئيسي (الأب) واسمه الأعلى (الجد) إذا كان هناك parentId
-            let parentName = '';
-            let grandParentName = '';
-            if (foundItem && foundItem.parentId) {
-              const parentItem = inventoryItems.find(i => i.id === foundItem.parentId || i.id === String(foundItem.parentId));
-              parentName = parentItem?.name || '';
-              if (parentItem && parentItem.parentId) {
-                const grandParentItem = inventoryItems.find(i => i.id === parentItem.parentId || i.id === String(parentItem.parentId));
-                grandParentName = grandParentItem?.name || '';
-              }
-            }
-            invoicesData.push({
-              key: doc.id + '-' + item.itemNumber,
-              invoiceNumber: data.invoiceNumber || 'N/A',
-              date: data.date || '',
-              dueDate: data.dueDate || calculateDueDate(data.date || ''), // إضافة تاريخ الاستحقاق
-              branch: data.branch || '',
-              itemNumber: item.itemNumber || 'N/A',
-              itemName: item.itemName || '',
-              mainCategory: parentName,
-              firstLevelCategory: grandParentName,
-              quantity: Number(item.quantity) || 0,
-              price: Number(item.price) || 0,
-              total: Number(item.total) || 0,
-              discountValue: Number(item.discountValue) || 0,
-              discountPercent: Number(item.discountPercent) || 0,
-              taxValue: Number(item.taxValue) || 0,
-              taxPercent: Number(item.taxPercent) || 0,
-              net: (Number(item.total) - Number(item.discountValue) + Number(item.taxValue)) || 0,
-              cost: Number(item.cost) || 0,
-              profit: (Number(item.total) - Number(item.discountValue) - Number(item.cost)) || 0,
-              warehouse: data.warehouse || '',
-              customer: data.customerName || '',
-              customerPhone: data.customerNumber || '',
-              seller: data.delegate || '',
-              paymentMethod: data.paymentMethod || '',
-              quotationType: data.type || '',
-              itemData: foundItem || {}
-            });
-          });
-        }
-      });
-      setInvoices(invoicesData);
-    } catch (err) {
-      console.error('Error fetching invoices:', err);
-      message.error('تعذر تحميل سجل الفواتير');
-    } finally {
-      setInvoicesLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchInvoices();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // جلب نسبة الضريبة من إعدادات الشركة (companies)
-  useEffect(() => {
-    const fetchTaxRate = async () => {
-      try {
-        const companiesSnap = await getDocs(collection(db, 'companies'));
-        if (!companiesSnap.empty) {
-          const companyDataFromDb = companiesSnap.docs[0].data();
-          if (companyDataFromDb.taxRate) {
-            const newTaxRate = String(companyDataFromDb.taxRate);
-            // setTaxRate(newTaxRate); // Now handled by hook via companyData
-            // تحديث الصنف الحالي بنسبة الضريبة الجديدة
-            setItem(prev => ({ ...prev, taxPercent: newTaxRate }));
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch tax rate from company settings:', err);
-      }
-    };
-    fetchTaxRate();
-  }, []);
-
-  // تحديث الصنف عند تحميل الصفحة بنسبة الضريبة
-  useEffect(() => {
-    setItem(prev => ({ ...prev, taxPercent: taxRate }));
-  }, [taxRate]);
-
-  // تشخيص بيانات الفروع
-  useEffect(() => {
-    console.log('تشخيص الفروع:');
-    console.log('عدد الفروع المحملة:', branches.length);
-    console.log('بيانات الفروع:', branches.map(b => ({ id: b.id, name: b.name })));
-    console.log('الفرع المحدد حالياً:', quotationData.branch);
-  }, [branches, quotationData.branch]);
-
-  const handleInvoiceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setQuotationData({ ...quotationData, [e.target.name]: e.target.value });
-  };
-
-  useEffect(() => {
-    if (quotationType !== 'ضريبة') {
-      setQuotationData(prev => ({ ...prev, commercialRecord: '', taxFile: '' }));
-    }
-  }, [quotationType]);
-
-  const handleItemChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setItem({ ...item, [e.target.name]: e.target.value });
-  };
-
-  const fetchLastCustomerPrice = async (customerName: string, itemName: string) => {
-    try {
-      const salesSnap = await getDocs(collection(db, 'sales_invoices'));
-      const filtered = salesSnap.docs
-        .map(doc => doc.data())
-        .filter(inv => inv.customerName === customerName && Array.isArray(inv.items))
-        .flatMap(inv => inv.items.filter((it: FirebaseQuotationItem) => it.itemName === itemName))
-        .sort((a: FirebaseQuotationItem, b: FirebaseQuotationItem) => new Date(String(b.date || '')).getTime() - new Date(String(a.date || '')).getTime());
-      if (filtered.length > 0) {
-        return filtered[0].price;
-      }
-    } catch (err) {
-      // ignore error
-    }
-    return '';
-  };
-
-  const calculateItemValues = (item: QuotationItem) => {
-    const quantity = Math.max(0, Number(item.quantity) || 0);
-    const price = Math.max(0, Number(item.price) || 0);
-    const discountPercent = Math.min(100, Math.max(0, Number(item.discountPercent) || 0));
-    // استخدام نسبة الضريبة من إعدادات الشركة
-    const taxPercent = Math.max(0, Number(taxRate) || 0);
-    
-    const subtotal = price * quantity;
-    const discountValue = subtotal * (discountPercent / 100);
-    const taxableAmount = subtotal - discountValue;
-    const taxValue = taxableAmount * (taxPercent / 100);
-    
-    return {
-      discountValue: parseFloat(discountValue.toFixed(2)),
-      taxValue: parseFloat(taxValue.toFixed(2)),
-      total: parseFloat(subtotal.toFixed(2))
-    };
-  };
-
-  const addItem = async () => {
-    if (!item.itemName || !item.quantity || !item.price) {
-      message.info('يجب إدخال اسم الصنف، الكمية والسعر');
-      return;
-    }
-
-    if (isNaN(Number(item.quantity)) || isNaN(Number(item.price))) {
-      message.info('يجب أن تكون الكمية والسعر أرقاماً صحيحة');
-      return;
-    }
-
-    if (warehouseMode === 'multiple' && !item.warehouseId) {
-      message.info('يرجى اختيار المخزن لهذا الصنف');
-      return;
-    }
-
-    // Prevent adding items with tempCodes (إيقاف مؤقت) by name or code
-    const possibleItems = itemNames.filter(i => i.name === item.itemName || i.itemCode === item.itemNumber);
-    if (possibleItems.length === 0) {
-      message.info('الصنف غير موجود في قائمة الأصناف!');
-      return;
-    }
-    const stoppedItem = possibleItems.find(i => i.tempCodes === true || String(i.tempCodes).toLowerCase() === 'true');
-    if (stoppedItem) {
-      console.warn('[SALES] محاولة إضافة صنف موقف مؤقت:', {
-        itemName: item.itemName,
-        itemNumber: item.itemNumber,
-        stoppedItem
-      });
-      customMessage.warning(`الصنف "${stoppedItem.name}" موقوف مؤقتاً ولا يمكن إضافته للفاتورة`);
-      return;
-    }
-
-    const selected = possibleItems[0];
-    
-    // فحص المخزون والسماح بالسالب
-    if (!selected.allowNegative) {
-      // فحص الكمية المتاحة في المخزون
-      const requestedQuantity = Number(item.quantity);
-      const warehouseToCheck = warehouseMode === 'multiple' ? item.warehouseId : quotationData.warehouse;
-      
-      // فحص المخزون الفعلي
-      const availableStock = await checkStockAvailability(item.itemName, warehouseToCheck || '');
-      
-      if (requestedQuantity > availableStock) {
-        customMessage.warning(`الكمية المطلوبة (${requestedQuantity}) أكبر من المتاح في المخزون (${availableStock}) والصنف لا يسمح بالسالب`);
-        return;
-      }
-    }
-    
-    const { discountValue, taxValue, total } = calculateItemValues(item);
-    const mainCategory = selected?.type || '';
-    // إذا كان يوجد cost في بيانات الصنف
-    const cost = selected && 'cost' in selected && typeof selected.cost !== 'undefined' ? Number(selected.cost) : 0;
-
-    const newItem: QuotationItem & { warehouseId?: string; mainCategory?: string; cost?: number } = {
-      ...item,
-      itemNumber: item.itemNumber || 'N/A',
-      taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة
-      discountValue,
-      taxValue,
-      total,
-      mainCategory,
-      cost
-    };
-
-    let newItems: QuotationItem[];
-    
-    // التحقق من أننا في وضع التعديل أم الإضافة
-    if (editingItemIndex !== null) {
-      // في وضع التعديل - نحديث الصنف الموجود
-      newItems = [...items];
-      newItems[editingItemIndex] = newItem;
-      setEditingItemIndex(null); // إعادة تعيين حالة التعديل
-      customMessage.success('تم تحديث الصنف بنجاح');
-    } else {
-      // في وضع الإضافة - نضيف صنف جديد
-      newItems = [...items, newItem];
-      customMessage.success('تم إضافة الصنف بنجاح');
-    }
-    
-    setItems(newItems);
-    setItem(initialItem);
-    updateTotals(newItems);
-  };
-
-  // تحديث الإجماليات مع جمع الضريبة
-  const updateTotals = (itemsList: QuotationItem[]) => {
-    let totalTax = 0;
-    const calculated = itemsList.reduce((acc, item) => {
-      const lineTotal = item.total || 0;
-      const discount = item.discountValue || 0;
-      const tax = item.taxValue || 0;
-      totalTax += tax;
-      return {
-        afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount + tax),
-        total: acc.total + lineTotal
-      };
-    }, { afterDiscount: 0, afterTax: 0, total: 0 });
-    setTotals({
-      afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
-      afterTax: parseFloat(calculated.afterTax.toFixed(2)),
-      total: parseFloat(calculated.total.toFixed(2)),
-      tax: parseFloat(totalTax.toFixed(2))
-    });
-  };
-
-  const handleSave = async () => {
-    if (items.length === 0) {
-      customMessage.error('لا يمكن حفظ عرض السعر بدون أصناف');
-      return;
-    }
-    
-    // التحقق من صحة التواريخ
-    if (quotationData.date && !validateDate(quotationData.date)) {
-      customMessage.error(`تاريخ عرض السعر خارج نطاق السنة المالية. ${getDateValidationMessage(quotationData.date)}`);
-      return;
-    }
-    
-    if (quotationData.validUntil && !validateDate(quotationData.validUntil)) {
-      customMessage.error(`تاريخ انتهاء الصلاحية خارج نطاق السنة المالية. ${getDateValidationMessage(quotationData.validUntil)}`);
-      return;
-    }
-    
-    setLoading(true);
-    // حذف الحقول الفارغة من بيانات عرض السعر
-    const cleanQuotationData = Object.fromEntries(
-      Object.entries(quotationData).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
-    );
-    
-    const quotation = {
-      ...cleanQuotationData,
-      items,
-      totals: {
-        ...totals
-      },
-      type: quotationType,
-      createdAt: new Date().toISOString(),
-      source: 'quotations'
-    };
-
-    try {
-      // حفظ عرض السعر في Firestore مباشرة
-      const { addDoc, collection } = await import('firebase/firestore');
-      await addDoc(collection(db, 'quotations'), quotation);
-      customMessage.success('تم حفظ عرض السعر بنجاح!');
-      
-      // Reset form
-      if (warehouseMode === 'single' && quotationData.warehouse) {
-        await fetchItemStocks(quotationData.warehouse);
-      } else if (warehouseMode === 'multiple') {
-        // في حالة المخازن المتعددة، تحديث رصيد كل صنف في مخزنه
-        for (const savedItem of items) {
-          const itemWithWarehouse = savedItem as QuotationItem & { warehouseId?: string };
-          if (itemWithWarehouse.warehouseId && itemWithWarehouse.itemName) {
-            await fetchSingleItemStock(itemWithWarehouse.itemName, itemWithWarehouse.warehouseId);
-          }
-        }
-      }
-      
-      // إعادة تعيين النموذج
-      setItems([]);
-      setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
-      // Reset form after saving
-      setItems([]);
-      setQuotationData(prev => ({
-        quotationNumber: '',
-        entryNumber: generateEntryNumber(),
-        date: getTodayString(),
-        paymentMethod: '',
-        cashBox: '',
-        multiplePayment: {},
-        branch: prev.branch, // Keep branch
-        warehouse: prev.warehouse, // Keep warehouse
-        customerNumber: '',
-        customerName: '',
-        delegate: prev.delegate, // Keep delegate
-        priceRule: '',
-        commercialRecord: '',
-        taxFile: '',
-        dueDate: '',
-        validUntil: ''
-      }));
-      
-      // Generate new quotation number
-      if (branchCode) {
-        generateAndSetQuotationNumber(branchCode);
-      }
-      
-    } catch (err) {
-      console.error('Error saving quotation:', err);
-      message.error(err.message || 'حدث خطأ أثناء الحفظ');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const itemColumns = [
-    { 
-      title: 'كود الصنف', 
-      dataIndex: 'itemNumber',
-      width: 100,
-      align: 'center' as const
-    },
-    { 
-      title: 'اسم الصنف', 
-      dataIndex: 'itemName',
-      width: 150
-    },
-    { 
-      title: 'الكمية', 
-      dataIndex: 'quantity',
-      width: 80,
-      align: 'center' as const
-    },
-    { 
-      title: 'الوحدة', 
-      dataIndex: 'unit',
-      width: 80,
-      align: 'center' as const
-    },
-    // إظهار عمود المخزن فقط إذا كان وضع المخزن multiple
-    {
-      title: 'المخزن',
-      dataIndex: 'warehouseId',
-      width: 120,
-      align: 'center' as const,
-      render: (_: string | undefined, record: QuotationItem & { warehouseId?: string }) => {
-        const warehouseId = record.warehouseId || quotationData.warehouse;
-        if (!warehouseId) return '';
-        const warehouse = warehouses.find(w => w.id === warehouseId);
-        return warehouse ? warehouse.nameAr || warehouse.name || warehouse.id : warehouseId;
-      }
-    },
-    { 
-      title: 'السعر', 
-      dataIndex: 'price',
-      width: 100,
-      align: 'center' as const,
-      render: (text: string) => `${parseFloat(text).toFixed(2)}`
-    },
-    { 
-      title: '% الخصم', 
-      dataIndex: 'discountPercent',
-      width: 80,
-      align: 'center' as const
-    },
-    
-    { 
-      title: 'قيمة الخصم', 
-      dataIndex: 'discountValue',
-      width: 100,
-      align: 'center' as const,
-      render: (text: number) => `${text.toFixed(2)}`
-    },
-    { 
-      title: 'الإجمالي بعد الخصم', 
-      key: 'netAfterDiscount',
-      width: 110,
-      align: 'center' as const,
-      render: (_: unknown, record: QuotationItem) => {
-        const subtotal = Number(record.price) * Number(record.quantity);
-        const discountValue = subtotal * Number(record.discountPercent) / 100;
-        return (subtotal - discountValue).toFixed(2);
-      }
-    },
-    { 
-      title: '% الضريبة', 
-      dataIndex: 'taxPercent',
-      width: 80,
-      align: 'center' as const
-    },
-    { 
-      title: 'قيمة الضريبة', 
-      dataIndex: 'taxValue',
-      width: 100,
-      align: 'center' as const,
-      render: (text: number) => `${text.toFixed(2)}`
-    },
-    { 
-      title: 'الإجمالي', 
-      dataIndex: 'total',
-      width: 100,
-      align: 'center' as const,
-      // الإجمالي النهائي = (السعر * الكمية - قيمة الخصم) + قيمة الضريبة
-      render: (_: unknown, record: QuotationItem) => {
-        const quantity = Number(record.quantity) || 0;
-        const price = Number(record.price) || 0;
-        const discountPercent = Number(record.discountPercent) || 0;
-        const subtotal = price * quantity;
-        const discountValue = subtotal * discountPercent / 100;
-        const taxableAmount = subtotal - discountValue;
-        const taxPercent = Number(record.taxPercent) || 0;
-        const taxValue = taxableAmount * taxPercent / 100;
-        const finalTotal = taxableAmount + taxValue;
-        return finalTotal.toFixed(2);
-      }
-    },
-    {
-      title: 'إجراءات',
-      width: 140,
-      align: 'center' as const,
-      render: (_: unknown, record: QuotationItem, index: number) => (
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-          <Button
-            type="text"
-            size="small"
-            onClick={() => handleEditItem(record, index)}
-            style={{
-              color: '#1890ff',
-              transition: 'transform 0.2s',
-            }}
-            icon={
-              <span style={{ display: 'inline-block', transition: 'transform 0.2s' }} className="action-icon-edit">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1890ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19.5 3 21l1.5-4L16.5 3.5z"/></svg>
-              </span>
-            }
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1.15)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1)'}
-          />
-          {(
-            <Button
-              type="text"
-              size="small"
-              danger
-              onClick={() => {
-                const newItems = items.filter((_, i) => i !== index);
-                setItems(newItems);
-                updateTotals(newItems);
-              }}
-              style={{
-                transition: 'transform 0.2s',
-              }}
-              icon={
-                <span style={{ display: 'inline-block', transition: 'transform 0.2s' }} className="action-icon-delete">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff4d4f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-                </span>
-              }
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1.15)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = 'scale(1)'}
-            />
-          )}
-        </div>
-      )
-    }
-  ];
-
-  // دالة تعبئة بيانات الصنف عند التعديل
-  const handleEditItem = (record: QuotationItem, index: number) => {
-    setItem({
-      ...record,
-      taxPercent: taxRate // استخدام نسبة الضريبة من إعدادات الشركة
-    });
-    // تحديد الصنف المحدد للتعديل بدلاً من حذفه
-    setEditingItemIndex(index);
-  };
-
-  const handleEditInvoice = (record: InvoiceRecord & { firstLevelCategory?: string }) => {
-    // تعبئة بيانات الفاتورة المختارة في النموذج
-    setQuotationData({
-      ...quotationData,
-      ...record,
-      delegate: record.delegate || record.seller || '',
-      branch: record.branch || '',
-      warehouse: record.warehouse || '',
-      customerNumber: record.customerNumber || '',
-      customerName: record.customerName || record.customer || '',
-      priceRule: record.priceRule || '',
-      commercialRecord: record.commercialRecord || '',
-      taxFile: record.taxFile || '',
-      dueDate: record.dueDate || calculateDueDate(record.date || '') // إضافة تاريخ الاستحقاق أو حسابه من التاريخ
-    });
-    setItems(record.items || []);
-    setTotals(record.totals || totals);
-    setLastSavedQuotation(record as unknown as SavedQuotation);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleDeleteInvoice = async (record: InvoiceRecord & { firstLevelCategory?: string; id?: string }) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return;
-    setInvoicesLoading(true);
-    try {
-      // حذف الفاتورة من قاعدة البيانات (Firebase أو أي مصدر آخر)
-      // مثال: await deleteInvoiceById(record.id)
-      // إذا كنت تستخدم Firebase:
-      if (record.id) {
-        const { deleteDoc, doc } = await import('firebase/firestore');
-        const { db } = await import('../../lib/firebase');
-        await deleteDoc(doc(db, 'salesInvoices', record.id));
-        setInvoices(prev => prev.filter(inv => inv.key !== record.key));
-      } else {
-        setInvoices(prev => prev.filter(inv => inv.invoiceNumber !== record.invoiceNumber));
-      }
-    } catch (err) {
-      alert('حدث خطأ أثناء الحذف');
-    } finally {
-      setInvoicesLoading(false);
-    }
-  };
-
-  const invoiceColumns = [
-    {
-      title: 'رقم الفاتورة',
-      dataIndex: 'invoiceNumber',
-      key: 'invoiceNumber',
-      width: 150,
-      fixed: 'left' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.invoiceNumber.localeCompare(b.invoiceNumber)
-    },
-    {
-      title: 'التاريخ',
-      dataIndex: 'date',
-      key: 'date',
-      width: 120,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD')
-    },
-    {
-      title: 'تاريخ الاستحقاق',
-      dataIndex: 'dueDate',
-      key: 'dueDate',
-      width: 120,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => {
-        const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
-        const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
-        return dateA - dateB;
-      },
-      render: (dueDate: string) => dueDate ? dayjs(dueDate).format('YYYY-MM-DD') : ''
-    },
-    {
-      title: 'الفرع',
-      dataIndex: 'branch',
-      key: 'branch',
-      width: 120,
-      render: (branchId: string) => {
-        const branch = branches.find(b => b.id === branchId);
-        return branch ? (branch.name || branch.id) : branchId;
-      }
-    },
-    {
-      title: 'كود الصنف',
-      dataIndex: 'itemNumber',
-      key: 'itemNumber',
-      width: 100,
-      align: 'center' as const
-    },
-    {
-      title: 'اسم الصنف',
-      dataIndex: 'itemName',
-      key: 'itemName',
-      width: 150
-    },
-    {
-      title: 'المجموعة الرئيسية',
-      dataIndex: 'firstLevelCategory',
-      key: 'firstLevelCategory',
-      width: 150,
-      render: (value: string) => value || ''
-    },
-    {
-      title: 'المستوى الأول',
-      dataIndex: 'mainCategory',
-      key: 'mainCategory',
-      width: 150,
-      render: (value: string) => value || ''
-    },
-    {
-      title: 'الكمية',
-      dataIndex: 'quantity',
-      key: 'quantity',
-      width: 80,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.quantity - b.quantity,
-      render: (quantity: number) => Math.round(quantity).toString()
-    },
-    {
-      title: 'السعر',
-      dataIndex: 'price',
-      key: 'price',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.price - b.price,
-      render: (price: number) => price.toFixed(2)
-    },
-    {
-      title: 'الإجمالي',
-      dataIndex: 'total',
-      key: 'total',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.total - b.total,
-      render: (total: number) => total.toFixed(2)
-    },
-    {
-      title: 'قيمة الخصم',
-      dataIndex: 'discountValue',
-      key: 'discountValue',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.discountValue - b.discountValue,
-      render: (discount: number) => discount.toFixed(2)
-    },
-    {
-      title: '% الخصم',
-      dataIndex: 'discountPercent',
-      key: 'discountPercent',
-      width: 80,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.discountPercent - b.discountPercent,
-      render: (percent: number) => percent.toFixed(2)
-    },
-    {
-      title: 'قيمة الضريبة',
-      dataIndex: 'taxValue',
-      key: 'taxValue',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.taxValue - b.taxValue,
-      render: (tax: number) => tax.toFixed(2)
-    },
-    {
-      title: '% الضريبة',
-      dataIndex: 'taxPercent',
-      key: 'taxPercent',
-      width: 80,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.taxPercent - b.taxPercent,
-      render: (percent: number) => percent.toFixed(2)
-    },
-    {
-      title: 'الصافي',
-      dataIndex: 'net',
-      key: 'net',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.net - b.net,
-      render: (net: number) => net.toFixed(2)
-    },
-    {
-      title: 'التكلفة',
-      dataIndex: 'cost',
-      key: 'cost',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.cost - b.cost,
-      render: (cost: number) => cost.toFixed(2)
-    },
-    {
-      title: 'ربح الصنف',
-      dataIndex: 'profit',
-      key: 'profit',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.profit - b.profit,
-      render: (profit: number) => profit.toFixed(2)
-    },
-    {
-      title: 'المخزن',
-      dataIndex: 'warehouse',
-      key: 'warehouse',
-      width: 120
-    ,
-      render: (warehouseId: string) => {
-        const warehouse = warehouses.find(w => w.id === warehouseId);
-        return warehouse ? (warehouse.nameAr || warehouse.name || warehouse.id) : warehouseId;
-      }
-    },
-    {
-      title: 'العميل',
-      dataIndex: 'customer',
-      key: 'customer',
-      width: 150
-    },
-    {
-      title: 'تليفون العميل',
-      dataIndex: 'customerPhone',
-      key: 'customerPhone',
-      width: 120
-    },
-    {
-      title: 'البائع',
-      dataIndex: 'seller',
-      key: 'seller',
-      width: 150,
-      render: (seller: string) => getDelegateName(seller)
-    },
-    {
-      title: 'نوع الفاتورة',
-      dataIndex: 'quotationType',
-      key: 'quotationType',
-      width: 120,
-      render: (type: string) => type === 'ضريبة' ? 'ضريبة' : 'ضريبة مبسطة'
-    },
-    // ...existing code...
-    {
-      title: 'إجراءات',
-      key: 'actions',
-      width: 120,
-      align: 'center' as const,
-      fixed: 'right' as const,
-      render: (_: unknown, record: InvoiceRecord & { firstLevelCategory?: string }) => (
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-          <Button
-            danger
-            size="small"
-            onClick={() => handleDeleteInvoice(record)}
-            style={{ fontWeight: 600 }}
-          >
-            حذف
-          </Button>
-        </div>
-      )
-    },
-  ];
-
-  // تعريف الدالة خارج useEffect
-  const fetchLists = useCallback(async () => {
-    try {
-      setFetchingItems(true);
-      // Use the optimized hook's fetch function instead of manual state setting
-      await fetchBasicData();
-      
-      // جلب الفروع
-      const branchesSnap = await getDocs(collection(db, 'branches'));
-      // setBranches(branchesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); // Now handled by hook
-      // جلب طرق الدفع
-      const paymentSnap = await getDocs(collection(db, 'paymentMethods'));
-      // setPaymentMethods(paymentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); // Now handled by hook
-      // جلب الصناديق النقدية
-      const cashBoxesData = await fetchCashBoxes();
-      // setCashBoxes(cashBoxesData); // Now handled by hook
-      // جلب البنوك
-      const banksData = await fetchBankAccounts();
-      setBanks(banksData);
-      // جلب العملاء من صفحة العملاء (collection: 'customers')
-      const customersSnap = await getDocs(collection(db, 'customers'));
-      // setCustomers(customersSnap.docs.map(doc => { // Now handled by hook
-      //   const data = doc.data();
-      //   return { id: doc.id, ...data, taxFile: data.taxFile || '' };
-      // }));
-      // جلب المخازن
-      const warehousesSnap = await getDocs(collection(db, 'warehouses'));
-      // setWarehouses(warehousesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); // Now handled by hook
-      // جلب البائعين النشطين فقط
-      console.log('جاري تحميل المندوبين من قاعدة البيانات...');
-      const delegatesQuery = query(
-        collection(db, 'salesRepresentatives'),
-        where('status', '==', 'active')
-      );
-      const delegatesSnap = await getDocs(delegatesQuery);
-      const delegatesData = delegatesSnap.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      }));
-      console.log('تم تحميل المندوبين بنجاح:', delegatesData.length, 'مندوب');
-      console.log('قائمة المندوبين:', delegatesData.map(d => ({ id: d.id, data: d })));
-      // setDelegates(delegatesData); // Now handled by hook
-      // قوائم ثابتة
-      // setUnits(['قطعة', 'كرتونة', 'كيلو', 'جرام', 'لتر', 'متر', 'علبة']); // Now handled by hook
-      setPriceRules(['السعر العادي', 'سعر الجملة', 'سعر التخفيض']);
-      // جلب الأصناف
-      const itemsSnap = await getDocs(collection(db, 'inventory_items'));
-      const allItemsData = itemsSnap.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name || '',
-          itemCode: data.itemCode || '',
-          salePrice: data.salePrice || 0,
-          discount: data.discount || 0,
-          isVatIncluded: data.isVatIncluded || false,
-          type: data.type || '',
-          tempCodes: data.tempCodes || false,
-          allowNegative: data.allowNegative || false
-        };
-      }).filter(item => item.name);
-      
-      // حفظ جميع الأصناف للاستخدام في النماذج
-      setAllItems(allItemsData);
-      
-      // فلترة أصناف المستوى الثاني للعرض في قائمة المبيعات (مع الموقوفة مؤقتاً للإشارة)
-      const secondLevelItems = allItemsData.filter(item => item.type === 'مستوى ثاني');
-      // setItemNames(secondLevelItems); // Now handled by hook via fetchBasicData
-    } catch (err) {
-      console.error('Error fetching lists:', err);
-      customMessage.error('تعذر تحميل القوائم من قاعدة البيانات');
-    } finally {
-      setFetchingItems(false);
-    }
-  }, [setFetchingItems, customMessage, fetchBasicData]);
-  useEffect(() => {
-    fetchLists();
-  }, [fetchLists]);
-
-  // تحديد المندوب الافتراضي بناءً على المستخدم الحالي
-  useEffect(() => {
-    console.log('useEffect للمندوب الافتراضي - المندوبين:', delegates.length, 'المستخدم UID:', user?.uid, 'المندوب الحالي:', quotationData.delegate);
-    if (delegates.length > 0 && user?.uid && !quotationData.delegate) {
-      // البحث عن المندوب المطابق للمستخدم الحالي
-      const currentUserDelegate = delegates.find(delegate => delegate.uid === user.uid);
-      if (currentUserDelegate) {
-        console.log('تم العثور على المندوب المطابق للمستخدم:', currentUserDelegate.name);
-        setQuotationData(prev => ({
-          ...prev,
-          delegate: currentUserDelegate.id
-        }));
-      } else {
-        // في حالة عدم العثور على مندوب مطابق، اختر أول مندوب نشط
-        const firstActiveDelegate = delegates.find(delegate => delegate.status === 'active');
-        if (firstActiveDelegate) {
-          console.log('تم اختيار أول مندوب نشط:', firstActiveDelegate.name);
-          setQuotationData(prev => ({
-            ...prev,
-            delegate: firstActiveDelegate.id
-          }));
-        } else {
-          console.log('لم يتم العثور على أي مندوب نشط');
-        }
-      }
-    }
-  }, [delegates, user?.uid, quotationData.delegate]);
-
-  // دالة للحصول على اسم المندوب من ID
-  const getDelegateName = (delegateId: string) => {
-    if (!delegateId) return '';
-    const delegate = delegates.find(d => d.id === delegateId);
-    const name = delegate?.name || delegate?.email || delegateId;
-    console.log('البحث عن مندوب بـ ID:', delegateId, 'النتيجة:', name);
-    return name;
-  };
-
-  // حساب الإجماليات باستخدام useMemo لتحسين الأداء
-  const totalsDisplay = useMemo(() => ({
-    total: totals.total.toFixed(2),
-    discount: (totals.total - totals.afterDiscount).toFixed(2),
-    afterDiscount: totals.afterDiscount.toFixed(2),
-    tax: totals.tax.toFixed(2), // الضريبة الفعلية
-    net: totals.afterTax.toFixed(2) // الصافي = الاجمالي بعد الخصم + الضريبة
-  }), [totals]);
-
-  // حالة إظهار/إخفاء جدول سجل الفواتير
-  const [showInvoicesTable, setShowInvoicesTable] = useState(false);
-
-  // حالة مودال البحث عن عميل
-  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
-  const [customerSearchText, setCustomerSearchText] = useState('');
-  
-  // حالة مودال الإضافة السريعة للعميل
-  const [showQuickAddCustomer, setShowQuickAddCustomer] = useState(false);
-  const [quickCustomerForm, setQuickCustomerForm] = useState({
-    nameAr: '',
-    phone: ''
+  // بيانات عرض السعر
+  const [quotationData, setQuotationData] = useState<QuotationData>({
+    quotationNumber: '',
+    date: dayjs().format('YYYY-MM-DD'),
+    branch: '',
+    warehouse: '',
+    customerNumber: '',
+    customerName: '',
+    delegate: '',
+    priceRule: '',
+    commercialRecord: '',
+    taxFile: '',
+    dueDate: '',
+    validUntil: ''
   });
 
-  // تصفية العملاء حسب البحث
-  const filteredCustomers = useMemo(() => {
-    if (!customerSearchText) return customers;
-    const search = customerSearchText.toLowerCase();
-    return customers.filter(c =>
-      (c.nameAr && c.nameAr.toLowerCase().includes(search)) ||
-      (c.nameEn && c.nameEn.toLowerCase().includes(search)) ||
-      (c.phone && c.phone.toLowerCase().includes(search)) ||
-      (c.mobile && c.mobile.toLowerCase().includes(search)) ||
-      (c.phoneNumber && c.phoneNumber.toLowerCase().includes(search)) ||
-      (c.commercialReg && c.commercialReg.toLowerCase().includes(search)) ||
-      (c.taxFile && c.taxFile.toLowerCase().includes(search))
-    );
-  }, [customerSearchText, customers]);
+  // دالة توليد رقم عرض سعر جديد بناءً على رقم الفرع والسنة والتسلسل
+  const generateQuotationNumberAsync = async (branchId: string, branchesData: Branch[] = []): Promise<string> => {
+    const date = new Date();
+    const y = date.getFullYear();
+    
+    // البحث عن رقم الفرع الحقيقي من بيانات الفروع
+    const branchObj = branchesData.find(b => b.id === branchId);
+    const branchNumber = branchObj?.code || branchObj?.number || branchObj?.branchNumber || '1';
+    
+    try {
+      // جلب عدد عروض الأسعار لنفس الفرع في نفس السنة
+      const q = query(
+        collection(db, 'quotations'),
+        where('branch', '==', branchId)
+      );
+      const snapshot = await getDocs(q);
+      
+      // فلترة النتائج في الكود بدلاً من قاعدة البيانات لتجنب مشكلة الفهرس
+      const currentYearQuotations = snapshot.docs.filter(doc => {
+        const quotationDate = doc.data().date;
+        if (!quotationDate) return false;
+        const quotationYear = new Date(quotationDate).getFullYear();
+        return quotationYear === y;
+      });
+      
+      const count = currentYearQuotations.length + 1;
+      const serial = count;
+      
+      return `QUO-${branchNumber}-${y}-${serial}`;
+    } catch (error) {
+      console.error('خطأ في توليد رقم عرض السعر:', error);
+      // في حالة الخطأ، استخدم رقم عشوائي
+      const randomSerial = Math.floor(Math.random() * 1000) + 1;
+      return `QUO-${branchNumber}-${y}-${randomSerial}`;
+    }
+  };
 
-  // دالة طباعة الفاتورة
-const handlePrint = () => {
-    // جلب بيانات الشركة من الإعدادات
-    (async () => {
-      let companyData: CompanyData = {
-        arabicName: '',
-        englishName: '',
-        logoUrl: '',
-        commercialRegistration: '',
-        taxFile: '',
-        registrationDate: '',
-        issuingAuthority: '',
-        companyType: '',
-        activityType: '',
-        nationality: '',
-        city: '',
-        region: '',
-        street: '',
-        district: '',
-        buildingNumber: '',
-        postalCode: '',
-        countryCode: '',
-        phone: '',
-        mobile: '',
-        fiscalYear: '',
-        taxRate: '',
-        website: '',
-      };
-      try {
-        const { getDocs, collection } = await import('firebase/firestore');
-        const companiesSnap = await getDocs(collection(db, 'companies'));
-        if (!companiesSnap.empty) {
-          companyData = { ...companyData, ...companiesSnap.docs[0].data() };
-        }
-      } catch {
-        // Ignore error silently
-      }
+  // دالة توليد وتعيين رقم عرض السعر
+  const generateAndSetQuotationNumber = useCallback(async (branchIdValue: string) => {
+    const quotationNumber = await generateQuotationNumberAsync(branchIdValue, branches);
+    setQuotationNumber(quotationNumber);
+    setQuotationData(prev => ({ ...prev, quotationNumber }));
+  }, [branches]);
 
-      const invoice = lastSavedQuotation;
-      if (!invoice) {
-        message.error('لا توجد فاتورة للطباعة');
+  // تعيين الفترة المحاسبية حسب السنة المالية
+  useEffect(() => {
+    if (currentFinancialYear) {
+      const start = dayjs(currentFinancialYear.startDate);
+      const end = dayjs(currentFinancialYear.endDate);
+      setPeriodRange([start, end]);
+    }
+  }, [currentFinancialYear]);
+
+  // دوال إدارة الأصناف
+  const handleItemSelect = (selectedItemName: string) => {
+    const selectedItem = items.find(item => item.name === selectedItemName);
+    
+    if (selectedItem) {
+      // التحقق من أن الصنف غير موقوف مؤقتاً
+      if (selectedItem.tempCodes) {
+        message.warning(`تم إيقاف الصنف "${selectedItemName}" مؤقتاً ولا يمكن إضافته لعرض السعر`);
+        setItemName('');
+        setItemCode('');
+        setPrice('');
+        setDiscountPercent(0);
+        // الاحتفاظ بنسبة الضريبة من إعدادات الشركة
+        const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+        setTaxPercent(defaultTaxRate);
         return;
       }
 
+      // تعبئة البيانات تلقائياً
+      setItemName(selectedItemName);
+      setItemCode(selectedItem.itemCode || '');
+      setPrice(selectedItem.salePrice ? String(selectedItem.salePrice) : '');
+      setDiscountPercent(selectedItem.discount || 0);
+      
+      // الحصول على نسبة الضريبة من إعدادات الشركة
+      const taxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+      setTaxPercent(taxRate);
+      
+      // تعيين الوحدة إذا كانت متوفرة
+      if (selectedItem.unit) {
+        setUnit(selectedItem.unit);
+      }
+
+      message.success(`تم اختيار الصنف: ${selectedItemName}`);
+    }
+  };
+
+  // دالة للبحث في الأصناف بواسطة كود الصنف
+  const handleItemCodeChange = (code: string) => {
+    setItemCode(code);
+    
+    // البحث عن الصنف بواسطة الكود
+    const foundItem = items.find(item => 
+      item.itemCode === code && item.type === 'مستوى ثاني'
+    );
+    
+    if (foundItem) {
+      handleItemSelect(foundItem.name);
+    } else if (code.trim()) {
+      // إذا لم يتم العثور على الصنف، امحو البيانات المرتبطة
+      setItemName('');
+      setPrice('');
+      setDiscountPercent(0);
+      const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+      setTaxPercent(defaultTaxRate);
+      setUnit('قطعة');
+    }
+  };
+
+  const handleAddNewItem = () => {
+    const finalUnit = unit && unit.trim() ? unit : "قطعة";
+    
+    // Validation
+    if (!itemCode.trim()) {
+      return message.error('يرجى إدخال كود الصنف');
+    }
+    if (!itemName.trim()) {
+      return message.error('يرجى إدخال اسم الصنف');
+    }
+    if (!finalUnit.trim()) {
+      return message.error('يرجى إدخال الوحدة');
+    }
+    if (!quantity || Number(quantity) <= 0) {
+      return message.error('يرجى إدخال كمية صحيحة');
+    }
+    if (!price || Number(price) <= 0) {
+      return message.error('يرجى إدخال سعر صحيح');
+    }
+
+    // التحقق من عدم تكرار كود الصنف
+    const existingItem = addedItems.find(item => item.itemCode === itemCode.trim());
+    if (existingItem) {
+      return message.error('هذا الصنف مضاف بالفعل، يمكنك تعديل الكمية من الجدول');
+    }
+
+    // إضافة الصنف
+    const newItem = {
+      itemCode: itemCode.trim(),
+      itemName: itemName.trim(),
+      quantity: quantity,
+      unit: finalUnit,
+      price: price,
+      discountPercent: discountPercent || 0,
+      taxPercent: taxPercent || 0
+    };
+
+    setAddedItems(items => [...items, newItem]);
+    
+    // إعادة تعيين الحقول
+    setItemCode('');
+    setItemName('');
+    setQuantity('1');
+    setUnit('قطعة');
+    setPrice('');
+    setDiscountPercent(0);
+    // الاحتفاظ بنسبة الضريبة من إعدادات الشركة
+    const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+    setTaxPercent(defaultTaxRate);
+    
+    message.success(`تم إضافة الصنف: ${itemName.trim()}`);
+  };
+
+  // دوال إدارة الإكسل
+  const handleExcelUpload = (info: { file: { status?: string; name?: string; originFileObj?: File } }) => {
+    const { file } = info;
+    
+    if (file.status === "done" && file.originFileObj) {
+      message.success(`${file.name || 'ملف'} تم رفع الملف بنجاح`);
+      setExcelFile(file.originFileObj);
+      
+      // قراءة ملف الإكسل وتحويله إلى أصناف
+      const reader = new FileReader();
+      reader.onload = (e: ProgressEvent<FileReader>) => {
+        try {
+          const data = new Uint8Array(e.target!.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as (string | number)[][];
+          
+          // تخطي الصف الأول إذا كان يحتوي على رؤوس الأعمدة
+          const dataRows = rows.length > 0 && typeof rows[0][0] === 'string' && 
+                           ['كود', 'رقم', 'اسم', 'صنف'].some(header => 
+                             rows[0].some((cell) => String(cell).includes(header))
+                           ) ? rows.slice(1) : rows;
+          
+          // معالجة البيانات
+          const items = dataRows
+            .filter((row) => Array.isArray(row) && row.length >= 5)
+            .map((row, index: number) => {
+              const itemCode = String(row[0] || "").trim();
+              const itemName = String(row[1] || "").trim();
+              const quantity = String(row[2] || "1").trim();
+              const unit = String(row[3] || "قطعة").trim();
+              const price = String(row[4] || "").trim();
+              const discountPercent = Number(row[5] || 0);
+              
+              // validation
+              if (!itemCode || !itemName || !quantity || !unit || !price) {
+                console.warn(`تخطي الصف ${index + 1}: بيانات ناقصة`);
+                return null;
+              }
+              
+              // التحقق من صحة الأرقام
+              if (isNaN(Number(quantity)) || Number(quantity) <= 0) {
+                console.warn(`تخطي الصف ${index + 1}: كمية غير صحيحة`);
+                return null;
+              }
+              
+              if (isNaN(Number(price)) || Number(price) <= 0) {
+                console.warn(`تخطي الصف ${index + 1}: سعر غير صحيح`);
+                return null;
+              }
+              
+              // الحصول على نسبة الضريبة من إعدادات الشركة
+              const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+              
+              return {
+                itemCode,
+                itemName,
+                quantity,
+                unit,
+                price,
+                discountPercent: Math.max(0, Math.min(100, discountPercent)), // بين 0 و 100
+                taxPercent: defaultTaxRate
+              };
+            })
+            .filter(item => item !== null);
+          
+          if (items.length === 0) {
+            message.error("لم يتم العثور على أصناف صالحة في الملف. يرجى التأكد من صحة البيانات.");
+            return;
+          }
+          
+          // التحقق من عدم تكرار أكواد الأصناف
+          const duplicateItems = [];
+          const existingCodes = addedItems.map(item => item.itemCode);
+          
+          for (const item of items) {
+            if (existingCodes.includes(item.itemCode)) {
+              duplicateItems.push(item.itemName);
+            }
+          }
+          
+          if (duplicateItems.length > 0) {
+            message.warning(`تم تخطي الأصناف المكررة: ${duplicateItems.join(', ')}`);
+          }
+          
+          // إضافة الأصناف الغير مكررة فقط
+          const newItems = items.filter(item => !existingCodes.includes(item.itemCode));
+          
+          if (newItems.length > 0) {
+            setAddedItems(prev => [...prev, ...newItems]);
+            message.success(`تم إضافة ${newItems.length} صنف من ملف الإكسل`);
+          }
+          
+        } catch (error) {
+          console.error('خطأ في قراءة ملف الإكسل:', error);
+          message.error('حدث خطأ أثناء قراءة ملف الإكسل. يرجى التأكد من صحة الملف.');
+        }
+      };
+      
+      reader.readAsArrayBuffer(file.originFileObj);
+      
+    } else if (file.status === "error") {
+      message.error(`${file.name || 'ملف'} حدث خطأ أثناء رفع الملف`);
+    }
+  };
+
+  // دالة الحفظ مع Firebase
+  const handleSave = async () => {
+    // Validation
+    if (!quotationData.branch) return message.error('يرجى اختيار الفرع');
+    if (!quotationData.warehouse) return message.error('يرجى اختيار المخزن');
+    if (!accountType) return message.error('يرجى اختيار نوع الحساب');
+    if (!quotationData.customerNumber) return message.error('يرجى إدخال رقم الحساب');
+    if (!quotationData.customerName) return message.error('يرجى إدخال اسم الحساب');
+    if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
+    if (!quotationNumber) return message.error('يرجى إنشاء رقم عرض السعر');
+
+    setSaving(true);
+    try {
+      // حساب الإجماليات
+      const calculatedTotals = addedItems.reduce(
+        (acc, item) => {
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          const discount = Number(item.discountPercent) || 0;
+          const tax = Number(item.taxPercent) || 0;
+          
+          const subtotal = qty * price;
+          const discountValue = (subtotal * discount) / 100;
+          const afterDiscount = subtotal - discountValue;
+          const taxValue = (afterDiscount * tax) / 100;
+          const total = afterDiscount + taxValue;
+          
+          acc.subtotal += subtotal;
+          acc.totalDiscount += discountValue;
+          acc.totalTax += taxValue;
+          acc.finalTotal += total;
+          
+          return acc;
+        },
+        { subtotal: 0, totalDiscount: 0, totalTax: 0, finalTotal: 0 }
+      );
+
+      // بيانات عرض السعر للحفظ
+      const quotationDocData = {
+        // معلومات أساسية
+        quotationNumber: quotationNumber,
+        date: quotationDate.format('YYYY-MM-DD'),
+        validUntil: refDate ? refDate.format('YYYY-MM-DD') : null,
+        
+        // الفترة المحاسبية
+        periodStart: periodRange[0] ? periodRange[0].format('YYYY-MM-DD') : null,
+        periodEnd: periodRange[1] ? periodRange[1].format('YYYY-MM-DD') : null,
+        
+        // معلومات الفرع والمخزن
+        branch: quotationData.branch,
+        branchName: branches.find(b => b.id === quotationData.branch)?.name || '',
+        warehouse: quotationData.warehouse,
+        warehouseName: warehouses.find(w => w.id === quotationData.warehouse)?.name || '',
+        
+        // معلومات الحركة والحساب
+        movementType: movementType || 'عرض سعر',
+        accountType: accountType || 'عميل',
+        customerNumber: quotationData.customerNumber,
+        customerName: quotationData.customerName,
+        
+        // معلومات إضافية
+        statement: statement || '',
+        delegate: quotationData.delegate || '',
+        
+        // الأصناف
+        items: addedItems.map((item, index) => ({
+          itemNumber: index + 1,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          quantity: Number(item.quantity) || 0,
+          unit: item.unit,
+          price: Number(item.price) || 0,
+          discountPercent: Number(item.discountPercent) || 0,
+          discountValue: (Number(item.quantity) * Number(item.price) * Number(item.discountPercent)) / 100,
+          taxPercent: Number(item.taxPercent) || 0,
+          taxValue: ((Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent) / 100)) * Number(item.taxPercent)) / 100,
+          total: (Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent) / 100)) + ((Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent) / 100)) * Number(item.taxPercent)) / 100
+        })),
+        
+        // الإجماليات
+        totals: calculatedTotals,
+        
+        // معلومات النظام
+        createdBy: user?.uid || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'draft', // حالة المسودة
+        type: 'quotation'
+      };
+
+      // حفظ في Firebase
+      const docRef = await addDoc(collection(db, 'quotations'), quotationDocData);
+      
+      console.log('تم حفظ عرض السعر بنجاح:', docRef.id);
+      message.success(`تم حفظ عرض السعر بنجاح (رقم: ${quotationNumber})`);
+      
+      // إعادة تعيين النموذج
+      resetForm();
+      
+    } catch (error) {
+      console.error('خطأ في حفظ عرض السعر:', error);
+      message.error('حدث خطأ أثناء حفظ عرض السعر');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // دالة إعادة تعيين النموذج
+  const resetForm = () => {
+    setAddedItems([]);
+    setQuotationData({
+      quotationNumber: '',
+      date: dayjs().format('YYYY-MM-DD'),
+      branch: '',
+      warehouse: '',
+      customerNumber: '',
+      customerName: '',
+      delegate: '',
+      priceRule: '',
+      commercialRecord: '',
+      taxFile: '',
+      dueDate: '',
+      validUntil: ''
+    });
+    setStatement('');
+    setItemCode('');
+    setItemName('');
+    setQuantity('1');
+    setUnit('قطعة');
+    setPrice('');
+    setDiscountPercent(0);
+    setTaxPercent(0);
+    setQuotationNumber('');
+    setRefDate(null);
+    
+    // إعادة توليد رقم عرض سعر جديد إذا كان هناك فرع محدد
+    if (quotationData.branch && branches.length) {
+      generateAndSetQuotationNumber(quotationData.branch);
+    }
+  };
+
+  // دالة الطباعة لعرض السعر
+  const handlePrint = async () => {
+    // التحقق من وجود البيانات المطلوبة
+    if (!quotationData.branch) return message.error('يرجى اختيار الفرع');
+    if (!quotationData.warehouse) return message.error('يرجى اختيار المخزن');
+    if (!quotationData.customerName) return message.error('يرجى إدخال اسم العميل');
+    if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
+    if (!quotationNumber) return message.error('يرجى إنشاء رقم عرض السعر');
+
+    setLoading(true);
+    try {
+      // جلب بيانات الشركة من الإعدادات (إذا لم تكن محملة بالفعل)
+      let currentCompanyData = companyData;
+      if (!currentCompanyData.arabicName) {
+        try {
+          const snapshot = await getDocs(collection(db, 'companies'));
+          if (!snapshot.empty) {
+            currentCompanyData = snapshot.docs[0].data() as CompanyData;
+          }
+        } catch (error) {
+          console.error('Error fetching company data for print:', error);
+          // استخدام بيانات افتراضية في حالة الخطأ
+          currentCompanyData = {
+            arabicName: 'شركة ERP90',
+            englishName: 'ERP90 Company',
+            companyType: 'شركة ذات مسؤولية محدودة',
+            commercialRegistration: '1234567890',
+            taxFile: '123456789012345',
+            city: 'الرياض',
+            region: 'منطقة الرياض',
+            street: 'شارع الملك فهد',
+            district: 'حي العليا',
+            buildingNumber: '123',
+            postalCode: '12345',
+            phone: '+966112345678',
+            mobile: '+966501234567',
+            logoUrl: 'https://via.placeholder.com/150x80?text=LOGO',
+            website: 'www.erp90.com'
+          };
+        }
+      }
+
+      // بيانات عرض السعر
+      const quotationTotals = {
+        subtotal: addedItems.reduce((sum, item) => {
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          return sum + (qty * price);
+        }, 0),
+        totalDiscount: addedItems.reduce((sum, item) => {
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          const discount = Number(item.discountPercent) || 0;
+          return sum + ((qty * price * discount) / 100);
+        }, 0),
+        totalTax: addedItems.reduce((sum, item) => {
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          const discount = Number(item.discountPercent) || 0;
+          const afterDiscount = qty * price * (1 - discount / 100);
+          const tax = Number(item.taxPercent) || 0;
+          return sum + ((afterDiscount * tax) / 100);
+        }, 0)
+      };
+
+      const afterDiscount = quotationTotals.subtotal - quotationTotals.totalDiscount;
+      const finalTotal = afterDiscount + quotationTotals.totalTax;
+
+    try {
       // Generate QR code data URL (using qrcode library)
       let qrDataUrl = '';
       try {
         // Dynamically import qrcode library
         const QRCode = (await import('qrcode')).default;
-        // You can customize the QR content as needed (e.g., invoice number, company, total, date)
         const qrContent = JSON.stringify({
-          invoiceNumber: invoice.invoiceNumber,
-          company: companyData.arabicName,
-          date: invoice.date,
-          total: invoice.totals?.afterTax
+          quotationNumber: quotationNumber,
+          company: currentCompanyData.arabicName,
+          date: quotationDate.format('YYYY-MM-DD'),
+          total: finalTotal,
+          customer: quotationData.customerName
         });
         qrDataUrl = await QRCode.toDataURL(qrContent, { width: 120, margin: 1 });
       } catch (e) {
+        console.error('Error generating QR code:', e);
         qrDataUrl = '';
       }
 
@@ -2382,33 +724,55 @@ const handlePrint = () => {
       printContainer.style.width = '210mm';
       printContainer.style.height = 'auto';
       
-      // إضافة محتوى الفاتورة
+      // إضافة محتوى عرض السعر
       printContainer.innerHTML = `
         <html>
         <head>
-          <title>فاتورة ضريبية | Tax Invoice</title>
+          <title>عرض سعر | Quotation</title>
           <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
           <style>
-            @page { size: A4; margin: 10mm; }
+            @page { 
+              size: A4; 
+              margin: 8mm; 
+            }
             @media print {
-              body { margin: 0; padding: 5mm; }
-              * { -webkit-print-color-adjust: exact; color-adjust: exact; }
+              html, body { 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                height: auto !important;
+                overflow: hidden !important;
+              }
+              * { 
+                -webkit-print-color-adjust: exact; 
+                color-adjust: exact; 
+                box-sizing: border-box;
+              }
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              height: auto;
+              overflow: visible;
+              background-color: #fff !important;
             }
             body {
               font-family: 'Tajawal', sans-serif;
               direction: rtl;
-              padding: 5mm;
+              padding: 4mm;
               color: #000;
-              font-size: 12px;
-              line-height: 1.4;
+              font-size: 11px;
+              line-height: 1.3;
+              max-width: 100%;
+              box-sizing: border-box;
             }
             .header {
               display: flex;
               justify-content: space-between;
               align-items: center;
-              margin-bottom: 5mm;
+              margin-bottom: 4mm;
               border-bottom: 1px solid #000;
-              padding-bottom: 3mm;
+              padding-bottom: 2mm;
+              page-break-inside: avoid;
             }
             .header-section {
               flex: 1;
@@ -2432,17 +796,17 @@ const handlePrint = () => {
             }
             .company-info-ar {
               text-align: right;
-              font-size: 13px;
+              font-size: 11px;
               font-weight: 500;
-              line-height: 1.5;
+              line-height: 1.4;
             }
             .company-info-en {
               text-align: left;
               font-family: Arial, sans-serif;
               direction: ltr;
-              font-size: 12px;
+              font-size: 10px;
               font-weight: 500;
-              line-height: 1.5;
+              line-height: 1.4;
             }
             .info-row-table {
               border: 1px solid #bbb;
@@ -2474,8 +838,9 @@ const handlePrint = () => {
               flex-direction: row;
               justify-content: space-between;
               align-items: flex-start;
-              margin-bottom: 10px;
-              gap: 16px;
+              margin-bottom: 3mm;
+              gap: 12px;
+              page-break-inside: avoid;
             }
             .info-row-table.left {
               direction: rtl;
@@ -2504,43 +869,48 @@ const handlePrint = () => {
               text-align: center;
               margin-top: 4px;
             }
-            .invoice-title { text-align: center; font-size: 16px; font-weight: bold; margin: 5mm 0; border: 1px solid #000; padding: 2mm; background-color: #f3f3f3; }
+            .quotation-title { text-align: center; font-size: 16px; font-weight: bold; margin: 5mm 0; border: 1px solid #000; padding: 2mm; background-color: #f3f3f3; }
             .customer-info { margin-bottom: 5mm; border: 1px solid #ddd; padding: 3mm; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 11px; }
-            th, td { border: 1px solid #000; padding: 2mm; text-align: center; }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-bottom: 3mm; 
+              font-size: 10px;
+              page-break-inside: avoid;
+            }
+            th, td { border: 1px solid #000; padding: 1.5mm; text-align: center; }
             th {
-              background-color: #305496;
-              color: #fff;
+              background-color: #eae6e6;
+              color: #000;
               font-weight: bold;
-              font-size: 12.5px;
-              letter-spacing: 0.5px;
+              font-size: 11px;
+              letter-spacing: 0.3px;
             }
-            .totals { margin-top: 5mm; border-top: 1px solid #000; padding-top: 3mm; font-weight: bold; }
-            .policy { font-size: 10px; border: 1px solid #ddd; padding: 3mm; }
-            .policy-title { font-weight: bold; margin-bottom: 2mm; }
-            .signature { margin-top: 5mm; display: flex; justify-content: space-between; }
-            .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 3mm; }
-            .footer { margin-top: 5mm; text-align: center; font-size: 10px; }
-            .totals-policy-row {
+            .totals { 
+              margin-top: 3mm; 
+              border-top: 1px solid #000; 
+              padding-top: 2mm; 
+              font-weight: bold;
+              page-break-inside: avoid;
+            }
+            .signature { 
+              margin-top: 3mm; 
+              display: flex; 
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+            .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 2mm; }
+            .footer { 
+              margin-top: 3mm; 
+              text-align: center; 
+              font-size: 9px;
+              page-break-inside: avoid;
+            }
+            .totals-container {
               display: flex;
-              flex-direction: row;
-              flex-wrap: nowrap !important;
               justify-content: flex-end;
-              align-items: flex-start;
-              gap: 24px;
-              margin-top: 5mm;
-            }
-            @media print {
-              .totals-policy-row {
-                display: flex !important;
-                flex-direction: row !important;
-                flex-wrap: nowrap !important;
-                justify-content: flex-end !important;
-                align-items: flex-start !important;
-                gap: 24px !important;
-                margin-top: 5mm !important;
-              }
-              .policy { margin-top: 0 !important; }
+              margin-top: 3mm;
+              page-break-inside: avoid;
             }
           </style>
         </head>
@@ -2548,60 +918,63 @@ const handlePrint = () => {
           <!-- Header Section: Arabic (right), Logo (center), English (left) -->
           <div class="header">
             <div class="header-section company-info-ar">
-              <div>${companyData.arabicName || ''}</div>
-              <div>${companyData.companyType || ''}</div>
-              <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
-              <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
-              <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-              <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
-              <div>الهاتف: ${companyData.phone || ''}</div>
-              <div>الجوال: ${companyData.mobile || ''}</div>
+              <div>${currentCompanyData.arabicName || ''}</div>
+              <div>${currentCompanyData.companyType || ''}</div>
+              <div>السجل التجاري: ${currentCompanyData.commercialRegistration || ''}</div>
+              <div>الملف الضريبي: ${currentCompanyData.taxFile || ''}</div>
+              <div>العنوان: ${currentCompanyData.city || ''} ${currentCompanyData.region || ''} ${currentCompanyData.street || ''} ${currentCompanyData.district || ''} ${currentCompanyData.buildingNumber || ''}</div>
+              <div>الرمز البريدي: ${currentCompanyData.postalCode || ''}</div>
+              <div>الهاتف: ${currentCompanyData.phone || ''}</div>
+              <div>الجوال: ${currentCompanyData.mobile || ''}</div>
             </div>
             <div class="header-section center">
-              <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
-              <div style="text-align: center;  font-size: 12px; margin-top: 8px; padding: 4px 8px; border-radius: 4px;">
-                ${quotationType || 'فاتورة مبيعات'}
+              <img src="${currentCompanyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+              <div style="text-align: center; font-size: 12px; margin-top: 8px; padding: 4px 8px; border-radius: 4px;">
+                عرض سعر
               </div>
             </div>
             <div class="header-section company-info-en">
-              <div>${companyData.englishName || ''}</div>
-              <div>${companyData.companyType || ''}</div>
-              <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
-              <div>Tax File: ${companyData.taxFile || ''}</div>
-              <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-              <div>Postal Code: ${companyData.postalCode || ''}</div>
-              <div>Phone: ${companyData.phone || ''}</div>
-              <div>Mobile: ${companyData.mobile || ''}</div>
+              <div>${currentCompanyData.englishName || ''}</div>
+              <div>${currentCompanyData.companyType || ''}</div>
+              <div>Commercial Reg.: ${currentCompanyData.commercialRegistration || ''}</div>
+              <div>Tax File: ${currentCompanyData.taxFile || ''}</div>
+              <div>Address: ${currentCompanyData.city || ''} ${currentCompanyData.region || ''} ${currentCompanyData.street || ''} ${currentCompanyData.district || ''} ${currentCompanyData.buildingNumber || ''}</div>
+              <div>Postal Code: ${currentCompanyData.postalCode || ''}</div>
+              <div>Phone: ${currentCompanyData.phone || ''}</div>
+              <div>Mobile: ${currentCompanyData.mobile || ''}</div>
             </div>
           </div>
-          <!-- Info Row Section: Invoice info (right), QR (center), Customer info (left) -->
+          
+          <!-- Info Row Section: Quotation info (right), QR (center), Customer info (left) -->
           <div class="info-row-container">
             <table class="info-row-table right">
-
-              <tr><td class="label">رقم الفاتورة</td><td class="value">${invoice.invoiceNumber || ''}</td></tr>
-              <tr><td class="label">تاريخ الفاتورة</td><td class="value">${invoice.date || ''}</td></tr>
-              <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${invoice.dueDate || ''}</td></tr>
+              <tr><td class="label">رقم عرض السعر</td><td class="value">${quotationNumber || ''}</td></tr>
+              <tr><td class="label">تاريخ عرض السعر</td><td class="value">${quotationDate.format('YYYY-MM-DD') || ''}</td></tr>
+              <tr><td class="label">تاريخ الانتهاء</td><td class="value">${refDate ? refDate.format('YYYY-MM-DD') : ''}</td></tr>
+              <tr><td class="label">نوع الحركة</td><td class="value">${movementType || ''}</td></tr>
             </table>
             <div class="qr-center">
               <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">
                 ${(() => {
-                  const branch = (typeof branches !== 'undefined' && Array.isArray(branches))
-                    ? branches.find(b => b.id === invoice.branch)
-                    : null;
-                  return branch ? (branch.name || branch.id) : (invoice.branch || '');
+                  const branch = branches.find(b => b.id === quotationData.branch);
+                  return branch ? (branch.name || branch.id) : (quotationData.branch || '');
                 })()}
               </div>
               <div class="qr-code">
-                <img src="${qrDataUrl}" alt="QR Code" style="width:80px;height:80px;" /><br>
-               </div>
+                ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR Code" style="width:80px;height:80px;" />` : 'QR Code'}
+              </div>
             </div>
             <table class="info-row-table left">
-              <tr><td class="label">اسم العميل</td><td class="value">${invoice.customerName || ''}</td></tr>
-              <tr><td class="label">رقم الجوال</td><td class="value">${invoice.customerNumber || ''}</td></tr>
-              <tr><td class="label">م.ض</td><td class="value">${invoice.taxFile || ''}</td></tr>
-              <tr><td class="label">عنوان العميل</td><td class="value">${invoice.customerAddress || ''}</td></tr>
+              <tr><td class="label">اسم العميل</td><td class="value">${quotationData.customerName || ''}</td></tr>
+              <tr><td class="label">رقم العميل</td><td class="value">${quotationData.customerNumber || ''}</td></tr>
+              <tr><td class="label">نوع الحساب</td><td class="value">${accountType || ''}</td></tr>
+              <tr><td class="label">رقم الموبايل</td><td class="value">${(() => {
+                const customer = customers.find(c => c.id === quotationData.customerNumber);
+                return customer?.mobile || customer?.phone || '';
+              })()}</td></tr>
             </table>
           </div>
+          
           <!-- Items Table -->
           <table>
             <thead>
@@ -2610,182 +983,84 @@ const handlePrint = () => {
                 <th>كود الصنف</th>
                 <th>اسم الصنف</th>
                 <th>الكمية</th>
+                <th>الوحدة</th>
                 <th>السعر</th>
                 <th>نسبة الخصم %</th>
                 <th>مبلغ الخصم</th>
                 <th>الإجمالي قبل الضريبة</th>
+                <th>نسبة الضريبة %</th>
                 <th>قيمة الضريبة</th>
-                <th>الإجمالي شامل الضريبة</th>
-                <th>المخزن</th>
+                <th>الإجمالي النهائي</th>
               </tr>
             </thead>
             <tbody>
-              ${(invoice.items || []).map((it: QuotationItem & { warehouseId?: string }, idx: number) => {
-                const subtotal = Number(it.price) * Number(it.quantity);
-                const discountValue = Number(it.discountValue) || 0;
-                const taxValue = Number(it.taxValue) || 0;
+              ${addedItems.map((item, idx) => {
+                const subtotal = Number(item.price) * Number(item.quantity);
+                const discountValue = (subtotal * Number(item.discountPercent)) / 100;
                 const afterDiscount = subtotal - discountValue;
-                const net = afterDiscount + taxValue;
-                const warehouseId = it.warehouseId || invoice.warehouse;
-                const warehouseObj = Array.isArray(warehouses) ? warehouses.find(w => w.id === warehouseId) : null;
-                const warehouseName = warehouseObj ? (warehouseObj.nameAr || warehouseObj.name || warehouseObj.id) : (warehouseId || '');
+                const taxValue = (afterDiscount * Number(item.taxPercent)) / 100;
+                const total = afterDiscount + taxValue;
                 return `<tr>
                   <td>${idx + 1}</td>
-                  <td>${it.itemNumber || ''}</td>
-                  <td>${it.itemName || ''}</td>
-                  <td>${it.quantity || ''}</td>
-                  <td>${Number(it.price).toFixed(2)}</td>
-                  <td>${it.discountPercent || '0'}</td>
+                  <td>${item.itemCode || ''}</td>
+                  <td>${item.itemName || ''}</td>
+                  <td>${item.quantity || ''}</td>
+                  <td>${item.unit || ''}</td>
+                  <td>${Number(item.price).toFixed(2)}</td>
+                  <td>${item.discountPercent || '0'}</td>
                   <td>${discountValue.toFixed(2)}</td>
                   <td>${afterDiscount.toFixed(2)}</td>
+                  <td>${item.taxPercent || '0'}</td>
                   <td>${taxValue.toFixed(2)}</td>
-                  <td>${net.toFixed(2)}</td>
-                  <td>${warehouseName}</td>
+                  <td>${total.toFixed(2)}</td>
                 </tr>`;
               }).join('')}
             </tbody>
-            <!-- Summary Row -->
-            <tfoot>
-              <tr style="background:#f3f3f3; font-weight:bold;">
-                <td colspan="6" style="text-align:right; font-weight:bold; color:#000;">الإجماليات:</td>
-                <td style="color:#dc2626; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي الخصم
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it: QuotationItem) => { total += Number(it.discountValue) || 0; });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#ea580c; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي قبل الضريبة
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it: QuotationItem) => {
-                      const subtotal = Number(it.price) * Number(it.quantity);
-                      const discountValue = Number(it.discountValue) || 0;
-                      total += subtotal - discountValue;
-                    });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#9333ea; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي الضريبة
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it: QuotationItem) => { total += Number(it.taxValue) || 0; });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#059669; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي النهائي
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it: QuotationItem) => {
-                      const subtotal = Number(it.price) * Number(it.quantity);
-                      const discountValue = Number(it.discountValue) || 0;
-                      const taxValue = Number(it.taxValue) || 0;
-                      total += (subtotal - discountValue + taxValue);
-                    });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td></td>
-              </tr>
-            </tfoot>
           </table>
-          <!-- Totals and Policies Section side by side -->
-          <div class="totals-policy-row">
-           <div style="flex: 1 1 340px; min-width: 260px; max-width: 600px;">
-              <div class="policy">
-                <div class="policy-title">سياسة الاستبدال والاسترجاع:</div>
-                <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
-                <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
-                <div>3- يتحمل العميل قيمة التوصيل في حال إرجاع الفاتورة ويتم إعادة المبلغ خلال 3 أيام عمل.</div>
-                <div>4- ${companyData.arabicName || 'الشركة'} غير مسؤولة عن تسليم البضاعة بعد 10 أيام من تاريخ الفاتورة.</div>
-                <div class="policy-title" style="margin-top: 3mm;">سياسة التوصيل:</div>
-                <div>1- توصيل الطلبات من 5 أيام إلى 10 أيام عمل.</div>
-                <div>2- الحد المسموح به للتوصيل هو الدور الأرضي كحد أقصى، وفي حال رغبة العميل بالتوصيل لأعلى من الحد المسموح به، يتم ذلك بواسطة العميل.</div>
-                <div>3- يتم التوصيل حسب جدول المواعيد المحدد من ${companyData.arabicName || 'الشركة'}، كما أن ${companyData.arabicName || 'الشركة'} غير مسؤولة عن أي أضرار ناتجه بسبب التأخير او تأجيل موعد التوصيل.</div>
-                <div>4- يستوجب فحص المنتج أثناء استلامه مع التوقيع باستلامه، وعدم الفحص يسقط حق العميل في المطالبة بالاسترجاع او الاستبدال في حال وجود كسر.</div>
-                <div>5- لايوجد لدينا تركيب الضمان هو ضمان ${companyData.arabicName || 'الشركة'}، كما أن الضمان لا يشمل سوء الاستخدام الناتج من العميل.</div>
-              </div>
-            </div>
-            <div style="flex: 0 0 320px; max-width: 340px; min-width: 220px;">
-              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; border-collapse:collapse; box-shadow:none; width:100%;">
-                <tbody>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">إجمالى الفاتورة</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.total?.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.total - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى بعد الخصم</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterDiscount?.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الضريبة (${invoice.items && invoice.items[0] ? (invoice.items[0].taxPercent || 0) : 0}%)</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.afterTax - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
-                    <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-           
+          
+          <!-- Totals Section -->
+          <div class="totals-container">
+            <table style="border:1.5px solid #000; border-radius:6px; font-size:12px; min-width:300px; max-width:380px; border-collapse:collapse;">
+              <tbody>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">إجمالي عرض السعر</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${quotationTotals.subtotal.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${quotationTotals.totalDiscount.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">الإجمالي بعد الخصم</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${afterDiscount.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">قيمة الضريبة</td>
+                  <td style="text-align:left; font-weight:500; padding:6px 10px; border:1px solid #000; background:#fff;">${quotationTotals.totalTax.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight:bold; color:#000; text-align:right; padding:6px 10px; border:1px solid #000; background:#fff;">الإجمالي النهائي</td>
+                  <td style="text-align:left; font-weight:700; padding:6px 10px; border:1px solid #000; background:#fff;">${finalTotal.toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+          
           <!-- Signature Section -->
           <div class="signature">
             <div class="signature-box">
-              <div>اسم العميل: ${invoice.customerName || ''}</div>
+              <div>اسم العميل: ${quotationData.customerName || ''}</div>
               <div>التوقيع: ___________________</div>
             </div>
-            <div class="signature-box" style="position:relative;">
-              <div>البائع: ${getDelegateName(invoice.delegate || '')}</div>
-              <div>التاريخ: ${invoice.date || ''}</div>
-              <!-- Decorative Stamp -->
-              <div style="
-                margin-top:18px;
-                display:flex;
-                justify-content:center;
-                align-items:center;
-                width:160px;
-                height:60px;
-                border:2.5px dashed #888;
-                border-radius:50%;
-                box-shadow:0 2px 8px 0 rgba(0,0,0,0.08);
-                opacity:0.85;
-                background: repeating-linear-gradient(135deg, #f8f8f8 0 8px, #fff 8px 16px);
-                font-family: 'Cairo', 'Tajawal', Arial, sans-serif;
-                font-size:15px;
-                font-weight:bold;
-                color:#222;
-                letter-spacing:1px;
-                text-align:center;
-                position:absolute;
-                left:50%;
-                transform:translateX(-50%);
-                bottom:-80px;
-                z-index:2;
-              ">
-                <div style="width:100%;">
-                  <div style="font-size:16px; font-weight:700;">${companyData.arabicName || 'الشركة'}</div>
-                  <div style="font-size:13px; font-weight:500; margin-top:2px;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
-                </div>
-              </div>
+            <div class="signature-box">
+              <div>المندوب: ${quotationData.delegate || ''}</div>
+              <div>التاريخ: ${quotationDate.format('YYYY-MM-DD') || ''}</div>
             </div>
           </div>
+          
           <!-- Footer -->
           <div class="footer">
-            ${companyData.website ? `لزيارة متجرنا الإلكتروني / Visit our e-shop: ${companyData.website}` : ''}
+            ${currentCompanyData.website ? `لزيارة متجرنا الإلكتروني / Visit our e-shop: ${currentCompanyData.website}` : ''}
           </div>
         </body>
         </html>
@@ -2806,162 +1081,36 @@ const handlePrint = () => {
             top: 0 !important;
             width: 100% !important;
             height: auto !important;
+            overflow: hidden !important;
+          }
+          @page {
+            margin: 8mm !important;
+            size: A4 !important;
+          }
+          html, body {
+            height: auto !important;
+            overflow: hidden !important;
           }
         }
       `;
       document.head.appendChild(printStyleElement);
 
-      // تأخير قليل للتأكد من تحميل المحتوى
+      // طباعة المستند
+      window.print();
+
+      // إزالة العناصر المؤقتة بعد الطباعة
       setTimeout(() => {
-        try {
-          // بدء عملية الطباعة
-          window.print();
-        } catch (error) {
-          message.error('حدث خطأ أثناء الطباعة');
-          console.error('Print error:', error);
-        } finally {
-          // تنظيف العناصر المؤقتة
-          setTimeout(() => {
-            if (printContainer.parentNode) {
-              printContainer.parentNode.removeChild(printContainer);
-            }
-            if (printStyleElement.parentNode) {
-              printStyleElement.parentNode.removeChild(printStyleElement);
-            }
-          }, 1000);
-        }
-      }, 100);
-    })();
-};
+        document.body.removeChild(printContainer);
+        document.head.removeChild(printStyleElement);
+      }, 1000);
 
-  // ref for item name select
-  const itemNameSelectRef = React.useRef<React.ComponentRef<typeof Select>>(null);
-
-  // الحالة الأولية لنموذج إضافة صنف جديد
-  const [addItemForm, setAddItemForm] = useState({
-    name: '',
-    itemCode: '',
-    purchasePrice: '',
-    salePrice: '',
-    minOrder: '',
-    discount: '',
-    allowNegative: false,
-    isVatIncluded: false,
-    tempCodes: false,
-    supplier: '',
-    unit: '',
-    type: '', // مهم لظهور اختيار المستوى الأول
-    parentId: '' // مهم لربط المستوى الأول
-  });
-
-  // دوال إدارة الأصناف
-  const handleAddNewItem = () => {
-    const finalUnit = unit && unit.trim() ? unit : "قطعة";
-    if (
-      !itemCode.trim() ||
-      !itemName.trim() ||
-      !finalUnit.trim() ||
-      !quantity || Number(quantity) <= 0 ||
-      !price || Number(price) <= 0
-    ) {
-      return message.error('يرجى إدخال جميع بيانات الصنف بشكل صحيح');
-    }
-    setAddedItems(items => [...items, { itemCode, itemName, quantity, unit: finalUnit, price, costCenterName }]);
-    setItemCode('');
-    setItemName('');
-    setQuantity('1');
-    setUnit('');
-    setPrice('');
-    setCostCenterName('');
-  };
-
-  // دوال إدارة الإكسل
-  const handleExcelUpload = (info: { file: { status: string; name: string; originFileObj: File } }) => {
-    if (info.file.status === "done") {
-      message.success(`${info.file.name} تم رفع الملف بنجاح`);
-      setExcelFile(info.file.originFileObj);
-      // قراءة ملف الإكسل وتحويله إلى أصناف
-      const reader = new FileReader();
-      reader.onload = (e: ProgressEvent<FileReader>) => {
-        const data = new Uint8Array(e.target!.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
-        // توقع أن أول صف هو رؤوس الأعمدة أو بيانات مباشرة
-        const items = rows
-          .filter((row: string[]) => Array.isArray(row) && row.length >= 6)
-          .map((row: string[]) => ({
-            itemCode: String(row[0] || ""),
-            itemName: String(row[1] || ""),
-            quantity: String(row[2] || "1"),
-            unit: String(row[3] || "قطعة"),
-            price: String(row[4] || ""),
-            costCenterName: String(row[5] || "")
-          }))
-          .filter(item => item.itemCode && item.itemName && item.quantity && item.unit && item.price);
-        if (!items.length) {
-          message.error("لم يتم العثور على أصناف صالحة في الملف");
-          return;
-        }
-        setAddedItems(prev => [...prev, ...items]);
-      };
-      reader.readAsArrayBuffer(info.file.originFileObj);
-    } else if (info.file.status === "error") {
-      message.error(`${info.file.name} حدث خطأ أثناء رفع الملف`);
+    } catch (error) {
+      console.error('خطأ في الطباعة:', error);
+      message.error('حدث خطأ أثناء الطباعة');
+    } finally {
+      setLoading(false);
     }
   };
-
-  // دالة الحفظ والطباعة
-  const handleSaveAndPrint = () => {
-    if (!quotationData.branch) return message.error('يرجى اختيار الفرع');
-    if (!quotationData.warehouse) return message.error('يرجى اختيار المخزن');
-    if (!accountType) return message.error('يرجى اختيار نوع الحساب');
-    if (!quotationData.customerNumber) return message.error('يرجى إدخال رقم الحساب');
-    if (!quotationData.customerName) return message.error('يرجى إدخال اسم الحساب');
-    if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
-
-    // تحويل التواريخ إلى نصوص قبل الحفظ
-    const saveData = {
-      entryNumber: quotationData.entryNumber,
-      periodRange: [
-        periodRange[0] ? periodRange[0].format('YYYY-MM-DD') : null,
-        periodRange[1] ? periodRange[1].format('YYYY-MM-DD') : null
-      ],
-      quotationNumber: quotationData.quotationNumber,
-      date: quotationData.date,
-      refNumber,
-      refDate: refDate ? refDate.format('YYYY-MM-DD') : null,
-      branch: quotationData.branch,
-      warehouse: quotationData.warehouse,
-      movementType,
-      accountType,
-      customerNumber: quotationData.customerNumber,
-      customerName: quotationData.customerName,
-      sideType,
-      sideNumber,
-      sideName,
-      operationClass,
-      statement,
-      items: addedItems
-    };
-    console.log('بيانات الحفظ المرسلة إلى :', saveData);
-    message.success('تم حفظ البيانات بنجاح');
-    setAddedItems([]);
-  };
-
-  // رقم القيد تلقائي
-  const [entryNumber, setEntryNumber] = useState("");
-
-  // توليد رقم قيد تلقائي عند تحميل الصفحة
-  useEffect(() => {
-    // مثال: رقم عشوائي مكون من 8 أرقام ويمكن تعديله حسب النظام
-    const autoNumber = `QU-${Date.now().toString().slice(-6)}`;
-    setEntryNumber(autoNumber);
-  }, []);
-
-  // السنة المالية من السياق
-  const { currentFinancialYear } = useFinancialYear();
 
   // تعيين الفترة المحاسبية حسب السنة المالية
   useEffect(() => {
@@ -2972,41 +1121,101 @@ const handlePrint = () => {
     }
   }, [currentFinancialYear]);
 
-  // رقم عرض السعر تلقائي
-  const [quotationNumber, setQuotationNumber] = useState("");
-
-  // توليد رقم عرض سعر تلقائي عند تحميل الصفحة
+  // جلب بيانات الفروع
   useEffect(() => {
-    const autoQuotationNumber = `QT-${Date.now().toString().slice(-6)}`;
-    setQuotationNumber(autoQuotationNumber);
+    const fetchBranches = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'branches'));
+        const branchesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Branch[];
+        setBranches(branchesData);
+      } catch (error) {
+        console.error('Error fetching branches:', error);
+      }
+    };
+    fetchBranches();
   }, []);
 
-  // تاريخ عرض السعر الافتراضي هو اليوم
-  const [quotationDate, setQuotationDate] = useState(dayjs());
-
-  // جلب بيانات الفروع الحقيقية
+  // جلب بيانات المخازن
   useEffect(() => {
-    // استخدام بيانات الفروع من الهوك الموجود
-    // setBranches سيتم تحديثها من الهوك
+    const fetchWarehouses = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'warehouses'));
+        const warehousesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Warehouse[];
+        setWarehouses(warehousesData);
+      } catch (error) {
+        console.error('Error fetching warehouses:', error);
+      }
+    };
+    fetchWarehouses();
   }, []);
 
-  // جلب بيانات المخازن الحقيقية
+  // جلب بيانات العملاء
   useEffect(() => {
-    // استخدام بيانات المخازن من الهوك الموجود
-    // setWarehouses سيتم تحديثها من الهوك
+    const fetchCustomers = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'customers'));
+        const customersData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Customer[];
+        setCustomers(customersData);
+      } catch (error) {
+        console.error('Error fetching customers:', error);
+      }
+    };
+    fetchCustomers();
   }, []);
 
-  // عند تغيير الفرع، فلترة المخازن واختيار أول مخزن مرتبط
+  // جلب بيانات الأصناف
+  useEffect(() => {
+    const fetchItems = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'inventory_items'));
+        const itemsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as InventoryItem[];
+        setItems(itemsData);
+      } catch (error) {
+        console.error('Error fetching items:', error);
+      }
+    };
+    fetchItems();
+  }, []);
+
+  // جلب بيانات الشركة
+  useEffect(() => {
+    const fetchCompanyData = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'companies'));
+        if (!snapshot.empty) {
+          const companyDataDoc = snapshot.docs[0].data();
+          setCompanyData(companyDataDoc);
+          
+          // تحديث نسبة الضريبة الافتراضية
+          if (companyDataDoc.taxRate) {
+            setTaxPercent(parseFloat(companyDataDoc.taxRate));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching company data:', error);
+      }
+    };
+    fetchCompanyData();
+  }, []);
+
+  // عند تغيير الفرع، فلترة المخازن واختيار أول مخزن مرتبط وتوليد رقم عرض سعر جديد
   useEffect(() => {
     if (!quotationData.branch || !warehouses.length) return;
-    // بعض المخازن قد يكون لها خاصية branch أو branchId أو allowedBranches أو branchCode
-    // سنبحث عن المخزن المرتبط بالفرع المختار
     const filtered = warehouses.filter(w => {
       if (w.branch) return w.branch === quotationData.branch;
       if (w.allowedBranches && Array.isArray(w.allowedBranches)) return w.allowedBranches.includes(quotationData.branch);
-      // دعم branchCode و allowedBranchCodes لو موجودين
-      if ('branchCode' in w && typeof (w as any).branchCode === 'string') return (w as any).branchCode === quotationData.branch;
-      if ('allowedBranchCodes' in w && Array.isArray((w as any).allowedBranchCodes)) return (w as any).allowedBranchCodes.includes(quotationData.branch);
       return false;
     });
     if (filtered.length) {
@@ -3014,12 +1223,23 @@ const handlePrint = () => {
     } else {
       setQuotationData(prev => ({ ...prev, warehouse: '' }));
     }
-  }, [quotationData.branch, warehouses]);
+    
+    // توليد رقم عرض سعر جديد عند تغيير الفرع
+    if (quotationData.branch && branches.length) {
+      generateAndSetQuotationNumber(quotationData.branch);
+    }
+  }, [quotationData.branch, warehouses, branches.length, generateAndSetQuotationNumber]);
 
-  // جلب بيانات العملاء الحقيقية
+  // توليد رقم عرض سعر تلقائي عند تحميل البيانات لأول مرة
+  useEffect(() => {
+    if (branches.length && !quotationNumber && quotationData.branch) {
+      generateAndSetQuotationNumber(quotationData.branch);
+    }
+  }, [branches, quotationNumber, quotationData.branch, generateAndSetQuotationNumber]);
+
+  // جلب بيانات العملاء للمودال
   useEffect(() => {
     if (showAccountModal && accountModalType === "عميل") {
-      // استخدام customers من الهوك
       setCustomerAccounts(customers.map(acc => ({
         code: acc.id || '',
         nameAr: acc.nameAr || acc.name || '',
@@ -3029,14 +1249,6 @@ const handlePrint = () => {
     }
   }, [showAccountModal, accountModalType, customers]);
 
-  // جلب بيانات الموردين الحقيقية
-  useEffect(() => {
-    if (showAccountModal && accountModalType === "مورد") {
-      // هنا يمكن إضافة جلب بيانات الموردين إذا كانت متوفرة
-      setSupplierAccounts([]);
-    }
-  }, [showAccountModal, accountModalType]);
-
   // عند تغيير التبويب لصنف جديد، اجعل الكمية 1
   useEffect(() => {
     if (activeTab === "new") {
@@ -3044,22 +1256,109 @@ const handlePrint = () => {
     }
   }, [activeTab]);
 
+  // دوال إدارة الأصناف في الجدول
+  const removeItem = (index: number) => {
+    const itemToRemove = addedItems[index];
+    setAddedItems(items => items.filter((_, i) => i !== index));
+    message.success(`تم حذف الصنف: ${itemToRemove.itemName}`);
+  };
+
+  const editItem = (index: number) => {
+    const itemToEdit = addedItems[index];
+    
+    // تعبئة الحقول للتعديل
+    setItemCode(itemToEdit.itemCode);
+    setItemName(itemToEdit.itemName);
+    setQuantity(itemToEdit.quantity);
+    setUnit(itemToEdit.unit);
+    setPrice(itemToEdit.price);
+    setDiscountPercent(itemToEdit.discountPercent);
+    setTaxPercent(itemToEdit.taxPercent);
+    
+    // حذف الصنف من القائمة ليتم إعادة إضافته بعد التعديل
+    removeItem(index);
+    
+    // الانتقال إلى تبويب الصنف الجديد
+    setActiveTab('new');
+    
+    message.info('تم تحميل بيانات الصنف للتعديل');
+  };
+
+  // تعريف نوع العنصر
+  interface ItemRecord {
+    itemCode: string;
+    itemName: string;
+    quantity: string;
+    unit: string;
+    price: string;
+    discountPercent: number;
+    taxPercent: number;
+  }
+
   // أعمدة الجدول
   const itemColumns = [
-    { title: 'رقم الصنف', dataIndex: 'itemCode', key: 'itemCode', width: 100 },
+    { title: 'كود الصنف', dataIndex: 'itemCode', key: 'itemCode', width: 100 },
     { title: 'اسم الصنف', dataIndex: 'itemName', key: 'itemName', width: 150 },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', width: 80 },
     { title: 'الوحدة', dataIndex: 'unit', key: 'unit', width: 80 },
+    { title: 'المخزن', dataIndex: 'warehouse', key: 'warehouse', width: 120, render: () => quotationData.warehouse ? (warehouses.find(w => w.id === quotationData.warehouse)?.nameAr || warehouses.find(w => w.id === quotationData.warehouse)?.name || '-') : '-' },
     { title: 'السعر', dataIndex: 'price', key: 'price', width: 100 },
-    { title: 'مركز التكلفة', dataIndex: 'costCenterName', key: 'costCenterName', width: 120 },
+    { title: 'نسبة الخصم %', dataIndex: 'discountPercent', key: 'discountPercent', width: 100 },
+    { title: 'قيمة الخصم', key: 'discountValue', width: 100, render: (_: unknown, record: ItemRecord) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      return ((qty * price * discount) / 100).toFixed(2);
+    } },
+    { title: 'الإجمالي بعد الخصم', key: 'afterDiscount', width: 120, render: (_: unknown, record: ItemRecord) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      return (qty * price * (1 - discount / 100)).toFixed(2);
+    } },
+    { title: 'نسبة الضريبة %', dataIndex: 'taxPercent', key: 'taxPercent', width: 100 },
+    { title: 'قيمة الضريبة', key: 'taxValue', width: 100, render: (_: unknown, record: ItemRecord) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      const afterDiscount = qty * price * (1 - discount / 100);
+      const tax = Number(record.taxPercent) || 0;
+      return ((afterDiscount * tax) / 100).toFixed(2);
+    } },
+    { title: 'الإجمالي', key: 'total', width: 120, render: (_: unknown, record: ItemRecord) => {
+      const qty = Number(record.quantity) || 0;
+      const price = Number(record.price) || 0;
+      const discount = Number(record.discountPercent) || 0;
+      const afterDiscount = qty * price * (1 - discount / 100);
+      const tax = Number(record.taxPercent) || 0;
+      return (afterDiscount + (afterDiscount * tax) / 100).toFixed(2);
+    } },
     { 
       title: 'إجراءات', 
       key: 'actions', 
-      width: 80, 
-      render: (_: unknown, record: { itemCode: string }, idx: number) => (
-        <Button danger size="small" onClick={() => {
-          setAddedItems(items => items.filter((_, i) => i !== idx));
-        }}>حذف</Button>
+      width: 120, 
+      render: (_: unknown, record: ItemRecord, idx: number) => (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          <Button 
+            type="primary"
+            size="small"
+            onClick={() => editItem(idx)}
+            style={{ fontSize: '11px', padding: '2px 8px' }}
+            title="تعديل"
+          >
+            تعديل
+          </Button>
+          <Button 
+            type="primary"
+            danger
+            size="small"
+            onClick={() => removeItem(idx)}
+            style={{ fontSize: '11px', padding: '2px 8px' }}
+            title="حذف"
+          >
+            حذف
+          </Button>
+        </div>
       ) 
     }
   ];
@@ -3077,40 +1376,26 @@ const handlePrint = () => {
   };
   const labelStyle = { fontSize: 18, fontWeight: 500 };
 
-  const handleAddItem = async () => {
-    // التحقق من وجود مخازن متاحة للمبيعات
-    const availableWarehouses = filterWarehousesForSales(warehouses, quotationData.branch);
-    if (availableWarehouses.length === 0) {
-      if (typeof message !== 'undefined' && message.warning) {
-        message.warning('لا توجد مخازن متاحة للمبيعات. يرجى التحقق من صلاحيات المخازن.');
-      } else {
-        alert('لا توجد مخازن متاحة للمبيعات');
-      }
-      return;
-    }
-
-    // لا تضف إذا لم يتم اختيار اسم صنف
-    if (!item.itemName) {
-      if (typeof message !== 'undefined' && message.info) {
-        message.info('يرجى اختيار اسم الصنف أولاً');
-      } else {
-        alert('يرجى اختيار اسم الصنف أولاً');
-      }
-      return;
-    }
-    await addItem();
-    // إعادة تعيين الصنف مع الضريبة الثابتة من الإعدادات
-    setItem({
-      ...initialItem,
-      taxPercent: taxRate,
-      quantity: '1'
-    });
-    // إعادة تعيين حالة التعديل
-    setEditingItemIndex(null);
-    setTimeout(() => {
-      itemNameSelectRef.current?.focus?.();
-    }, 100); // تأخير بسيط لضمان إعادة التهيئة
-  };
+  // حساب الإجماليات
+  const totals = addedItems.reduce(
+    (acc, item) => {
+      const qty = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      const discount = Number(item.discountPercent) || 0;
+      const tax = Number(item.taxPercent) || 0;
+      const subtotal = qty * price;
+      const discountValue = (subtotal * discount) / 100;
+      const afterDiscount = subtotal - discountValue;
+      const taxValue = (afterDiscount * tax) / 100;
+      acc.subtotal += subtotal;
+      acc.totalDiscount += discountValue;
+      acc.afterDiscount += afterDiscount;
+      acc.totalTax += taxValue;
+      acc.finalTotal += afterDiscount + taxValue;
+      return acc;
+    },
+    { subtotal: 0, totalDiscount: 0, afterDiscount: 0, totalTax: 0, finalTotal: 0 }
+  );
 
   return (
     <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
@@ -3134,10 +1419,7 @@ const handlePrint = () => {
 
       <div className="bg-white rounded-lg shadow-lg p-6 space-y-4">
         <div className="grid grid-cols-4 gap-6 mb-4">
-          <div className="flex flex-col gap-2">
-            <label style={labelStyle}>رقم القيد</label>
-            <Input value={entryNumber} disabled placeholder="رقم القيد تلقائي" style={largeControlStyle} size="large" />
-          </div>
+
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>الفترة المحاسبية</label>
             <DatePicker.RangePicker
@@ -3157,17 +1439,14 @@ const handlePrint = () => {
             <label style={labelStyle}>تاريخ عرض السعر</label>
             <DatePicker value={quotationDate} onChange={setQuotationDate} format="YYYY-MM-DD" placeholder="تاريخ عرض السعر" style={largeControlStyle} size="large" />
           </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>تاريخ الانتهاء</label>
+            <DatePicker value={refDate} onChange={setRefDate} format="YYYY-MM-DD" placeholder="تاريخ الانتهاء" style={largeControlStyle} size="large" />
+          </div>
         </div>
 
         <div className="grid grid-cols-4 gap-6 mb-4">
-          <div className="flex flex-col gap-2">
-            <label style={labelStyle}>رقم المرجع</label>
-            <Input value={refNumber} onChange={e => setRefNumber(e.target.value)} placeholder="رقم المرجع" style={largeControlStyle} size="large" />
-          </div>
-          <div className="flex flex-col gap-2">
-            <label style={labelStyle}>تاريخ المرجع</label>
-            <DatePicker value={refDate} onChange={setRefDate} format="YYYY-MM-DD" placeholder="تاريخ المرجع" style={largeControlStyle} size="large" />
-          </div>
+
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>الفرع</label>
             <Select
@@ -3179,7 +1458,6 @@ const handlePrint = () => {
               size="large"
               showSearch
               optionFilterProp="children"
-              className={`${styles.dropdown} ${styles.noAntBorder}`}
             >
               {branches.map(b => (
                 <Select.Option key={b.id} value={b.id}>
@@ -3199,7 +1477,6 @@ const handlePrint = () => {
               size="large"
               showSearch
               optionFilterProp="children"
-              className={`${styles.dropdown} ${styles.noAntBorder}`}
             >
               {warehouses.map(w => (
                 <Select.Option key={w.id} value={w.id}>
@@ -3208,28 +1485,26 @@ const handlePrint = () => {
               ))}
             </Select>
           </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-4">
-          <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحركة</label>
-            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} size="large"
-              className={`${styles.dropdown} ${styles.noAntBorder}`}
-            >
+            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} size="large">
               <Select.Option value="عرض سعر">عرض سعر - Quotation</Select.Option>
               <Select.Option value="عرض سعر مبدئي">عرض سعر مبدئي - Preliminary Quote</Select.Option>
               <Select.Option value="عرض سعر نهائي">عرض سعر نهائي - Final Quote</Select.Option>
             </Select>
           </div>
+
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحساب</label>
-            <Select value={accountType} onChange={setAccountType} placeholder="اختر نوع الحساب" allowClear style={largeControlStyle} size="large"
-              className={`${styles.dropdown} ${styles.noAntBorder}`}
-            >
+            <Select value={accountType} onChange={setAccountType} placeholder="اختر نوع الحساب" allowClear style={largeControlStyle} size="large">
               <Select.Option value="عميل">عميل</Select.Option>
               <Select.Option value="عميل محتمل">عميل محتمل</Select.Option>
             </Select>
           </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-4">
+
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>رقم الحساب</label>
             <div style={{ display: "flex", gap: 8 }}>
@@ -3297,7 +1572,20 @@ const handlePrint = () => {
               }
             />
           </div>
-
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>رقم الموبايل</label>
+            <Input
+              value={customers.find(c => c.id === quotationData.customerNumber)?.mobile || ''}
+              placeholder="رقم الموبايل"
+              style={largeControlStyle}
+              size="large"
+              disabled
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>البيان</label>
+            <Input.TextArea value={statement} onChange={e => setStatement(e.target.value)} placeholder="البيان" rows={2} style={{ ...largeControlStyle, minHeight: 48 }} />
+          </div>
           {/* مودال البحث عن الحساب */}
           <Modal
             open={showAccountModal}
@@ -3320,8 +1608,8 @@ const handlePrint = () => {
               columns={[
                 { title: 'رقم الحساب', dataIndex: 'code', key: 'code', width: 120 },
                 { title: 'اسم الحساب', dataIndex: 'nameAr', key: 'nameAr' },
-                { title: 'جوال العميل', dataIndex: 'mobile', key: 'mobile', width: 140, render: (text: any) => text || '-' },
-                { title: 'الرقم الضريبي', dataIndex: 'taxNumber', key: 'taxNumber', width: 160, render: (text: any) => text || '-' }
+                { title: 'جوال العميل', dataIndex: 'mobile', key: 'mobile', width: 140, render: (text: string | undefined) => text || '-' },
+                { title: 'الرقم الضريبي', dataIndex: 'taxNumber', key: 'taxNumber', width: 160, render: (text: string | undefined) => text || '-' }
               ]}
               rowKey="code"
               pagination={{ pageSize: 8 }}
@@ -3342,44 +1630,8 @@ const handlePrint = () => {
           </Modal>
         </div>
 
-        <div className="grid grid-cols-4 gap-6 mb-4">
-          <div className="flex flex-col gap-2">
-            <label style={labelStyle}>نوع الجهة</label>
-            <Select value={sideType} onChange={setSideType} placeholder="اختر نوع الجهة" allowClear style={largeControlStyle} size="large"
-              className={`${styles.dropdown} ${styles.noAntBorder}`}
-            >
-              <Select.Option value="موظف">موظف</Select.Option>
-              <Select.Option value="إدارة/قسم">إدارة / قسم</Select.Option>
-              <Select.Option value="مشروع">مشروع</Select.Option>
-              <Select.Option value="موقع">موقع</Select.Option>
-              <Select.Option value="جهة أخرى">جهة أخرى</Select.Option>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label style={labelStyle}>رقم الجهة</label>
-            <Input value={sideNumber} onChange={e => setSideNumber(e.target.value)} placeholder="رقم الجهة" style={largeControlStyle} size="large" />
-          </div>
-          <div className="flex flex-col gap-2">
-            <label style={labelStyle}>اسم الجهة</label>
-            <Input value={sideName} onChange={e => setSideName(e.target.value)} placeholder="اسم الجهة" style={largeControlStyle} size="large" />
-          </div>
-          <div className="flex flex-col gap-2">
-            <label style={labelStyle}>تصنيف العملية</label>
-            <Select value={operationClass} onChange={setOperationClass} placeholder="اختر التصنيف" allowClear style={largeControlStyle} size="large"
-              className={`${styles.dropdown} ${styles.noAntBorder}`}
-            >
-              <Select.Option value="إنشاء عرض سعر">إنشاء عرض سعر</Select.Option>
-              <Select.Option value="تجديد عرض سعر">تجديد عرض سعر</Select.Option>
-            </Select>
-          </div>
-        </div>
 
-        <div className="grid grid-cols-4 gap-6 mb-4">
-          <div className="flex flex-col gap-2 col-span-3">
-            <label style={labelStyle}>البيان</label>
-            <Input.TextArea value={statement} onChange={e => setStatement(e.target.value)} placeholder="البيان" rows={2} style={{ ...largeControlStyle, minHeight: 48 }} />
-          </div>
-        </div>
+
       </div>
 
       {/* الأصناف */}
@@ -3391,13 +1643,14 @@ const handlePrint = () => {
         
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
           <TabPane tab="صنف جديد" key="new">
-            <div className="flex flex-row flex-wrap gap-4 items-end">
-              <div className="flex flex-col gap-1">
+            <div className="flex flex-row flex-wrap gap-3 items-end w-full">
+              <div className="flex-1 min-w-[180px] flex flex-col gap-1">
+                <label style={labelStyle}>رقم الصنف</label>
                 <Input
                   value={itemCode}
-                  onChange={e => setItemCode(e.target.value)}
+                  onChange={e => handleItemCodeChange(e.target.value)}
                   placeholder="رقم الصنف"
-                  style={{ ...largeControlStyle, width: 200 }}
+                  style={{ ...largeControlStyle, width: '100%' }}
                   size="large"
                   suffix={
                     <button
@@ -3414,57 +1667,119 @@ const handlePrint = () => {
                         background: 'transparent'
                       }}
                       onClick={() => setShowItemModal(true)}
+                      title="البحث عن صنف"
                     >
                       <SearchOutlined style={{ color: '#0074D9' }} />
                     </button>
                   }
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <Input
+              <div className="flex-1 min-w-[400px] flex flex-col gap-1">
+                <label style={labelStyle}>اسم الصنف</label>
+                <Select
+                  showSearch
                   value={itemName}
-                  onChange={e => setItemName(e.target.value)}
-                  placeholder="اسم الصنف"
-                  style={{ ...largeControlStyle, width: 200 }}
+                  onChange={handleItemSelect}
+                  placeholder="اختر الصنف"
+                  style={{ ...largeControlStyle, width: '100%' }}
                   size="large"
+                  allowClear
+                  filterOption={(input, option) => {
+                    const itemName = String(option?.label ?? '').toLowerCase();
+                    const selectedItem = items
+                      .filter(i => i.type === 'مستوى ثاني')
+                      .find(i => i.name === option?.value);
+                    const itemCode = String(selectedItem?.itemCode ?? '').toLowerCase();
+                    const searchTerm = input.toLowerCase();
+                    return itemName.includes(searchTerm) || itemCode.includes(searchTerm);
+                  }}
+                  options={items
+                    .filter(item => item.type === 'مستوى ثاني' && item.name?.trim())
+                    .map(item => ({
+                      label: item.name,
+                      value: item.name,
+                      disabled: !!item.tempCodes
+                    }))}
+                  optionRender={(option) => {
+                    const item = items
+                      .filter(i => i.type === 'مستوى ثاني')
+                      .find(i => i.name === option.value);
+                    return (
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        opacity: item?.tempCodes ? 0.5 : 1
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                          <span style={{ fontWeight: 600 }}>
+                            {item?.name}
+                            {item?.tempCodes && (
+                              <span style={{ color: '#ff4d4f', fontSize: '12px', marginRight: 8 }}>
+                                (إيقاف مؤقت)
+                              </span>
+                            )}
+                          </span>
+                          {item?.itemCode && (
+                            <span style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                              كود: {item.itemCode}
+                            </span>
+                          )}
+                          {item?.salePrice && (
+                            <span style={{ fontSize: '12px', color: '#52c41a' }}>
+                              السعر: {item.salePrice} ر.س
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }}
                 />
                 <ItemSearchModal
                   open={showItemModal}
                   onClose={() => setShowItemModal(false)}
                   onSelect={item => {
-                    setItemCode(item.itemCode || '');
-                    setItemName(item.name);
-                    setPrice(item.salePrice?.toString() || '');
+                    setItemCode(item.code || '');
+                    setItemName(item.nameAr);
+                    setPrice(item.price?.toString() || '');
                     setShowItemModal(false);
                   }}
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <Input type="number" min={1} value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="الكمية" style={{...largeControlStyle, width: 90}} size="large" />
+              <div className="flex-1 min-w-[80px] flex flex-col gap-1">
+                <label style={labelStyle}>الكمية</label>
+                <Input type="number" min={1} value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="الكمية" style={{...largeControlStyle, width: '100%'}} size="large" />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex-1 min-w-[100px] flex flex-col gap-1">
+                <label style={labelStyle}>الوحدة</label>
                 <Select
                   showSearch
                   value={unit}
                   onChange={(value) => setUnit(value)}
-                  style={{ width: 120, fontFamily: 'Cairo, sans-serif' }}
                   placeholder="الوحدة"
-                  options={units.map(unit => ({ 
-                    label: unit, 
-                    value: unit 
-                  }))}
-                  size="large"
+                  allowClear
+              style={largeControlStyle}
+              size="large"
+                  options={units.map(unit => ({ label: unit, value: unit }))}
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <Input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="السعر" style={{...largeControlStyle, width: 110}} size="large" />
+              <div className="flex-1 min-w-[90px] flex flex-col gap-1">
+                <label style={labelStyle}>السعر</label>
+                <Input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="السعر" style={{...largeControlStyle, width: '100%'}} size="large" />
               </div>
-              <div className="flex flex-col gap-1">
-                <Input value={costCenterName} onChange={e => setCostCenterName(e.target.value)} placeholder="اسم مركز التكلفة" style={largeControlStyle} size="large" />
+              <div className="flex-1 min-w-[90px] flex flex-col gap-1">
+                <label style={labelStyle}> الخصم %</label>
+                <Input type="number" min={0} max={100} value={discountPercent} onChange={e => setDiscountPercent(Number(e.target.value))} placeholder="نسبة الخصم %" style={{...largeControlStyle, width: '100%'}} size="large" />
               </div>
-              <Button type="primary" className="bg-blue-600" style={{ height: 48, fontSize: 18, borderRadius: 8, marginRight: 0 }} onClick={handleAddNewItem}>إضافة الصنف</Button>
+              <div className="flex-1 min-w-[90px] flex flex-col gap-1">
+                <label style={labelStyle}> الضريبة %</label>
+                <Input type="number" min={0} max={100} value={taxPercent} onChange={e => setTaxPercent(Number(e.target.value))} placeholder="نسبة الضريبة %" style={{...largeControlStyle, width: '100%'}} size="large" disabled />
+              </div>
+              <div className="flex-1 min-w-[120px] flex flex-col gap-1 justify-end">
+                <label style={{ visibility: 'hidden', height: 0 }}>إضافة الصنف</label>
+                <Button type="primary" className="bg-blue-600" style={{ height: 48, fontSize: 18, borderRadius: 8, width: '100%' }} onClick={handleAddNewItem}>إضافة الصنف</Button>
+              </div>
             </div>
-
             {/* جدول الأصناف المضافة */}
             <div className="mt-8">
               <Table
@@ -3475,6 +1790,49 @@ const handlePrint = () => {
                 bordered
                 locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
               />
+              {/* الإجماليات */}
+              <div style={{
+                marginTop: 24,
+                fontSize: 16,
+                fontWeight: 700,
+                background: '#fff',
+                borderRadius: 16,
+                padding: '18px 32px',
+                border: '2px solid #e5e7eb',
+                boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                maxWidth: 350,
+                marginRight: 'auto',
+                marginLeft: 0,
+                direction: 'rtl',
+                textAlign: 'right',
+                lineHeight: 1.7
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ color: '#2563eb', fontWeight: 700, fontSize: 17 }}>الإجمالي:</span>
+                                    <span style={{ color: '#2563eb', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.subtotal.toFixed(2)}</span>
+
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ color: '#e53935', fontWeight: 700, fontSize: 17 }}>الخصم:</span>
+                                    <span style={{ color: '#e53935', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.totalDiscount.toFixed(2)}</span>
+
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ color: '#fb8c00', fontWeight: 700, fontSize: 17 }}>الإجمالي بعد الخصم:</span>
+                                    <span style={{ color: '#fb8c00', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{(totals.subtotal - totals.totalDiscount).toFixed(2)}</span>
+
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ color: '#8e24aa', fontWeight: 700, fontSize: 17 }}>قيمة الضريبة:</span>
+                                    <span style={{ color: '#8e24aa', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.totalTax.toFixed(2)}</span>
+
+                </div>
+                <hr style={{ margin: '16px 0', borderTop: '2px solid #e5e7eb' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
+                  <span style={{ color: '#2e7d32', fontWeight: 900, fontSize: 18 }}>الإجمالي النهائي:</span>
+                  <span style={{ color: '#2e7d32', fontWeight: 900, fontSize: 22, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{(totals.subtotal - totals.totalDiscount + totals.totalTax).toFixed(2)}</span>
+                </div>
+              </div>
             </div>
           </TabPane>
           
@@ -3497,7 +1855,7 @@ const handlePrint = () => {
                 </Button>
               </Upload>
               <div style={{marginTop: 8, color: '#d97706', fontSize: 16, fontWeight: 500, background: '#fffbe6', borderRadius: 6, padding: '8px 12px', border: '1px solid #ffe58f', display: 'flex', alignItems: 'center', gap: 8}}>
-                ⚠️ يجب أن يحتوي ملف الإكسل على الأعمدة التالية بالترتيب: رقم كود الصنف، اسم الصنف، الكمية، الوحدة، السعر، مركز التكلفة
+                ⚠️ يجب أن يحتوي ملف الإكسل على الأعمدة التالية بالترتيب: رقم كود الصنف، اسم الصنف، الكمية، الوحدة، السعر، نسبة الخصم %
               </div>
               {excelFile && (
                 <div style={{color: '#16a34a', fontSize: 14, fontWeight: 500}}>
@@ -3525,7 +1883,9 @@ const handlePrint = () => {
           <Button 
             type="primary" 
             size="large" 
-            onClick={handleSaveAndPrint}
+            onClick={handleSave}
+            loading={saving}
+            disabled={saving || !quotationNumber || addedItems.length === 0}
             style={{
               height: 48,
               fontSize: 18,
@@ -3534,2155 +1894,50 @@ const handlePrint = () => {
               backgroundColor: '#1890ff',
               borderColor: '#1890ff'
             }}
-            icon={<SaveOutlined />}
+            icon={!saving && <SaveOutlined />}
           >
-            حفظ وطباعة
+            {saving ? 'جاري الحفظ...' : 'حفظ'}
+          </Button>
+          <Button
+            type="default"
+            size="large"
+            onClick={handlePrint}
+            loading={loading}
+            disabled={loading || !quotationNumber || addedItems.length === 0}
+            style={{
+              height: 48,
+              fontSize: 18,
+              borderRadius: 8,
+              padding: '0 32px',
+              backgroundColor: '#fff',
+              borderColor: '#1890ff',
+              color: '#1890ff',
+              boxShadow: '0 1px 6px rgba(0,0,0,0.07)'
+            }}
+            icon={!loading && <FileTextOutlined />}
+          >
+            {loading ? 'جاري التحضير...' : 'طباعة'}
+          </Button>
+          <Button
+            type="dashed"
+            size="large"
+            onClick={resetForm}
+            disabled={saving || loading}
+            style={{
+              height: 48,
+              fontSize: 18,
+              borderRadius: 8,
+              padding: '0 32px',
+              borderColor: '#d9d9d9',
+              color: '#666'
+            }}
+          >
+            إعادة تعيين
           </Button>
         </div>
       </div>
     </div>
   );
-                  justifyContent: 'center',
-                  minWidth: 32,
-                  height: 32
-                }}>
-                  {notification.type === 'success' && (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                    </svg>
-                  )}
-                  {notification.type === 'error' && (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                      <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>
-                    </svg>
-                  )}
-                  {notification.type === 'warning' && (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                      <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
-                    </svg>
-                  )}
-                  {notification.type === 'info' && (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-                    </svg>
-                  )}
-                </div>
-                
-                {/* المحتوى */}
-                <div style={{ flex: 1 }}>
-                  <div style={{
-                    fontWeight: 700,
-                    fontSize: 14,
-                    marginBottom: 4,
-                    fontFamily: 'Cairo, sans-serif'
-                  }}>
-                    {notification.title}
-                  </div>
-                  <div style={{
-                    fontSize: 13,
-                    lineHeight: 1.4,
-                    fontFamily: 'Cairo, sans-serif',
-                    opacity: 0.95
-                  }}>
-                    {notification.message}
-                  </div>
-                  <div style={{
-                    fontSize: 11,
-                    marginTop: 6,
-                    opacity: 0.8,
-                    fontFamily: 'Cairo, sans-serif'
-                  }}>
-                    {notification.timestamp.toLocaleTimeString('ar-SA', { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
-                    })}
-                  </div>
-                </div>
-
-                {/* زر الإغلاق */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setNotifications(prev => prev.filter(n => n.id !== notification.id));
-                  }}
-                  style={{
-                    background: 'rgba(255,255,255,0.2)',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: 24,
-                    height: 24,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    color: 'white',
-                    fontSize: 14,
-                    fontWeight: 'bold',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.3)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center">
-          <FileText className="h-8 w-8 text-blue-600 ml-3" />
-          <h1 className="text-2xl font-bold text-gray-800">عرض السعر</h1>
-        </div>
-        <p className="text-gray-600 mt-2">إدارة عرض السعر</p>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
-      </div>
-
-      <Breadcrumb
-        items={[
-          { label: "الرئيسية", to: "/" },
-          { label: "إدارة المبيعات", to: "/management/sales" },
-          { label: "عرض السعر" }
-        ]}
-      />
-      <Spin spinning={fetchingItems}>
-        {/* مودال الطباعة بعد الحفظ */}
-
-        <Card 
-          title={
-            <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 rounded-lg">
-              <Select
-                value={quotationType}
-                style={{ minWidth: 170, height: 38 }}
-                onChange={setQuotationType}
-                size="middle"
-                placeholder="نوع الفاتورة"
-                disabled={!!quotationData.branch}
-                options={[
-                  { label: 'ضريبة مبسطة', value: 'ضريبة مبسطة' },
-                  { label: 'ضريبة', value: 'ضريبة' }
-                ]}
-              />
-
-              <Select
-                value={warehouseMode}
-                style={{ minWidth: 170, height: 38 }}
-                onChange={setWarehouseMode}
-                size="middle"
-                placeholder="نظام المخزن"
-                disabled={!!quotationData.branch}
-                options={[
-                  { label: 'مخزن واحد', value: 'single' },
-                  { label: 'مخازن متعددة', value: 'multiple' }
-                ]}
-              />
-
-              <Select
-                value={priceType}
-                style={{ minWidth: 170, height: 38, fontFamily: 'sans-serif' }}
-                onChange={async (value) => {
-                  setPriceType(value);
-                  if (value === 'آخر سعر العميل' && item.itemName && quotationData.customerName) {
-                    try {
-                      const lastPrice = await fetchLastCustomerPrice(quotationData.customerName, item.itemName);
-                      if (lastPrice) {
-                        setItem(prev => ({ ...prev, price: String(lastPrice) }));
-                        customMessage.success('تم تطبيق آخر سعر للعميل بنجاح');
-                      }
-                    } catch (error) {
-                      console.error('فشل في جلب آخر سعر:', error);
-                      message.error('حدث خطأ أثناء جلب آخر سعر للعميل');
-                    }
-                  } else if (value === 'سعر البيع' && item.itemName) {
-                    const selected = itemNames.find(i => i.name === item.itemName);
-                    setItem(prev => ({
-                      ...prev,
-                      price: selected?.salePrice ? String(selected.salePrice) : ''
-                    }));
-                  }
-                }}
-                size="middle"
-                placeholder="نوع السعر"
-                options={[
-                  { label: 'سعر البيع', value: 'سعر البيع' },
-                  { label: 'آخر سعر العميل', value: 'آخر سعر العميل' }
-                ]}
-              />
-            </div>
-          }
-          className="shadow-md"
-        >
-          {/* معلومات الفاتورة الأساسية */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            المعلومات الأساسية
-          </Divider>
-          
-          {/* رسالة معلوماتية عن السنة المالية */}
-          {currentFinancialYear && (
-            <div style={{ marginBottom: 16 }}>
-              <Card 
-                size="small" 
-                style={{ 
-                  // background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
-                  // border: '1px solid #2196f3',
-                  // borderRadius: 8
-                }}
-              >
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 12,
-                  padding: '4px 0'
-                }}>
-                  <div style={{
-                    backgroundColor: '#2196f3',
-                    borderRadius: '50%',
-                    padding: 6,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                      <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
-                    </svg>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ 
-                      fontWeight: 600, 
-                      color: '#1565c0',
-                      fontSize: '13px',
-                      fontFamily: 'Cairo, sans-serif'
-                    }}>
-                      السنة المالية النشطة: {currentFinancialYear.year}
-                    </div>
-                    <div style={{ 
-                      fontSize: '12px', 
-                      color: '#1976d2',
-                      fontFamily: 'Cairo, sans-serif',
-                      lineHeight: 1.3,
-                      marginTop: 2
-                    }}>
-                      يمكن إدخال التواريخ فقط من {currentFinancialYear.startDate} إلى {currentFinancialYear.endDate}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-          
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="رقم عرض السعر">
-                <Input
-                  value={quotationData.quotationNumber || ''}
-                  placeholder="رقم عرض السعر"
-                  disabled
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="رقم القيد">
-                <Input 
-                  name="entryNumber"
-                  value={quotationData.entryNumber}
-                  disabled
-                  placeholder="رقم القيد" 
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="التاريخ">
-                <DatePicker
-                  style={{ width: '100%' }}
-                  value={quotationData.date ? dayjs(quotationData.date) : null}
-                  onChange={(date, dateString) => {
-                    const newDate = Array.isArray(dateString) ? dateString[0] : dateString as string;
-                    
-                    // التحقق من صحة التاريخ
-                    if (newDate && !handleDateValidation(newDate, 'تاريخ عرض السعر')) {
-                      return; // لا تحديث التاريخ إذا كان خارج النطاق
-                    }
-                    
-                    setQuotationData({
-                      ...quotationData, 
-                      date: newDate,
-                      validUntil: calculateValidUntilDate(newDate) // حساب تاريخ انتهاء الصلاحية تلقائياً
-                    });
-                  }}
-                  format="YYYY-MM-DD"
-                  placeholder="التاريخ"
-                  disabledDate={disabledDate}
-                  status={quotationData.date && !validateDate(quotationData.date) ? 'error' : undefined}
-                />
-                {quotationData.date && !validateDate(quotationData.date) && (
-                  <div style={{ color: '#ff4d4f', fontSize: '12px', marginTop: '4px' }}>
-                    {getDateValidationMessage(quotationData.date)}
-                  </div>
-                )}
-              </Form.Item>
-            </Col>
-
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="صالح حتى">
-                <DatePicker
-                  style={{ width: '100%' }}
-                  value={quotationData.validUntil ? dayjs(quotationData.validUntil) : null}
-                  onChange={(date, dateString) => {
-                    const newValidUntil = Array.isArray(dateString) ? dateString[0] : dateString as string;
-                    
-                    // التحقق من صحة التاريخ
-                    if (newValidUntil && !handleDateValidation(newValidUntil, 'تاريخ انتهاء الصلاحية')) {
-                      return; // لا تحديث التاريخ إذا كان خارج النطاق
-                    }
-                    
-                    setQuotationData({
-                      ...quotationData, 
-                      validUntil: newValidUntil
-                    });
-                  }}
-                  format="YYYY-MM-DD"
-                  placeholder="صالح حتى"
-                  disabledDate={disabledDate}
-                  status={quotationData.validUntil && !validateDate(quotationData.validUntil) ? 'error' : undefined}
-                />
-                {quotationData.validUntil && !validateDate(quotationData.validUntil) && (
-                  <div style={{ color: '#ff4d4f', fontSize: '12px', marginTop: '4px' }}>
-                    {getDateValidationMessage(quotationData.validUntil)}
-                  </div>
-                )}
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={12} md={6}>
-              <Form.Item label="البائع">
-                <Select
-                  showSearch
-                  value={quotationData.delegate}
-                  onChange={value => {
-                    console.log('تم اختيار مندوب جديد:', value);
-                    setQuotationData({ ...quotationData, delegate: value });
-                  }}
-                  placeholder="اختر البائع"
-                  style={{ fontFamily: 'Cairo, sans-serif' }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={(() => {
-                    const options = delegates?.map(d => ({ 
-                      label: d.name || d.email || d.id, 
-                      value: d.id 
-                    })) || [];
-                    console.log('خيارات dropdown البائع:', options);
-                    return options;
-                  })()}
-                  allowClear
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* معلومات الفرع والمخزن */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            معلومات الفرع والمخزن
-          </Divider>
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={12} md={12}>
-              <Form.Item label="الفرع">
-                <Select
-                  showSearch
-                  value={quotationData.branch}
-                  onChange={async (value) => {
-                    try {
-                      setBranchCode('');
-                      const quotationNumber = await generateQuotationNumberAsync(value, branches);
-                      
-                      // البحث عن المخزن المرتبط بالفرع المحدد من المخازن المفلترة
-                      const filteredWarehouses = filterWarehousesForSales(warehouses, value);
-                      const linkedWarehouse = filteredWarehouses.find(warehouse => warehouse.branch === value);
-                      const selectedWarehouse = linkedWarehouse ? linkedWarehouse.id : '';
-                      
-                      // رسالة تشخيصية للمطور
-                      console.log('الفرع المحدد:', value);
-                      console.log('المخازن المفلترة:', filteredWarehouses.map(w => ({ id: w.id, name: w.nameAr || w.name, branch: w.branch })));
-                      console.log('المخزن المرتبط:', linkedWarehouse);
-                      console.log('معرف المخزن المحدد:', selectedWarehouse);
-                      
-                      setQuotationData(prev => ({
-                        ...prev,
-                        branch: value,
-                        warehouse: selectedWarehouse,
-                        quotationNumber
-                      }));
-                      
-                      // إعادة تعيين المخزن في الـ item أيضاً في حالة المخازن المتعددة
-                      setItem(prev => ({
-                        ...prev,
-                        warehouseId: selectedWarehouse
-                      }));
-                      
-                      // إظهار رسالة إعلامية إذا تم اختيار مخزن تلقائياً
-                      if (linkedWarehouse) {
-                        message.info(`تم اختيار المخزن "${linkedWarehouse.nameAr || linkedWarehouse.name}" المرتبط بالفرع تلقائياً`);
-                      } else {
-                        message.warning('لا يوجد مخزن مرتبط بهذا الفرع، يرجى اختيار المخزن يدوياً');
-                      }
-                    } catch (error) {
-                      console.error('خطأ في اختيار الفرع:', error);
-                      message.error('حدث خطأ أثناء اختيار الفرع');
-                    }
-                  }}
-                  disabled={branches.length === 0}
-                  placeholder="اختر الفرع"
-                  style={{ fontFamily: 'Cairo, sans-serif' }}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={branches.filter(branch => branch && branch.id).map(branch => ({ 
-                    label: branch.name || branch.id, 
-                    value: branch.id 
-                  }))}
-                  notFoundContent={branches.length === 0 ? "جاري تحميل الفروع..." : "لا توجد فروع متاحة"}
-                />
-              </Form.Item>
-            </Col>
-            {warehouseMode !== 'multiple' && (
-              <Col xs={24} sm={12} md={12}>
-                <Form.Item label="المخزن">
-                  <Select
-                    showSearch
-                    value={quotationData.warehouse}
-                    onChange={(value) => setQuotationData({...quotationData, warehouse: value})}
-                    disabled={filterWarehousesForSales(warehouses, quotationData.branch).length === 0}
-                    placeholder="اختر المخزن"
-                    style={{ fontFamily: 'Cairo, sans-serif' }}
-                    filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                    options={filterWarehousesForSales(warehouses, quotationData.branch)
-                      .sort((a, b) => {
-                        // ترتيب المخازن: المرتبطة بالفرع أولاً
-                        const aLinked = a.branch === quotationData.branch;
-                        const bLinked = b.branch === quotationData.branch;
-                        if (aLinked && !bLinked) return -1;
-                        if (!aLinked && bLinked) return 1;
-                        return 0;
-                      })
-                      .map(warehouse => {
-                        const isLinkedToBranch = warehouse.branch === quotationData.branch;
-                        return {
-                          label: (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ 
-                                color: isLinkedToBranch ? '#52c41a' : '#666',
-                                fontWeight: isLinkedToBranch ? 'bold' : 'normal'
-                              }}>
-                                {warehouse.nameAr || warehouse.name || warehouse.id}
-                              </span>
-                              {isLinkedToBranch && (
-                                <span style={{ 
-                                  color: '#52c41a', 
-                                  fontSize: '12px',
-                                  fontWeight: 'bold',
-                                  marginRight: '8px'
-                                }}>
-                                  ✓ مرتبط
-                                </span>
-                              )}
-                            </div>
-                          ),
-                          value: warehouse.id
-                        };
-                      })}
-                  />
-                  {/* رسالة إعلامية عند عدم وجود مخازن متاحة */}
-                  {filterWarehousesForSales(warehouses, quotationData.branch).length === 0 && warehouses.length > 0 && (
-                    <div style={{ 
-                      marginTop: 8, 
-                      padding: 8, 
-                      backgroundColor: '#fff2e8', 
-                      border: '1px solid #ffcc02', 
-                      borderRadius: 4,
-                      fontSize: '12px',
-                      color: '#d46b08'
-                    }}>
-                      لا توجد مخازن متاحة للمبيعات. قد يكون السبب:
-                      <ul style={{ margin: '4px 0', paddingRight: 16 }}>
-                        <li>عدم وجود صلاحية للمستخدم الحالي</li>
-                        <li>المخزن غير مخصص لفواتير المبيعات</li>
-                        <li>المخزن غير مرتبط بالفرع المحدد</li>
-                      </ul>
-                    </div>
-                  )}
-                </Form.Item>
-              </Col>
-            )}
-          </Row>
-
-          {/* معلومات العميل */}
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-            معلومات العميل
-          </Divider>
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={18} md={18}>
-              <Form.Item label="اسم العميل">
-                <Space.Compact style={{ display: 'flex', width: '100%' }}>
-                  <Select
-                    showSearch
-                    value={quotationData.customerName}
-                    placeholder="اسم العميل"
-                    onChange={(value) => {
-                      const selected = customers.find(c => c.nameAr === value);
-                      setQuotationData({
-                        ...quotationData,
-                        customerName: value || '',
-                        customerNumber: selected ? (selected.phone || selected.mobile || selected.phoneNumber || '') : '',
-                        commercialRecord: selected ? (selected.commercialReg || '') : '',
-                        taxFile: selected ? (selected.taxFileNumber || selected.taxFile || '') : ''
-                      });
-                    }}
-                    style={{ fontFamily: 'Cairo, sans-serif', fontWeight: 500, fontSize: 16, flex: 1 }}
-                    filterOption={(input, option) =>
-                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                    allowClear
-                    options={customers.map(customer => ({ 
-                      label: customer.nameAr, 
-                      value: customer.nameAr 
-                    }))}
-                  />
-                                  <Button
-                    type="default"
-                    icon={
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
-                      </svg>
-                    }
-                    style={{ 
-                      minWidth: 40,
-                      borderLeft: 0,
-                      borderTopLeftRadius: 0,
-                      borderBottomLeftRadius: 0
-                    }}
-                    onClick={() => setShowQuickAddCustomer(true)}
-                    title="إضافة سريعة"
-                  />
-                  <Button
-                    type="default"
-                    icon={<SearchOutlined />}
-                    style={{ 
-                      minWidth: 40,
-                      
-                      borderTopLeftRadius: 0,
-                      borderBottomLeftRadius: 0
-                    }}
-                    onClick={() => setShowCustomerSearch(true)}
-                    title="البحث عن عميل"
-                  />
-  
-                </Space.Compact>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={6} md={6}>
-              <Form.Item label="رقم العميل">
-                <Input
-                  id="customerNumber"
-                  value={quotationData.customerNumber}
-                  placeholder="رقم العميل"
-                  disabled
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-
-
-          {/* معلومات الضريبة (للفاتورة الضريبية فقط) */}
-          {quotationType === 'ضريبة' && (
-            <>
-              <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif', marginBottom: 16 }}>
-                المعلومات الضريبية
-              </Divider>
-              <Row gutter={16} className="mb-4">
-                <Col xs={24} sm={12} md={12}>
-                  <Form.Item label="السجل التجاري">
-                    <Input
-                      id="commercialRecord"
-                      value={quotationData.commercialRecord}
-                      placeholder="السجل التجاري"
-                      disabled
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={12}>
-                  <Form.Item label="الملف الضريبي">
-                    <Input
-                      id="taxFile"
-                      value={quotationData.taxFile}
-                      placeholder="الملف الضريبي"
-                      disabled
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </>
-          )}
-
-          {/* منطقة عرض الرسائل والتنبيهات */}
-          <div style={{ marginBottom: 24 }}>
-            <Card 
-              size="small" 
-              style={{ 
-                background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
-                border: '1px solid #dee2e6',
-                borderRadius: 8
-              }}
-            >
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: 12,
-                padding: '8px 0'
-              }}>
-                <div style={{
-                  backgroundColor: '#0ea5e9',
-                  borderRadius: '50%',
-                  padding: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                  </svg>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ 
-                    fontWeight: 600, 
-                    color: '#495057',
-                    marginBottom: 4,
-                    fontFamily: 'Cairo, sans-serif'
-                  }}>
-                    حالة الفاتورة الحالية
-                  </div>
-                  <div style={{ 
-                    fontSize: 13, 
-                    color: '#6c757d',
-                    fontFamily: 'Cairo, sans-serif',
-                    lineHeight: 1.4
-                  }}>
-                    {!quotationData.branch && (
-                      <span style={{ color: '#dc3545', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                        </svg>
-                        يرجى اختيار الفرع أولاً
-                      </span>
-                    )}
-                    {quotationData.branch && !quotationData.customerName && (
-                      <span style={{ color: '#fd7e14', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                        </svg>
-                        يرجى اختيار العميل
-                      </span>
-                    )}
-                    {warehouseMode !== 'multiple' && quotationData.branch && !quotationData.warehouse && (
-                      <span style={{ color: '#fd7e14', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L1 21h22L12 2zm0 3.5L19.53 19H4.47L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                        </svg>
-                        يرجى اختيار المخزن
-                      </span>
-                    )}
-                    {quotationData.branch && quotationData.customerName && 
-                     (warehouseMode === 'multiple' || quotationData.warehouse) && (
-                      <span style={{ color: '#198754', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                        </svg>
-                        يمكنك الآن إضافة الأصناف
-                      </span>
-                    )}
-                    {items.length > 0 && (
-                      <span style={{ color: '#0d6efd', fontWeight: 500, marginLeft: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 10.95 5.16-1.21 9-5.4 9-10.95V7L12 2z"/>
-                          <path d="M10 14l-3-3 1.41-1.41L10 11.17l5.59-5.58L17 7l-7 7z" fill="white"/>
-                        </svg>
-                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - جاهز للحفظ
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          <Divider orientation="left" style={{ fontFamily: 'Cairo, sans-serif' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>إضافة أصناف المبيعات</span>
-              {editingItemIndex !== null && (
-                <span style={{
-                  background: 'linear-gradient(135deg, #ffc107 0%, #ffca2c 100%)',
-                  color: '#000',
-                  padding: '4px 8px',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  boxShadow: '0 2px 4px rgba(255, 193, 7, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4
-                }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                  </svg>
-                  جاري تعديل الصنف رقم {editingItemIndex + 1}
-                </span>
-              )}
-            </div>
-          </Divider>
-
-
-
-
-          {/* Item Entry */}
-          <Row gutter={16} className="mb-4">
-            <Col xs={24} sm={12} md={4}>
-              <div style={{ marginBottom: 4, fontWeight: 500 }}>كود الصنف</div>
-              <Input
-                value={item.itemNumber}
-                placeholder="كود الصنف"
-                disabled
-              />
-            </Col>
-            <Col xs={24} sm={12} md={7}>
-
-              <div style={{ width: '100%' }}>
-                <div style={{ marginBottom: 0, fontWeight: 500 }}>اسم الصنف</div>
-                <Space.Compact style={{ display: 'flex', width: '100%' }}>
-                  <Select
-                    ref={itemNameSelectRef}
-                    showSearch
-                    value={item.itemName}
-                    placeholder="اسم الصنف"
-                    style={{ flex: 1, fontFamily: 'Cairo, sans-serif' }}
-                    optionLabelProp="label"
-                    onChange={async (value) => {
-                      const selected = itemNames.find(i => i.name === value);
-                      
-                      // فحص إذا كان الصنف موقوف مؤقتاً
-                      if (selected && selected.tempCodes) {
-                        customMessage.warning(`تم إيقاف الصنف "${value}" مؤقتاً ولا يمكن إضافته للفاتورة`);
-                        // إعادة تعيين اختيار الصنف
-                        setItem({
-                          ...item,
-                          itemName: '',
-                          itemNumber: '',
-                          price: '',
-                          discountPercent: '0',
-                          quantity: '1'
-                        });
-                        return;
-                      }
-                      
-                      let price = selected && selected.salePrice ? String(selected.salePrice) : '';
-                      if (priceType === 'آخر سعر العميل' && quotationData.customerName) {
-                        const lastPrice = await fetchLastCustomerPrice(quotationData.customerName, value);
-                        if (lastPrice) price = String(lastPrice);
-                      }
-                      
-                      setItem({
-                        ...item,
-                        itemName: value,
-                        itemNumber: selected ? (selected.itemCode || '') : '',
-                        price,
-                        discountPercent: selected && selected.discount ? String(selected.discount) : '0',
-                        taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة دائماً
-                        quantity: '1'
-                      });
-                      
-                      // جلب رصيد الصنف في حالة المخازن المتعددة والمخزن محدد
-                      if (warehouseMode === 'multiple' && item.warehouseId && value) {
-                        await fetchSingleItemStock(value, item.warehouseId);
-                      }
-                      
-                      // إظهار رسالة معلوماتية عن الرصيد المتاح
-                      const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
-                      if (currentWarehouse) {
-                        let currentStock;
-                        if (warehouseMode === 'single') {
-                          currentStock = itemStocks[value];
-                        } else {
-                          // جلب الرصيد فورياً في حالة المخازن المتعددة
-                          currentStock = await checkStockAvailability(value, currentWarehouse);
-                          // تحديث الحالة
-                          setItemStocks(prev => ({
-                            ...prev,
-                            [`${value}-${currentWarehouse}`]: currentStock
-                          }));
-                        }
-                        
-                        if (currentStock !== undefined) {
-                          if (currentStock > 0) {
-                            message.info(`الرصيد المتاح: ${currentStock}`, 2);
-                          } else if (currentStock === 0) {
-                            message.warning(`تحذير: الصنف غير متوفر في المخزون`, 3);
-                          } else {
-                            message.warning(`تحذير: الرصيد سالب: ${Math.abs(currentStock)}`, 3);
-                          }
-                        }
-                      }
-                    }}
-                    filterOption={(input, option) => {
-                      const itemName = String(option?.value ?? '').toLowerCase();
-                      const selectedItem = itemNames.find(i => i.name === option?.value);
-                      const itemCode = String(selectedItem?.itemCode ?? '').toLowerCase();
-                      const searchTerm = input.toLowerCase();
-                      return itemName.includes(searchTerm) || itemCode.includes(searchTerm);
-                    }}
-                    allowClear
-                  >
-                    {itemNames.map((i, index) => {
-                      const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
-                      const stockKey = warehouseMode === 'single' ? i.name : `${i.name}-${currentWarehouse}`;
-                      const stock = currentWarehouse ? itemStocks[stockKey] : undefined;
-                      
-                      return (
-                        <Select.Option 
-                          key={i.id || `${i.name}-${index}`} 
-                          value={i.name}
-                          label={i.name}
-                          disabled={!!i.tempCodes}
-                          style={{
-                            color: i.tempCodes ? '#ff4d4f' : 'inherit',
-                            backgroundColor: i.tempCodes ? '#fff2f0' : 'inherit'
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-<span style={{ fontWeight: 600 }}>
-  {i.name}
-  {i.tempCodes ? (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', marginLeft: 2 }}>
-        <circle cx="12" cy="12" r="10" stroke="#ff4d4f" strokeWidth="2" fill="#fff2f0" />
-        <path d="M8 12h8" stroke="#ff4d4f" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-      (إيقاف مؤقت)
-    </span>
-  ) : ''}
-</span>
-                              {i.itemCode && (
-                                <span style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
-                                  كود: {i.itemCode}
-                                  {i.allowNegative && (
-                                    <span style={{ 
-                                      marginLeft: 8, 
-                                      color: '#52c41a', 
-                                      fontWeight: 'bold',
-                                      fontSize: '11px',
-                                      backgroundColor: '#f6ffed',
-                                      padding: '1px 4px',
-                                      borderRadius: '2px',
-                                      border: '1px solid #b7eb8f'
-                                    }}>
-                                      ✓ سالب
-                                    </span>
-                                  )}
-                                  {i.allowNegative === false && (
-                                    <span style={{ 
-                                      marginLeft: 8, 
-                                      color: '#ff4d4f', 
-                                      fontWeight: 'bold',
-                                      fontSize: '11px',
-                                      backgroundColor: '#fff2f0',
-                                      padding: '1px 4px',
-                                      borderRadius: '2px',
-                                      border: '1px solid #ffccc7'
-                                    }}>
-                                      ✗ سالب
-                                    </span>
-                                  )}
-                                </span>
-                              )}
-                            </div>
-                            {currentWarehouse && (
-                              <span 
-                                style={{ 
-                                  color: stock !== undefined ? 
-                                    (stock > 0 ? '#52c41a' : stock === 0 ? '#faad14' : '#ff4d4f') : 
-                                    '#1890ff',
-                                  fontSize: '12px',
-                                  fontWeight: 'bold',
-                                  marginRight: '8px'
-                                }}
-                              >
-                                {stock !== undefined ? 
-                                  (stock > 0 ? `متوفر: ${stock}` : stock === 0 ? 'غير متوفر' : `سالب: ${Math.abs(stock)}`) :
-                                  (loadingStocks ? 'جاري التحميل...' : 'اختر المخزن')
-                                }
-                              </span>
-                            )}
-                          </div>
-                        </Select.Option>
-                      );
-                    })}
-                  </Select>
-                  <Button
-                    type="default"
-                    size="middle"
-                    style={{ 
-                      
-                      borderTopLeftRadius: 0,
-                      borderBottomLeftRadius: 0,
-                      backgroundColor: '#ffffff',
-                      borderColor: '#d1d5db',
-                      display: 'flex',
-                      
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      minWidth: 40
-                    }}
-                    onClick={() => setShowAddItemModal(true)}
-                    title="إضافة صنف جديد"
-                  >
-                    <svg width="16"  height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
-                    </svg>
-                  </Button>
-                </Space.Compact>
-                {/* مودال إضافة صنف جديد */}
-<Modal
-  open={showAddItemModal}
-  onCancel={() => setShowAddItemModal(false)}
-  footer={null}
-  title={
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'Cairo', fontWeight: 700 }}>
-      <span style={{ background: '#e0e7ef', borderRadius: '50%', padding: 8, boxShadow: '0 2px 8px #e0e7ef' }}>
-        <svg width="24" height="24" fill="#305496" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 3v4h4v2h-4v4h-2v-4H7v-2h4V5h2z"/></svg>
-      </span>
-      إضافة صنف جديد
-    </div>
-  }
-  width={750}
-  styles={{ 
-    body: { 
-      background: 'linear-gradient(135deg, #f8fafc 80%, #e0e7ef 100%)', 
-      borderRadius: 16, 
-      padding: 28, 
-      boxShadow: '0 8px 32px #b6c2d655' 
-    } 
-  }}
-  style={{ top: 60 }}
-  destroyOnHidden
->
-  <div style={{ marginBottom: 16 }}>
-    <div style={{ 
-      marginBottom: 12, 
-      padding: 8, 
-      background: '#e0e7ef', 
-      borderRadius: 8, 
-      textAlign: 'center', 
-      fontWeight: 500, 
-      color: '#305496', 
-      fontFamily: 'Cairo', 
-      fontSize: 15 
-    }}>
-      يرجى تعبئة بيانات الصنف بدقة
-    </div>
-  </div>
-  <Form
-    layout="vertical"
-    onFinish={() => {
-      // التحقق من الحقول الإجبارية
-      if (!addItemForm.parentId) {
-        message.error('يرجى اختيار المستوى الأول');
-        return;
-      }
-      if (!addItemForm.name) {
-        message.error('يرجى إدخال اسم الصنف');
-        return;
-      }
-      if (!addItemForm.itemCode) {
-        message.error('يرجى إدخال كود الصنف');
-        return;
-      }
-      if (!addItemForm.salePrice) {
-        message.error('يرجى إدخال سعر البيع');
-        return;
-      }
-      if (!addItemForm.purchasePrice) {
-        message.error('يرجى إدخال سعر الشراء');
-        return;
-      }
-      if (!addItemForm.unit) {
-        message.error('يرجى اختيار الوحدة');
-        return;
-      }
-      
-      if (addItemForm.tempCodes && message && message.warning) {
-        message.warning('تم إيقاف هذا الصنف مؤقتًا.');
-      }
-      handleAddNewItem();
-    }}
-    style={{ fontFamily: 'Cairo' }}
-    initialValues={addItemForm}
-  >
-  <Row gutter={16}>
-    <Col span={8}>
-      <Form.Item label="نوع الصنف" required>
-        <Input value="مستوى ثاني" disabled style={{ color: '#888', background: '#f3f4f6', fontWeight: 500, fontSize: 15, borderRadius: 6 }} />
-      </Form.Item>
-    </Col>
-    <Col span={8}>
-      {allItems && allItems.filter(i => i.type === 'مستوى أول').length > 0 && (
-        <Form.Item 
-          label={<span style={{ color: '#ff4d4f' }}>المستوى الأول *</span>} 
-          required
-          rules={[{ required: true, message: 'يرجى اختيار المستوى الأول' }]}
-        >
-          <Select
-            value={addItemForm.parentId || ''}
-            onChange={v => setAddItemForm(f => ({ ...f, parentId: v }))}
-            placeholder="اختر المستوى الأول"
-            style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-          >
-            {allItems.filter(i => i.type === 'مستوى أول').map(i => (
-              <Select.Option key={i.id || i.name} value={i.id}>{i.name}</Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
-      )}
-    </Col>
-    <Col span={8}>
-      <Form.Item 
-        label={<span style={{ color: '#ff4d4f' }}>اسم الصنف *</span>} 
-        required
-        rules={[{ required: true, message: 'يرجى إدخال اسم الصنف' }]}
-      >
-        <Input
-          value={addItemForm.name || ''}
-          onChange={e => setAddItemForm(f => ({ ...f, name: e.target.value }))}
-          placeholder="اسم الصنف"
-          autoFocus
-          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-        />
-      </Form.Item>
-    </Col>
-  </Row>
-  <Row gutter={16}>
-    <Col span={8}>
-      <Form.Item 
-        label={<span style={{ color: '#ff4d4f' }}>كود الصنف *</span>} 
-        required
-        rules={[{ required: true, message: 'يرجى إدخال كود الصنف' }]}
-      >
-        <Input
-          value={addItemForm.itemCode || ''}
-          onChange={e => setAddItemForm(f => ({ ...f, itemCode: e.target.value }))}
-          placeholder="كود الصنف"
-          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-        />
-      </Form.Item>
-    </Col>
-    <Col span={8}>
-      <Form.Item 
-        label={<span style={{ color: '#ff4d4f' }}>سعر الشراء *</span>} 
-        required
-        rules={[{ required: true, message: 'يرجى إدخال سعر الشراء' }]}
-      >
-        <Input
-          value={addItemForm.purchasePrice || ''}
-          onChange={e => setAddItemForm(f => ({ ...f, purchasePrice: e.target.value }))}
-          placeholder="سعر الشراء"
-          type="number"
-          min={0}
-          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-        />
-      </Form.Item>
-    </Col>
-    <Col span={8}>
-      <Form.Item 
-        label={<span style={{ color: '#ff4d4f' }}>سعر البيع *</span>} 
-        required
-        rules={[{ required: true, message: 'يرجى إدخال سعر البيع' }]}
-      >
-        <Input
-          value={addItemForm.salePrice || ''}
-          onChange={e => setAddItemForm(f => ({ ...f, salePrice: e.target.value }))}
-          placeholder="سعر البيع"
-          type="number"
-          min={0}
-          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-        />
-      </Form.Item>
-    </Col>
-  </Row>
-  <Row gutter={16}>
-    <Col span={8}>
-      <Form.Item label="الحد الأدنى للطلب">
-        <Input
-          value={addItemForm.minOrder || ''}
-          onChange={e => setAddItemForm(f => ({ ...f, minOrder: e.target.value }))}
-          placeholder="الحد الأدنى للطلب"
-          type="number"
-          min={0}
-          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-        />
-      </Form.Item>
-    </Col>
-    <Col span={8}>
-      <Form.Item label="نسبة الخصم">
-        <Input
-          value={addItemForm.discount || ''}
-          onChange={e => setAddItemForm(f => ({ ...f, discount: e.target.value }))}
-          placeholder="نسبة الخصم"
-          type="number"
-          min={0}
-          max={100}
-          style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-        />
-      </Form.Item>
-    </Col>
-    <Col span="8">
-      {/* Empty for alignment or add more fields here if needed */}
-    </Col>
-  </Row>
-    <Form.Item>
-      <div style={{ display: 'flex', gap: 16 }}>
-        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={!!addItemForm.allowNegative}
-            onChange={e => setAddItemForm(f => ({ ...f, allowNegative: e.target.checked }))}
-            style={{ marginLeft: 6 }}
-          />
-          السماح بالسالب
-        </label>
-        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={!!addItemForm.isVatIncluded}
-            onChange={e => setAddItemForm(f => ({ ...f, isVatIncluded: e.target.checked }))}
-            style={{ marginLeft: 6 }}
-          />
-          شامل الضريبة
-        </label>
-        <label style={{ fontWeight: 500, marginBottom: 0, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={!!addItemForm.tempCodes}
-            onChange={e => setAddItemForm(f => ({ ...f, tempCodes: e.target.checked }))}
-            style={{ marginLeft: 6 }}
-          />
-          إيقاف مؤقت
-        </label>
-      </div>
-    </Form.Item>
-
-    <Form.Item label="المورد">
-      <Select
-        value={addItemForm.supplier || ''}
-        onChange={v => setAddItemForm(f => ({ ...f, supplier: v }))}
-        placeholder="اختر المورد"
-        style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-      >
-        {suppliers && suppliers.map(s => (
-          <Select.Option key={s.id} value={s.name}>{s.name}</Select.Option>
-        ))}
-      </Select>
-    </Form.Item>
-    <Form.Item 
-      label={<span style={{ color: '#ff4d4f' }}>الوحدة *</span>} 
-      required
-      rules={[{ required: true, message: 'يرجى اختيار الوحدة' }]}
-    >
-      <Select
-        value={addItemForm.unit || ''}
-        onChange={v => setAddItemForm(f => ({ ...f, unit: v }))}
-        placeholder="اختر الوحدة"
-        style={{ fontWeight: 500, fontSize: 15, borderRadius: 6 }}
-      >
-        {units.map(unit => (
-          <Select.Option key={unit} value={unit}>{unit}</Select.Option>
-        ))}
-      </Select>
-    </Form.Item>
-    <Form.Item>
-      <Button
-        type="primary"
-        htmlType="submit"
-        loading={addItemLoading}
-        style={{ 
-          width: '100%', 
-          fontWeight: 700, 
-          fontSize: 16, 
-          borderRadius: 8, 
-          height: 44, 
-          boxShadow: '0 2px 8px #e0e7ef' 
-        }}
-      >
-        إضافة
-      </Button>
-    </Form.Item>
-  </Form>
-</Modal>
-              </div>
-            </Col>
-            {warehouseMode === 'multiple' && (
-              <Col xs={24} sm={12} md={4}>
-                <div style={{ marginBottom: 4, fontWeight: 500 }}>المخزن</div>
-                <Select
-                  showSearch
-                  value={item.warehouseId}
-                  placeholder="اختر المخزن"
-                  style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                  onChange={async (value) => {
-                    setItem({ ...item, warehouseId: value });
-                    // في حالة المخازن المتعددة، جلب رصيد الصنف الحالي في المخزن الجديد
-                    if (item.itemName && value) {
-                      await fetchSingleItemStock(item.itemName, value);
-                    }
-                  }}
-                  options={filterWarehousesForSales(warehouses, quotationData.branch)
-                    .sort((a, b) => {
-                      // ترتيب المخازن: المرتبطة بالفرع أولاً
-                      const aLinked = a.branch === quotationData.branch;
-                      const bLinked = b.branch === quotationData.branch;
-                      if (aLinked && !bLinked) return -1;
-                      if (!aLinked && bLinked) return 1;
-                      return 0;
-                    })
-                    .map(warehouse => {
-                      const isLinkedToBranch = warehouse.branch === quotationData.branch;
-                      return {
-                        label: (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ 
-                              color: isLinkedToBranch ? '#52c41a' : '#666',
-                              fontWeight: isLinkedToBranch ? 'bold' : 'normal'
-                            }}>
-                              {warehouse.nameAr || warehouse.name || warehouse.id}
-                            </span>
-                            {isLinkedToBranch && (
-                              <span style={{ 
-                                color: '#52c41a', 
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                marginRight: '8px'
-                              }}>
-                                ✓ مرتبط
-                              </span>
-                            )}
-                          </div>
-                        ),
-                        value: warehouse.id
-                      };
-                    })}
-                  filterOption={(input, option) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  allowClear
-                />
-                {/* رسالة إعلامية عند عدم وجود مخازن متاحة في وضع المخازن المتعددة */}
-                {filterWarehousesForSales(warehouses, quotationData.branch).length === 0 && warehouses.length > 0 && (
-                  <div style={{ 
-                    marginTop: 4, 
-                    padding: 6, 
-                    backgroundColor: '#fff2e8', 
-                    border: '1px solid #ffcc02', 
-                    borderRadius: 4,
-                    fontSize: '11px',
-                    color: '#d46b08'
-                  }}>
-                    لا توجد مخازن متاحة للمبيعات
-                  </div>
-                )}
-              </Col>
-            )}
-            <Col xs={24} sm={12} md={2}>
-              <div style={{ marginBottom: 4, fontWeight: 500 }}>الكمية</div>
-              <Input
-                name="quantity"
-                value={item.quantity}
-                onChange={handleItemChange}
-                placeholder={(() => {
-                  if (!item.itemName) return "الكمية";
-                  const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
-                  if (!currentWarehouse) return "اختر المخزن";
-                  const stockKey = warehouseMode === 'single' ? item.itemName : `${item.itemName}-${currentWarehouse}`;
-                  const stock = itemStocks[stockKey];
-                  return stock !== undefined ? `متاح: ${stock}` : "جاري تحميل الرصيد...";
-                })()}
-                type="number"
-                min={1}
-                style={{  
-                  paddingLeft: 6, 
-                  paddingRight: 6, 
-                  fontSize: 15,
-                  borderColor: (() => {
-                    if (!item.itemName) return undefined;
-                    const currentWarehouse = warehouseMode === 'single' ? quotationData.warehouse : item.warehouseId;
-                    if (!currentWarehouse) return undefined;
-                    const stockKey = warehouseMode === 'single' ? item.itemName : `${item.itemName}-${currentWarehouse}`;
-                    const stock = itemStocks[stockKey];
-                    if (stock !== undefined && stock <= 0) return '#ff4d4f';
-                    return undefined;
-                  })()
-                }}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={3}>
-              <div style={{ marginBottom: 4, fontWeight: 500 }}>الوحدة</div>
-              <Select
-                showSearch
-                value={item.unit}
-                onChange={(value) => setItem({...item, unit: value})}
-                style={{ width: '100%', fontFamily: 'Cairo, sans-serif' }}
-                placeholder="الوحدة"
-                options={units.map(unit => ({ 
-                  label: unit, 
-                  value: unit 
-                }))}
-              />
-            </Col>
-            <Col xs={24} sm={12} md={2}>
-              <div style={{ marginBottom: 4, fontWeight: 500 }}>السعر</div>
-              <Input 
-                name="price"
-                value={item.price} 
-                onChange={handleItemChange} 
-                placeholder="السعر" 
-                type="number" 
-                min={0}
-                step={0.01}
-              />
-            </Col>
-          <Col xs={24} sm={12} md={2}>
-            <div style={{ marginBottom: 4, fontWeight: 500 }}>% الخصم</div>
-            <Input
-              name="discountPercent"
-              value={item.discountPercent}
-              onChange={handleItemChange}
-              placeholder="% الخصم"
-              style={{ fontFamily: 'Cairo', paddingLeft: 4, paddingRight: 4, fontSize: 15 }}
-              type="number"
-              min={0}
-              max={100}
-            />
-          </Col>
-          <Col xs={24} sm={12} md={2}>
-            <div style={{ marginBottom: 4, fontWeight: 500 }}>% الضريبة</div>
-            <Input 
-              name="taxPercent"
-              value={taxRate} 
-              placeholder="% الضريبة" 
-              style={{ fontFamily: 'Cairo',  paddingLeft: 4, paddingRight: 4, fontSize: 15, backgroundColor: '#f5f5f5' }}
-              type="number" 
-              min={0}
-              disabled
-              readOnly
-            />
-          </Col>
-          <Col xs={24} sm={12} md={1}>
-            <div style={{ marginBottom: 4, fontWeight: 500, visibility: 'hidden' }}>
-              {editingItemIndex !== null ? 'تحديث' : 'إضافة'}
-            </div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <Button 
-                type="primary"
-                onClick={handleAddItem}
-                disabled={
-                  !quotationData.branch ||
-                  (warehouseMode !== 'multiple' && !quotationData.warehouse) ||
-                  !quotationData.customerName ||
-                  filterWarehousesForSales(warehouses, quotationData.branch).length === 0
-                }
-                style={{
-                  backgroundColor: editingItemIndex !== null ? '#52c41a' : '#1890ff',
-                  borderColor: editingItemIndex !== null ? '#52c41a' : '#1890ff',
-                  minWidth: editingItemIndex !== null ? 'auto' : '40px'
-                }}
-                title={editingItemIndex !== null ? 'تحديث الصنف المحدد' : 'إضافة صنف جديد'}
-                icon={
-                  editingItemIndex !== null ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8" />
-                    </svg>
-                  )
-                }
-              >
-                {editingItemIndex !== null ? 'تحديث' : ''}
-              </Button>
-              {editingItemIndex !== null && (
-                <Button 
-                  type="default"
-                  onClick={() => {
-                    setEditingItemIndex(null);
-                    setItem({
-                      ...initialItem,
-                      taxPercent: taxRate,
-                      quantity: '1'
-                    });
-                    customMessage.info('تم إلغاء التعديل');
-                  }}
-                  style={{
-                    backgroundColor: '#ff4d4f',
-                    borderColor: '#ff4d4f',
-                    color: '#fff'
-                  }}
-                  title="إلغاء التعديل"
-                  icon={
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  }
-                />
-              )}
-            </div>
-          </Col>
-          </Row>
-
-          {/* Items Table */}
-          <div className="mb-4">
-            <style>{`
-              .custom-items-table .ant-table-thead > tr > th {
-                background: #2463eb8c !important;
-                color: #fff !important;
-                font-weight: bold;
-              }
-              
-              .editing-item-row {
-                background: linear-gradient(135deg, #fef3cd 0%, #fff4cc 100%) !important;
-                border: 2px solid #ffc107 !important;
-                box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3) !important;
-              }
-              
-              .editing-item-row:hover {
-                background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%) !important;
-              }
-              
-              .editing-item-row td {
-                border-color: #ffc107 !important;
-                position: relative;
-              }
-              
-              .editing-item-row td:first-child::before {
-                content: '';
-                position: absolute;
-                left: 0;
-                top: 0;
-                bottom: 0;
-                width: 4px;
-                background: #ffc107;
-              }
-            `}</style>
-            <Table 
-              className="custom-items-table"
-              columns={itemColumns} 
-              dataSource={items} 
-              pagination={false} 
-              rowKey={(record) => `${record.itemNumber}-${record.itemName}-${record.quantity}-${record.price}`}
-              bordered
-              scroll={{ x: true }}
-              size="middle"
-              rowClassName={(record, index) => 
-                editingItemIndex === index ? 'editing-item-row' : ''
-              }
-            />
-          </div>
-
-          {/* Totals */}
-          <Row gutter={16} justify="end" className="mb-4 ">
-            <Col xs={24} sm={12} md={6}>
-              <Card size="small">
-                <div className="flex justify-between">
-                  <span style={{ color: '#2563eb', fontWeight: 600 }}>الإجمالي:</span>
-                  <span className="font-bold" style={{ color: '#2563eb' }}>{totals.total.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ color: '#dc2626', fontWeight: 600 }}>الخصم:</span>
-                  <span className="font-bold" style={{ color: '#dc2626' }}>{(totals.total - totals.afterDiscount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ color: '#ea580c', fontWeight: 600 }}>الإجمالي بعد الخصم:</span>
-                  <span className="font-bold" style={{ color: '#ea580c' }}>{totals.afterDiscount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span style={{ color: '#9333ea', fontWeight: 600 }}>قيمة الضريبة:</span>
-                  <span className="font-bold" style={{ color: '#9333ea' }}>{totals.tax.toFixed(2)}</span>
-                </div>
-                <Divider className="my-2" />
-                <div className="flex justify-between">
-                  <span style={{ color: '#059669', fontWeight: 700 }}>الإجمالي النهائي:</span>
-                  <span className="font-bold text-lg" style={{ color: '#059669' }}>{totals.afterTax.toFixed(2)}</span>
-                </div>
-              </Card>
-            </Col>
-          </Row>
-
-
-
-
-          
-
-
-
-
-          {/* Save Button */}
-          <Row justify="center" gutter={12}>
-            <Col>
-              <Button 
-                type="primary" 
-                size="large" 
-                icon={<SaveOutlined />} 
-                onClick={async () => {
-                  if (Number(totalsDisplay.net) <= 0) {
-                    if (typeof message !== 'undefined' && message.error) {
-                      message.error('لا يمكن حفظ عرض السعر إذا كان الإجمالي النهائي صفر أو أقل');
-                    } else {
-                      alert('لا يمكن حفظ عرض السعر إذا كان الإجمالي النهائي صفر أو أقل');
-                    }
-                    return;
-                  }
-                  
-                  await handleSave();
-                  // تحديث الأصناف بعد الحفظ مباشرة
-                  if (typeof fetchLists === 'function') {
-                    await fetchLists();
-                  }
-                  // بعد الحفظ: توليد رقم فاتورة جديد للفاتورة التالية
-                  const newInvoiceNumber = await generateInvoiceNumberAsync(quotationData.branch, branches);
-                  setQuotationData(prev => ({
-                    ...prev,
-                    invoiceNumber: newInvoiceNumber
-                  }));
-                }}
-                style={{ width: 150, backgroundColor: '#60a5fa', borderColor: '#60a5fa', color: '#fff' }}
-                loading={loading}
-                disabled={items.length === 0}
-              >
-                حفظ عرض السعر 
-              </Button>
-            </Col>
-            <Col>
-              <Button
-                type="default"
-                size="large"
-                icon={
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V2h12v7" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18H5a2 2 0 01-2-2V7a2 2 0 012-2h14a2 2 0 012 2v9a2 2 0 01-2 2h-1" />
-                    <rect x="6" y="14" width="12" height="8" rx="2" />
-                  </svg>
-                }
-                onClick={handlePrint}
-                disabled={loading || !lastSavedQuotation}
-                style={{ width: 150, backgroundColor: '#60a5fa', borderColor: '#60a5fa', color: '#fff' }}
-              >
-                طباعة الفاتورة
-              </Button>
-            </Col>
-            <Col>
-              <Button
-                type="default"
-                size="large"
-                icon={
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h8M8 12h8M8 18h8M4 6h.01M4 12h.01M4 18h.01" />
-                  </svg>
-                }
-                onClick={() => {/* TODO: implement print entry logic */}}
-                disabled={loading}
-                style={{ width: 150, backgroundColor: '#60a5fa', borderColor: '#60a5fa', color: '#fff' }}
-              >
-                طباعة القيد
-              </Button>
-            </Col>
-          </Row>
-
-          {/* سجل الفواتير تمت إزالته بناءً على طلب المستخدم */}
-        </Card>
-      </Spin>
-
-      {/* مودال البحث عن العميل الرسمي */}
-      <Modal
-        open={showCustomerSearch}
-        onCancel={() => {
-          setShowCustomerSearch(false);
-          setCustomerSearchText('');
-        }}
-        footer={null}
-        title={
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between',
-            fontFamily: 'Cairo', 
-            fontWeight: 600,
-            padding: '16px 0',
-            borderBottom: '1px solid #e5e7eb',
-            margin: '-24px -24px 20px -24px',
-            paddingLeft: 24,
-            paddingRight: 24
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ 
-                background: '#f8fafc', 
-                borderRadius: '8px', 
-                padding: 8,
-                border: '1px solid #e2e8f0'
-              }}>
-                <SearchOutlined style={{ color: '#475569', fontSize: 16 }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 600, color: '#1e293b' }}>البحث في قاعدة بيانات العملاء</div>
-                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 400, marginTop: 2 }}>
-                  العثور على العميل المطلوب من خلال معايير البحث المختلفة
-                </div>
-              </div>
-            </div>
-            <div style={{ 
-              background: '#f1f5f9', 
-              borderRadius: '6px', 
-              padding: '4px 8px',
-              fontSize: 11,
-              fontWeight: 500,
-              color: '#475569',
-              border: '1px solid #e2e8f0'
-            }}>
-              {filteredCustomers.length} نتيجة
-            </div>
-          </div>
-        }
-        width={800}
-        styles={{ 
-          body: { 
-            background: '#ffffff', 
-            padding: 0
-          } 
-        }}
-        style={{ top: 60 }}
-        destroyOnClose
-        className="formal-search-modal"
-      >
-        {/* إضافة الأنماط الرسمية */}
-        <style>{`
-          .formal-search-modal .ant-modal-content {
-            border-radius: 8px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            border: 1px solid #e5e7eb;
-          }
-          .formal-search-modal .ant-modal-header {
-            border: none;
-            padding: 0;
-          }
-          .formal-search-modal .ant-modal-body {
-            padding: 0;
-          }
-          .formal-search-input {
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            margin: 20px 24px;
-            padding: 0;
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-          }
-          .formal-customer-card {
-            border-bottom: 1px solid #f1f5f9;
-            padding: 16px 24px;
-            background: white;
-            cursor: pointer;
-            transition: background-color 0.15s ease;
-          }
-          .formal-customer-card:hover {
-            background: #f8fafc;
-          }
-          .formal-customer-card:last-child {
-            border-bottom: none;
-          }
-          .customer-info-grid {
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 16px;
-            align-items: center;
-          }
-          .customer-initial {
-            width: 40px;
-            height: 40px;
-            border-radius: 6px;
-            background: #f1f5f9;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #475569;
-            font-weight: 600;
-            font-size: 14px;
-            border: 1px solid #e2e8f0;
-          }
-          .customer-details {
-            min-width: 0;
-          }
-          .customer-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: #1e293b;
-            margin: 0 0 4px 0;
-            font-family: 'Cairo', sans-serif;
-          }
-          .customer-contact {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            margin-top: 4px;
-          }
-          .contact-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 12px;
-            color: #64748b;
-          }
-          .contact-icon {
-            width: 12px;
-            height: 12px;
-            fill: #94a3b8;
-          }
-          .select-button {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 12px;
-            font-weight: 500;
-            color: #475569;
-            cursor: pointer;
-            transition: all 0.15s ease;
-          }
-          .select-button:hover {
-            background: #f1f5f9;
-            border-color: #cbd5e1;
-            color: #334155;
-          }
-          .search-stats {
-            background: #f8fafc;
-            border-bottom: 1px solid #e5e7eb;
-            padding: 12px 24px;
-            font-size: 12px;
-            color: #64748b;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          .empty-state {
-            text-align: center;
-            padding: 60px 24px;
-            color: #64748b;
-          }
-          .empty-icon {
-            width: 48px;
-            height: 48px;
-            background: #f1f5f9;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 16px;
-            border: 1px solid #e2e8f0;
-          }
-        `}</style>
-
-        {/* حقل البحث الرسمي */}
-        <div className="formal-search-input">
-          <Input
-            placeholder="البحث في العملاء (الاسم، رقم الهاتف، السجل التجاري، الملف الضريبي)"
-            size="large"
-            value={customerSearchText}
-            onChange={(e) => setCustomerSearchText(e.target.value)}
-            style={{ 
-              fontFamily: 'Cairo', 
-              fontSize: 14,
-              border: 'none',
-              boxShadow: 'none',
-              padding: '12px 16px'
-            }}
-            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-            suffix={
-              customerSearchText && (
-                <Button
-                  type="text"
-                  size="small"
-                  icon={
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#94a3b8">
-                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                    </svg>
-                  }
-                  onClick={() => setCustomerSearchText('')}
-                  style={{ padding: '4px', height: 'auto' }}
-                />
-              )
-            }
-          />
-        </div>
-
-        {/* إحصائيات البحث */}
-        <div className="search-stats">
-          <div>
-            إجمالي العملاء: <strong>{customers.length}</strong> | 
-            نتائج البحث: <strong>{filteredCustomers.length}</strong> | 
-            عملاء الشركات: <strong>{customers.filter(c => c.commercialReg).length}</strong>
-          </div>
-          {customerSearchText && (
-            <div>
-              البحث عن: "<strong>{customerSearchText}</strong>"
-            </div>
-          )}
-        </div>
-
-        {/* قائمة النتائج */}
-        <div style={{ maxHeight: 400, overflow: 'auto' }}>
-          {filteredCustomers.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <SearchOutlined style={{ fontSize: 20, color: '#94a3b8' }} />
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#374151' }}>
-                {customerSearchText ? 'لا توجد نتائج مطابقة للبحث' : 'ابدأ في كتابة اسم العميل للبحث'}
-              </div>
-              <div style={{ fontSize: 13, color: '#9ca3af' }}>
-                {customerSearchText ? 
-                  'تأكد من صحة الإملاء أو جرب كلمات بحث أخرى' : 
-                  'يمكنك البحث بالاسم أو رقم الهاتف أو السجل التجاري'
-                }
-              </div>
-            </div>
-          ) : (
-            filteredCustomers.map((customer, index) => (
-              <div
-                key={customer.id || index}
-                className="formal-customer-card"
-                onClick={() => {
-                  setQuotationData({
-                    ...quotationData,
-                    customerName: customer.nameAr || customer.name || customer.nameEn || '',
-                    customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
-                    commercialRecord: customer.commercialReg || '',
-                    taxFile: customer.taxFileNumber || customer.taxFile || ''
-                  });
-                  setShowCustomerSearch(false);
-                  setCustomerSearchText('');
-                  message.success('تم اختيار العميل بنجاح');
-                }}
-              >
-                <div className="customer-info-grid">
-                  {/* الحرف الأول */}
-                  <div className="customer-initial">
-                    {(customer.nameAr || customer.name || 'ع').charAt(0)}
-                  </div>
-                  
-                  {/* تفاصيل العميل */}
-                  <div className="customer-details">
-                    <h4 className="customer-name">
-                      {customer.nameAr || customer.name || customer.nameEn || 'غير محدد'}
-                    </h4>
-                    {customer.nameEn && customer.nameEn !== customer.nameAr && (
-                      <div style={{ 
-                        fontSize: 12, 
-                        color: '#9ca3af',
-                        fontFamily: 'Arial, sans-serif',
-                        marginBottom: 8
-                      }}>
-                        {customer.nameEn}
-                      </div>
-                    )}
-                    
-                    <div className="customer-contact">
-                      {(customer.phone || customer.mobile || customer.phoneNumber) && (
-                        <div className="contact-item">
-                          <svg className="contact-icon" viewBox="0 0 24 24">
-                            <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
-                          </svg>
-                          <span>{customer.phone || customer.mobile || customer.phoneNumber}</span>
-                        </div>
-                      )}
-                      
-                      {customer.commercialReg && (
-                        <div className="contact-item">
-                          <svg className="contact-icon" viewBox="0 0 24 24">
-                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                          </svg>
-                          <span>س.ت: {customer.commercialReg}</span>
-                        </div>
-                      )}
-                      
-                      {(customer.taxFileNumber || customer.taxFile) && (
-                        <div className="contact-item">
-                          <svg className="contact-icon" viewBox="0 0 24 24">
-                            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                          </svg>
-                          <span>م.ض: {customer.taxFileNumber || customer.taxFile}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* زر الاختيار */}
-                  <button
-                    className="select-button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setQuotationData({
-                        ...quotationData,
-                        customerName: customer.nameAr || customer.name || customer.nameEn || '',
-                        customerNumber: customer.phone || customer.mobile || customer.phoneNumber || '',
-                        commercialRecord: customer.commercialReg || '',
-                        taxFile: customer.taxFileNumber || customer.taxFile || ''
-                      });
-                      setShowCustomerSearch(false);
-                      setCustomerSearchText('');
-                      message.success('تم اختيار العميل بنجاح');
-                    }}
-                  >
-                    اختيار
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </Modal>
-
-      {/* مودال الإضافة السريعة للعميل */}
-      <Modal
-        open={showQuickAddCustomer}
-        onCancel={() => {
-          setShowQuickAddCustomer(false);
-          setQuickCustomerForm({ nameAr: '', phone: '' });
-        }}
-        footer={null}
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'Cairo', fontWeight: 700 }}>
-            <span style={{ background: '#f0f9ff', borderRadius: '50%', padding: 8, boxShadow: '0 2px 8px #e0e7ef' }}>
-              <PlusOutlined style={{ color: '#52c41a' }} />
-            </span>
-            إضافة عميل سريع
-          </div>
-        }
-        width={500}
-        styles={{ 
-          body: { 
-            background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', 
-            borderRadius: 16, 
-            padding: 24, 
-            boxShadow: '0 8px 32px rgba(34, 197, 94, 0.15)' 
-          } 
-        }}
-        style={{ top: 120 }}
-        destroyOnClose
-      >
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ 
-            marginBottom: 12, 
-            padding: 12, 
-            background: 'rgba(34, 197, 94, 0.1)', 
-            borderRadius: 8, 
-            textAlign: 'center', 
-            fontWeight: 500, 
-            color: '#16a34a', 
-            fontFamily: 'Cairo', 
-            fontSize: 14,
-            border: '1px solid rgba(34, 197, 94, 0.2)'
-          }}>
-            ⚡ إضافة سريعة - الحقول الأساسية فقط
-          </div>
-        </div>
-
-        <Form
-          layout="vertical"
-          style={{ fontFamily: 'Cairo' }}
-          onFinish={async () => {
-            if (!quickCustomerForm.nameAr.trim()) {
-              message.error('يرجى إدخال اسم العميل');
-              return;
-            }
-            if (!quickCustomerForm.phone.trim()) {
-              message.error('يرجى إدخال رقم الهاتف');
-              return;
-            }
-
-            try {
-              // حفظ العميل في قاعدة البيانات
-              const maxNum = customers
-                .map(c => {
-                  const match = /^c-(\d{4})$/.exec(c.id);
-                  return match ? parseInt(match[1], 10) : 0;
-                })
-                .reduce((a, b) => Math.max(a, b), 0);
-              const nextNum = maxNum + 1;
-              const newId = `c-${nextNum.toString().padStart(4, '0')}`;
-              
-              const docData = {
-                id: newId,
-                nameAr: quickCustomerForm.nameAr.trim(),
-                phone: quickCustomerForm.phone.trim(),
-                businessType: 'فرد', // افتراضي للإضافة السريعة
-                commercialReg: '',
-                taxFileNumber: '',
-                status: 'نشط',
-                createdAt: new Date().toISOString(),
-              };
-              
-              const docRef = await addDoc(collection(db, 'customers'), docData);
-              
-              // بناء بيانات العميل الجديد
-              const newCustomer = {
-                id: docRef.id,
-                ...docData,
-                taxFile: ''
-              };
-
-              // تحديث قائمة العملاء المحلية
-              // setCustomers(prev => [...prev, newCustomer]); // Now handled by hook
-              await fetchBasicData(); // Refresh data from hook
-
-              // تحديد العميل الجديد في الفاتورة
-              setQuotationData({
-                ...quotationData,
-                customerName: newCustomer.nameAr,
-                customerNumber: newCustomer.phone,
-                commercialRecord: '',
-                taxFile: ''
-              });
-
-              customMessage.success('تم إضافة العميل بنجاح وتم تحديد اختياره في الفاتورة!');
-              setShowQuickAddCustomer(false);
-              setQuickCustomerForm({ nameAr: '', phone: '' });
-              
-            } catch (error) {
-              console.error('خطأ في إضافة العميل:', error);
-              message.error('حدث خطأ أثناء إضافة العميل');
-            }
-          }}
-        >
-          <Form.Item
-            label="اسم العميل"
-            required
-            style={{ marginBottom: 16 }}
-          >
-            <Input
-              value={quickCustomerForm.nameAr}
-              onChange={(e) => setQuickCustomerForm({
-                ...quickCustomerForm,
-                nameAr: e.target.value
-              })}
-              placeholder="اسم العميل باللغة العربية"
-              style={{ 
-                fontFamily: 'Cairo', 
-                fontSize: 15,
-                height: 40
-              }}
-              prefix={
-                <UserOutlined style={{ color: '#52c41a' }} />
-              }
-            />
-          </Form.Item>
-
-          <Form.Item
-            label="رقم الهاتف"
-            required
-            style={{ marginBottom: 20 }}
-          >
-            <Input
-              value={quickCustomerForm.phone}
-              onChange={(e) => setQuickCustomerForm({
-                ...quickCustomerForm,
-                phone: e.target.value
-              })}
-              placeholder="رقم الهاتف أو الجوال"
-              style={{ 
-                fontFamily: 'Cairo', 
-                fontSize: 15,
-                height: 40
-              }}
-              prefix={
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#52c41a">
-                  <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
-                </svg>
-              }
-            />
-          </Form.Item>
-
-          <div style={{ 
-            background: 'rgba(34, 197, 94, 0.05)', 
-            padding: 12, 
-            borderRadius: 8, 
-            marginBottom: 20,
-            border: '1px solid rgba(34, 197, 94, 0.2)'
-          }}>
-            <div style={{ 
-              fontSize: 13, 
-              color: '#16a34a', 
-              fontFamily: 'Cairo',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
-            }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="#16a34a">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-              </svg>
-              سيتم إضافة العميل واختياره تلقائياً في الفاتورة
-            </div>
-          </div>
-
-          <Form.Item style={{ marginBottom: 0 }}>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-              <Button
-                onClick={() => {
-                  setShowQuickAddCustomer(false);
-                  setQuickCustomerForm({ nameAr: '', phone: '' });
-                }}
-                style={{ 
-                  fontFamily: 'Cairo',
-                  minWidth: 80,
-                  height: 38
-                }}
-              >
-                إلغاء
-              </Button>
-              <Button
-                type="primary"
-                htmlType="submit"
-                style={{ 
-                  fontFamily: 'Cairo',
-                  minWidth: 100,
-                  fontWeight: 600,
-                  height: 38,
-                  backgroundColor: '#52c41a',
-                  borderColor: '#52c41a'
-                }}
-                icon={<PlusOutlined />}
-              >
-                إضافة واختيار
-              </Button>
-            </div>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-    </div>);
 };
 
 export default AddQuotationPage;

@@ -4,7 +4,7 @@ import { FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/useAuth';
 import { collection, getDocs, addDoc, query, where, orderBy } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider, Tabs } from 'antd';
+import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider, Tabs, Typography } from 'antd';
 import Breadcrumb from "../../components/Breadcrumb";
 import { db } from '@/lib/firebase';
 import { useFinancialYear } from '@/hooks/useFinancialYear';
@@ -177,6 +177,10 @@ const AddQuotationPage: React.FC = () => {
 
   // متغيرات الإكسل
   const [excelFile, setExcelFile] = useState<File | null>(null);
+  
+  // متغيرات التحكم في الحالة
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // البيانات الأساسية
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -204,6 +208,18 @@ const AddQuotationPage: React.FC = () => {
 
   // دوال إدارة الأصناف
   const handleItemSelect = (selectedItemName: string) => {
+    if (!selectedItemName) {
+      // إذا تم مسح الاختيار
+      setItemName('');
+      setItemCode('');
+      setPrice('');
+      setDiscountPercent(0);
+      const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+      setTaxPercent(defaultTaxRate);
+      setUnit('قطعة');
+      return;
+    }
+
     const selectedItem = items.find(item => item.name === selectedItemName);
     
     if (selectedItem) {
@@ -214,7 +230,9 @@ const AddQuotationPage: React.FC = () => {
         setItemCode('');
         setPrice('');
         setDiscountPercent(0);
-        setTaxPercent(0);
+        const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+        setTaxPercent(defaultTaxRate);
+        setUnit('قطعة');
         return;
       }
 
@@ -231,65 +249,169 @@ const AddQuotationPage: React.FC = () => {
       // تعيين الوحدة إذا كانت متوفرة
       if (selectedItem.unit) {
         setUnit(selectedItem.unit);
+      } else {
+        setUnit('قطعة');
       }
+
+      message.success(`تم تحديد الصنف: ${selectedItemName}`);
     }
   };
 
   const handleAddNewItem = () => {
-    const finalUnit = unit && unit.trim() ? unit : "قطعة";
-    if (
-      !itemCode.trim() ||
-      !itemName.trim() ||
-      !finalUnit.trim() ||
-      !quantity || Number(quantity) <= 0 ||
-      !price || Number(price) <= 0
-    ) {
-      return message.error('يرجى إدخال جميع بيانات الصنف بشكل صحيح');
+    // التحقق من صحة البيانات
+    if (!itemCode.trim()) {
+      return message.error('يرجى إدخال كود الصنف');
     }
-    setAddedItems(items => [...items, { itemCode, itemName, quantity, unit: finalUnit, price, discountPercent, taxPercent }]);
+    if (!itemName.trim()) {
+      return message.error('يرجى اختيار اسم الصنف');
+    }
+    if (!quantity || Number(quantity) <= 0) {
+      return message.error('يرجى إدخال كمية صحيحة أكبر من صفر');
+    }
+    if (!price || Number(price) <= 0) {
+      return message.error('يرجى إدخال سعر صحيح أكبر من صفر');
+    }
+
+    const finalUnit = unit && unit.trim() ? unit : "قطعة";
+
+    // التحقق من عدم تكرار الصنف
+    const isDuplicate = addedItems.some(item => 
+      item.itemCode === itemCode.trim() && item.itemName === itemName.trim()
+    );
+
+    if (isDuplicate) {
+      return message.error('هذا الصنف موجود بالفعل في القائمة. يمكنك تعديل الكمية من خلال زر التعديل');
+    }
+
+    // إضافة الصنف
+    const newItem = {
+      itemCode: itemCode.trim(),
+      itemName: itemName.trim(),
+      quantity: quantity,
+      unit: finalUnit,
+      price: price,
+      discountPercent: discountPercent || 0,
+      taxPercent: taxPercent || 0
+    };
+
+    setAddedItems(items => [...items, newItem]);
+    
+    // إعادة تعيين الحقول
     setItemCode('');
     setItemName('');
     setQuantity('1');
-    setUnit('');
+    setUnit('قطعة');
     setPrice('');
     setDiscountPercent(0);
-    setTaxPercent(0);
+    // الحفاظ على نسبة الضريبة من إعدادات الشركة
+    const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+    setTaxPercent(defaultTaxRate);
+
+    message.success(`تم إضافة الصنف "${itemName.trim()}" بنجاح`);
   };
 
   // دوال إدارة الإكسل
   const handleExcelUpload = (info: { file: { status?: string; name?: string; originFileObj?: File } }) => {
     const { file } = info;
+    
     if (file.status === "done") {
       message.success(`${file.name || 'ملف'} تم رفع الملف بنجاح`);
+      
       if (file.originFileObj) {
         setExcelFile(file.originFileObj);
+        
         // قراءة ملف الإكسل وتحويله إلى أصناف
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
-          const data = new Uint8Array(e.target!.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: "array" });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
-          // توقع أن أول صف هو رؤوس الأعمدة أو بيانات مباشرة
-          const items = rows
-            .filter((row: string[]) => Array.isArray(row) && row.length >= 6)
-            .map((row: string[]) => ({
-              itemCode: String(row[0] || ""),
-              itemName: String(row[1] || ""),
-              quantity: String(row[2] || "1"),
-              unit: String(row[3] || "قطعة"),
-              price: String(row[4] || ""),
-              discountPercent: Number(row[5] || 0),
-              taxPercent: 0 // افتراضيًا صفر ويمكن تعديله يدويًا بعد الإضافة
-            }))
-            .filter(item => item.itemCode && item.itemName && item.quantity && item.unit && item.price);
-          if (!items.length) {
-            message.error("لم يتم العثور على أصناف صالحة في الملف");
-            return;
+          try {
+            const data = new Uint8Array(e.target!.result as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: "array" });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+            
+            // تجاهل الصف الأول إذا كان يحتوي على رؤوس الأعمدة
+            const dataRows = rows.slice(1).filter((row: string[]) => Array.isArray(row) && row.length >= 5);
+            
+            if (dataRows.length === 0) {
+              message.error("لم يتم العثور على بيانات صالحة في الملف");
+              return;
+            }
+
+            const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+            
+            const items = dataRows
+              .map((row: string[], index: number) => {
+                try {
+                  const itemCode = String(row[0] || "").trim();
+                  const itemName = String(row[1] || "").trim();
+                  const quantity = String(row[2] || "1").trim();
+                  const unit = String(row[3] || "قطعة").trim();
+                  const price = String(row[4] || "").trim();
+                  const discountPercent = Number(row[5] || 0);
+
+                  // التحقق من صحة البيانات الأساسية
+                  if (!itemCode || !itemName || !quantity || !price) {
+                    console.warn(`تم تجاهل الصف ${index + 2}: بيانات ناقصة`);
+                    return null;
+                  }
+
+                  if (Number(quantity) <= 0 || Number(price) <= 0) {
+                    console.warn(`تم تجاهل الصف ${index + 2}: قيم غير صحيحة`);
+                    return null;
+                  }
+
+                  return {
+                    itemCode,
+                    itemName,
+                    quantity,
+                    unit,
+                    price,
+                    discountPercent: Math.max(0, Math.min(100, discountPercent)), // التأكد من أن الخصم بين 0 و 100
+                    taxPercent: defaultTaxRate
+                  };
+                } catch (error) {
+                  console.warn(`خطأ في معالجة الصف ${index + 2}:`, error);
+                  return null;
+                }
+              })
+              .filter(item => item !== null) as Array<{
+                itemCode: string;
+                itemName: string;
+                quantity: string;
+                unit: string;
+                price: string;
+                discountPercent: number;
+                taxPercent: number;
+              }>;
+
+            if (items.length === 0) {
+              message.error("لم يتم العثور على أصناف صالحة في الملف");
+              return;
+            }
+
+            // التحقق من عدم تكرار الأصناف
+            const existingCodes = new Set(addedItems.map(item => item.itemCode));
+            const newItems = items.filter(item => !existingCodes.has(item.itemCode));
+            const duplicateCount = items.length - newItems.length;
+
+            if (duplicateCount > 0) {
+              message.warning(`تم تجاهل ${duplicateCount} صنف مكرر`);
+            }
+
+            if (newItems.length > 0) {
+              setAddedItems(prev => [...prev, ...newItems]);
+              message.success(`تم إضافة ${newItems.length} صنف من ملف الإكسل بنجاح`);
+            } else {
+              message.warning("جميع الأصناف في الملف موجودة بالفعل");
+            }
+
+          } catch (error) {
+            console.error('خطأ في قراءة ملف الإكسل:', error);
+            message.error("حدث خطأ أثناء قراءة ملف الإكسل. تأكد من صحة تنسيق الملف");
           }
-          setAddedItems(prev => [...prev, ...items]);
         };
+        
         reader.readAsArrayBuffer(file.originFileObj);
       }
     } else if (file.status === "error") {
@@ -297,8 +419,9 @@ const AddQuotationPage: React.FC = () => {
     }
   };
 
-  // دالة الحفظ فقط
-  const handleSave = () => {
+  // دالة الحفظ مع ربط Firebase
+  const handleSave = async () => {
+    // التحقق من صحة البيانات
     if (!quotationData.branch) return message.error('يرجى اختيار الفرع');
     if (!quotationData.warehouse) return message.error('يرجى اختيار المخزن');
     if (!accountType) return message.error('يرجى اختيار نوع الحساب');
@@ -306,31 +429,101 @@ const AddQuotationPage: React.FC = () => {
     if (!quotationData.customerName) return message.error('يرجى إدخال اسم الحساب');
     if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
 
-    // تحويل التواريخ إلى نصوص قبل الحفظ
-    const saveData = {
-      periodRange: [
-        periodRange[0] ? periodRange[0].format('YYYY-MM-DD') : null,
-        periodRange[1] ? periodRange[1].format('YYYY-MM-DD') : null
-      ],
-      quotationNumber: quotationData.quotationNumber,
-      date: quotationData.date,
-      refDate: refDate ? refDate.format('YYYY-MM-DD') : null,
-      branch: quotationData.branch,
-      warehouse: quotationData.warehouse,
-      movementType,
-      accountType,
-      customerNumber: quotationData.customerNumber,
-      customerName: quotationData.customerName,
-      sideType,
-      sideNumber,
-      sideName,
-      operationClass,
-      statement,
-      items: addedItems
-    };
-    console.log('بيانات الحفظ المرسلة إلى :', saveData);
-    message.success('تم حفظ البيانات بنجاح');
-    setAddedItems([]);
+    setSaving(true);
+    
+    try {
+      // حساب الإجماليات
+      const totals = addedItems.reduce(
+        (acc, item) => {
+          const qty = Number(item.quantity) || 0;
+          const price = Number(item.price) || 0;
+          const discount = Number(item.discountPercent) || 0;
+          const tax = Number(item.taxPercent) || 0;
+          
+          const subtotal = qty * price;
+          const discountValue = (subtotal * discount) / 100;
+          const afterDiscount = subtotal - discountValue;
+          const taxValue = (afterDiscount * tax) / 100;
+          const total = afterDiscount + taxValue;
+          
+          acc.subtotal += subtotal;
+          acc.totalDiscount += discountValue;
+          acc.totalTax += taxValue;
+          acc.finalTotal += total;
+          
+          return acc;
+        },
+        { subtotal: 0, totalDiscount: 0, totalTax: 0, finalTotal: 0 }
+      );
+
+      // إعداد بيانات عرض السعر للحفظ
+      const quotationToSave = {
+        quotationNumber: quotationNumber,
+        date: quotationDate.format('YYYY-MM-DD'),
+        validUntil: refDate ? refDate.format('YYYY-MM-DD') : null,
+        branch: quotationData.branch,
+        warehouse: quotationData.warehouse,
+        movementType,
+        accountType,
+        customer: {
+          id: quotationData.customerNumber,
+          name: quotationData.customerName,
+          mobile: customers.find(c => c.id === quotationData.customerNumber)?.mobile || '',
+          taxNumber: customers.find(c => c.id === quotationData.customerNumber)?.taxFileNumber || ''
+        },
+        items: addedItems.map((item, index) => ({
+          itemNumber: index + 1,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          quantity: Number(item.quantity),
+          unit: item.unit,
+          price: Number(item.price),
+          discountPercent: item.discountPercent,
+          discountValue: (Number(item.quantity) * Number(item.price) * item.discountPercent) / 100,
+          taxPercent: item.taxPercent,
+          taxValue: (Number(item.quantity) * Number(item.price) * (1 - item.discountPercent / 100) * item.taxPercent) / 100,
+          total: Number(item.quantity) * Number(item.price) * (1 - item.discountPercent / 100) * (1 + item.taxPercent / 100)
+        })),
+        totals: {
+          subtotal: totals.subtotal,
+          totalDiscount: totals.totalDiscount,
+          afterDiscount: totals.subtotal - totals.totalDiscount,
+          totalTax: totals.totalTax,
+          finalTotal: totals.finalTotal
+        },
+        statement,
+        createdBy: user?.uid,
+        createdByName: user?.displayName || user?.email,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'draft' // حالة المسودة
+      };
+
+      // حفظ في Firebase
+      await addDoc(collection(db, 'quotations'), quotationToSave);
+      
+      message.success('تم حفظ عرض السعر بنجاح');
+      
+      // إعادة تعيين النموذج
+      setAddedItems([]);
+      setQuotationData(prev => ({
+        ...prev,
+        customerNumber: '',
+        customerName: ''
+      }));
+      setStatement('');
+      
+      // توليد رقم عرض سعر جديد
+      if (quotationData.branch) {
+        await generateAndSetQuotationNumber(quotationData.branch);
+      }
+      
+    } catch (error) {
+      console.error('خطأ في حفظ عرض السعر:', error);
+      message.error('حدث خطأ أثناء حفظ عرض السعر');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // دالة الطباعة لعرض السعر
@@ -878,6 +1071,7 @@ const AddQuotationPage: React.FC = () => {
   useEffect(() => {
     const fetchBranches = async () => {
       try {
+        setLoading(true);
         const snapshot = await getDocs(collection(db, 'branches'));
         const branchesData = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -886,6 +1080,9 @@ const AddQuotationPage: React.FC = () => {
         setBranches(branchesData);
       } catch (error) {
         console.error('Error fetching branches:', error);
+        message.error('حدث خطأ في جلب بيانات الفروع');
+      } finally {
+        setLoading(false);
       }
     };
     fetchBranches();
@@ -903,6 +1100,7 @@ const AddQuotationPage: React.FC = () => {
         setWarehouses(warehousesData);
       } catch (error) {
         console.error('Error fetching warehouses:', error);
+        message.error('حدث خطأ في جلب بيانات المخازن');
       }
     };
     fetchWarehouses();
@@ -920,6 +1118,7 @@ const AddQuotationPage: React.FC = () => {
         setCustomers(customersData);
       } catch (error) {
         console.error('Error fetching customers:', error);
+        message.error('حدث خطأ في جلب بيانات العملاء');
       }
     };
     fetchCustomers();
@@ -937,12 +1136,13 @@ const AddQuotationPage: React.FC = () => {
         setItems(itemsData);
       } catch (error) {
         console.error('Error fetching items:', error);
+        message.error('حدث خطأ في جلب بيانات الأصناف');
       }
     };
     fetchItems();
   }, []);
 
-  // جلب بيانات الشركة
+  // جلب بيانات الشركة وتحديث نسبة الضريبة
   useEffect(() => {
     const fetchCompanyData = async () => {
       try {
@@ -952,12 +1152,16 @@ const AddQuotationPage: React.FC = () => {
           setCompanyData(companyDataDoc);
           
           // تحديث نسبة الضريبة الافتراضية
-          if (companyDataDoc.taxRate) {
-            setTaxPercent(parseFloat(companyDataDoc.taxRate));
-          }
+          const defaultTaxRate = companyDataDoc.taxRate ? parseFloat(companyDataDoc.taxRate) : 15;
+          setTaxPercent(defaultTaxRate);
+        } else {
+          // إعداد نسبة ضريبة افتراضية إذا لم توجد بيانات شركة
+          setTaxPercent(15);
         }
       } catch (error) {
         console.error('Error fetching company data:', error);
+        // إعداد نسبة ضريبة افتراضية في حالة الخطأ
+        setTaxPercent(15);
       }
     };
     fetchCompanyData();
@@ -983,12 +1187,20 @@ const AddQuotationPage: React.FC = () => {
     }
   }, [quotationData.branch, warehouses, branches.length, generateAndSetQuotationNumber]);
 
-  // توليد رقم عرض سعر تلقائي عند تحميل البيانات لأول مرة
+  // توليد رقم عرض سعر تلقائي عند تحميل البيانات أو تغيير الفرع
   useEffect(() => {
-    if (branches.length && !quotationNumber && quotationData.branch) {
+    if (branches.length && quotationData.branch) {
       generateAndSetQuotationNumber(quotationData.branch);
     }
-  }, [branches, quotationNumber, quotationData.branch, generateAndSetQuotationNumber]);
+  }, [branches, quotationData.branch, generateAndSetQuotationNumber]);
+
+  // تعيين أول فرع افتراضياً عند تحميل البيانات
+  useEffect(() => {
+    if (branches.length && !quotationData.branch) {
+      const firstBranch = branches[0];
+      setQuotationData(prev => ({ ...prev, branch: firstBranch.id }));
+    }
+  }, [branches, quotationData.branch]);
 
   // جلب بيانات العملاء للمودال
   useEffect(() => {
@@ -1061,11 +1273,48 @@ const AddQuotationPage: React.FC = () => {
     { 
       title: 'إجراءات', 
       key: 'actions', 
-      width: 80, 
+      width: 120, 
       render: (_: unknown, record: ItemRecord, idx: number) => (
-        <Button danger size="small" onClick={() => {
-          setAddedItems(items => items.filter((_, i) => i !== idx));
-        }}>حذف</Button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          <Button 
+            type="default"
+            size="small"
+            onClick={() => {
+              setItemCode(record.itemCode);
+              setItemName(record.itemName);
+              setQuantity(record.quantity);
+              setUnit(record.unit);
+              setPrice(record.price);
+              setDiscountPercent(record.discountPercent);
+              setTaxPercent(record.taxPercent);
+              setActiveTab('new');
+              // حذف الصنف من القائمة ليتم تعديله بعد الحفظ
+              setAddedItems(items => items.filter((_, i) => i !== idx));
+            }}
+            style={{ color: '#2563eb', borderColor: '#2563eb' }}
+          >
+            تعديل
+          </Button>
+          <Button 
+            danger 
+            size="small" 
+            onClick={() => {
+              Modal.confirm({
+                title: 'تأكيد الحذف',
+                content: `هل أنت متأكد من حذف الصنف "${record.itemName}"؟`,
+                okText: 'نعم، احذف',
+                cancelText: 'إلغاء',
+                okType: 'danger',
+                onOk: () => {
+                  setAddedItems(items => items.filter((_, i) => i !== idx));
+                  message.success('تم حذف الصنف بنجاح');
+                }
+              });
+            }}
+          >
+            حذف
+          </Button>
+        </div>
       ) 
     }
   ];
@@ -1083,8 +1332,38 @@ const AddQuotationPage: React.FC = () => {
   };
   const labelStyle = { fontSize: 18, fontWeight: 500 };
 
+  // حساب الإجماليات
+  const totals = addedItems.reduce(
+    (acc, item) => {
+      const qty = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      const discount = Number(item.discountPercent) || 0;
+      const tax = Number(item.taxPercent) || 0;
+      const subtotal = qty * price;
+      const discountValue = (subtotal * discount) / 100;
+      const afterDiscount = subtotal - discountValue;
+      const taxValue = (afterDiscount * tax) / 100;
+      acc.subtotal += subtotal;
+      acc.totalDiscount += discountValue;
+      acc.afterDiscount += afterDiscount;
+      acc.totalTax += taxValue;
+      acc.finalTotal += afterDiscount + taxValue;
+      return acc;
+    },
+    { subtotal: 0, totalDiscount: 0, afterDiscount: 0, totalTax: 0, finalTotal: 0 }
+  );
+
   return (
     <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <Spin size="large" />
+            <div className="mt-4 text-center">جاري تحميل البيانات...</div>
+          </div>
+        </div>
+      )}
+      
       <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
         <div className="flex items-center">
           <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-blue-600 ml-1 sm:ml-3" />
@@ -1433,7 +1712,21 @@ const AddQuotationPage: React.FC = () => {
               </div>
               <div className="flex-1 min-w-[80px] flex flex-col gap-1">
                 <label style={labelStyle}>الكمية</label>
-                <Input type="number" min={1} value={quantity} onChange={e => setQuantity(e.target.value)} placeholder="الكمية" style={{...largeControlStyle, width: '100%'}} size="large" />
+                <Input 
+                  type="number" 
+                  min={0.01} 
+                  step={0.01}
+                  value={quantity} 
+                  onChange={e => {
+                    const value = e.target.value;
+                    if (value === '' || (Number(value) > 0 && Number(value) <= 999999)) {
+                      setQuantity(value);
+                    }
+                  }} 
+                  placeholder="الكمية" 
+                  style={{...largeControlStyle, width: '100%'}} 
+                  size="large" 
+                />
               </div>
               <div className="flex-1 min-w-[100px] flex flex-col gap-1">
                 <label style={labelStyle}>الوحدة</label>
@@ -1450,15 +1743,54 @@ const AddQuotationPage: React.FC = () => {
               </div>
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
                 <label style={labelStyle}>السعر</label>
-                <Input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="السعر" style={{...largeControlStyle, width: '100%'}} size="large" />
+                <Input 
+                  type="number" 
+                  min={0.01} 
+                  step={0.01}
+                  value={price} 
+                  onChange={e => {
+                    const value = e.target.value;
+                    if (value === '' || (Number(value) >= 0 && Number(value) <= 999999)) {
+                      setPrice(value);
+                    }
+                  }} 
+                  placeholder="السعر" 
+                  style={{...largeControlStyle, width: '100%'}} 
+                  size="large" 
+                />
               </div>
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
-                <label style={labelStyle}> الخصم %</label>
-                <Input type="number" min={0} max={100} value={discountPercent} onChange={e => setDiscountPercent(Number(e.target.value))} placeholder="نسبة الخصم %" style={{...largeControlStyle, width: '100%'}} size="large" />
+                <label style={labelStyle}>الخصم %</label>
+                <Input 
+                  type="number" 
+                  min={0} 
+                  max={100} 
+                  step={0.01}
+                  value={discountPercent} 
+                  onChange={e => {
+                    const value = Number(e.target.value);
+                    if (value >= 0 && value <= 100) {
+                      setDiscountPercent(value);
+                    }
+                  }} 
+                  placeholder="نسبة الخصم %" 
+                  style={{...largeControlStyle, width: '100%'}} 
+                  size="large" 
+                />
               </div>
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
-                <label style={labelStyle}> الضريبة %</label>
-                <Input type="number" min={0} max={100} value={taxPercent} onChange={e => setTaxPercent(Number(e.target.value))} placeholder="نسبة الضريبة %" style={{...largeControlStyle, width: '100%'}} size="large" disabled />
+                <label style={labelStyle}>الضريبة % (تلقائي)</label>
+                <Input 
+                  type="number" 
+                  min={0} 
+                  max={100} 
+                  value={taxPercent} 
+                  placeholder={`نسبة الضريبة ${companyData.taxRate || '15'}%`} 
+                  style={{...largeControlStyle, width: '100%', backgroundColor: '#f5f5f5'}} 
+                  size="large" 
+                  disabled 
+                  title={`نسبة الضريبة الافتراضية من إعدادات الشركة: ${companyData.taxRate || '15'}%`}
+                />
               </div>
               <div className="flex-1 min-w-[120px] flex flex-col gap-1 justify-end">
                 <label style={{ visibility: 'hidden', height: 0 }}>إضافة الصنف</label>
@@ -1467,74 +1799,62 @@ const AddQuotationPage: React.FC = () => {
             </div>
             {/* جدول الأصناف المضافة */}
             <div className="mt-8">
-              <Table
-                dataSource={addedItems}
-                columns={itemColumns}
-                rowKey={(record, idx) => idx?.toString() || '0'}
-                pagination={false}
-                bordered
-                locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
-              />
-              {/* الإجماليات */}
-              <div style={{
-                marginTop: 24,
-                fontSize: 15,
-                fontWeight: 700,
-                background: '#fff',
-                borderRadius: 16,
-                padding: '18px 32px',
-                border: '2px solid #e5e7eb',
-                boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
-                maxWidth: 328,
-                marginRight: 'auto',
-                marginLeft: 0,
-                direction: 'rtl',
-                textAlign: 'right',
-                lineHeight: 1.7
-
-              }}>
-                <div style={{ color: '#2563eb' }}>
-                  <span style={{ marginRight: 8 }}>الإجمالي:</span>
-                  <span style={{ fontWeight: 900 }}>
-                    {addedItems.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price)), 0).toFixed(2)}
-                  </span>
+              {addedItems.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                  <div className="text-gray-500 text-lg mb-2">لا توجد أصناف مضافة بعد</div>
+                  <div className="text-gray-400 text-sm">قم بإضافة الأصناف أولاً لعرض الجدول والإجماليات</div>
                 </div>
-                <div style={{ color: '#dc2626' }}>
-                  <span style={{ marginRight: 8 }}>الخصم:</span>
-                  <span style={{ fontWeight: 900 }}>
-                    {addedItems.reduce((sum, item) => sum + ((Number(item.quantity) * Number(item.price) * Number(item.discountPercent || 0)) / 100), 0).toFixed(2)}
-                  </span>
-                </div>
-                <div style={{ color: '#ea580c' }}>
-                                    <span style={{ marginRight: 8 }}>الإجمالي بعد الخصم:</span>
-
-                  <span style={{ fontWeight: 900 }}>
-                    {addedItems.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent || 0) / 100)), 0).toFixed(2)}
-                  </span>
-                </div>
-                <div style={{ color: '#a21caf' }}>
-                                   <span style={{ marginRight: 8 }}>قيمة الضريبة:</span>
-
-                  <span style={{ fontWeight: 900 }}>
-                    {addedItems.reduce((sum, item) => {
-                      const afterDiscount = Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent || 0) / 100);
-                      return sum + (afterDiscount * Number(item.taxPercent || 0) / 100);
-                    }, 0).toFixed(2)}
-                  </span>
-                </div>
-                <hr style={{ margin: '16px 0', borderTop: '2px solid #e5e7eb' }} />
-                <div style={{ color: '#16a34a', fontWeight: 900, fontSize: 20 }}>
-                                   <span style={{ marginRight: 8, fontWeight: 700, fontSize: 20 }}>الإجمالي النهائي:</span>
-
-                  <span>
-                    {addedItems.reduce((sum, item) => {
-                      const afterDiscount = Number(item.quantity) * Number(item.price) * (1 - Number(item.discountPercent || 0) / 100);
-                      const tax = (afterDiscount * Number(item.taxPercent || 0) / 100);
-                      return sum + afterDiscount + tax;
-                    }, 0).toFixed(2)}
-                  </span>
-                </div>
-              </div>
+              ) : (
+                <>
+                  <Table
+                    dataSource={addedItems}
+                    columns={itemColumns}
+                    rowKey={(record, idx) => idx?.toString() || '0'}
+                    pagination={false}
+                    bordered
+                    locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+                  />
+                  {/* الإجماليات */}
+                  <div style={{
+                    marginTop: 24,
+                    fontSize: 16,
+                    fontWeight: 700,
+                    background: '#fff',
+                    borderRadius: 16,
+                    padding: '18px 32px',
+                    border: '2px solid #e5e7eb',
+                    boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                    maxWidth: 350,
+                    marginRight: 'auto',
+                    marginLeft: 0,
+                    direction: 'rtl',
+                    textAlign: 'right',
+                    lineHeight: 1.7
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#2563eb', fontWeight: 700, fontSize: 17 }}>الإجمالي:</span>
+                      <span style={{ color: '#2563eb', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#e53935', fontWeight: 700, fontSize: 17 }}>الخصم:</span>
+                      <span style={{ color: '#e53935', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.totalDiscount.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#fb8c00', fontWeight: 700, fontSize: 17 }}>الإجمالي بعد الخصم:</span>
+                      <span style={{ color: '#fb8c00', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{(totals.subtotal - totals.totalDiscount).toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#8e24aa', fontWeight: 700, fontSize: 17 }}>قيمة الضريبة:</span>
+                      <span style={{ color: '#8e24aa', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.totalTax.toFixed(2)}</span>
+                    </div>
+                    <hr style={{ margin: '16px 0', borderTop: '2px solid #e5e7eb' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
+                      <span style={{ color: '#2e7d32', fontWeight: 900, fontSize: 18 }}>الإجمالي النهائي:</span>
+                      <span style={{ color: '#2e7d32', fontWeight: 900, fontSize: 22, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{(totals.subtotal - totals.totalDiscount + totals.totalTax).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </TabPane>
           
@@ -1568,14 +1888,62 @@ const AddQuotationPage: React.FC = () => {
 
             {/* جدول الأصناف المضافة */}
             <div className="mt-8">
-              <Table
-                dataSource={addedItems}
-                columns={itemColumns}
-                rowKey={(record, idx) => idx?.toString() || '0'}
-                pagination={false}
-                bordered
-                locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
-              />
+              {addedItems.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                  <div className="text-gray-500 text-lg mb-2">لا توجد أصناف مضافة بعد</div>
+                  <div className="text-gray-400 text-sm">قم برفع ملف الإكسل أولاً لعرض الجدول والإجماليات</div>
+                </div>
+              ) : (
+                <>
+                  <Table
+                    dataSource={addedItems}
+                    columns={itemColumns}
+                    rowKey={(record, idx) => idx?.toString() || '0'}
+                    pagination={false}
+                    bordered
+                    locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+                  />
+                  {/* الإجماليات */}
+                  <div style={{
+                    marginTop: 24,
+                    fontSize: 16,
+                    fontWeight: 700,
+                    background: '#fff',
+                    borderRadius: 16,
+                    padding: '18px 32px',
+                    border: '2px solid #e5e7eb',
+                    boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                    maxWidth: 350,
+                    marginRight: 'auto',
+                    marginLeft: 0,
+                    direction: 'rtl',
+                    textAlign: 'right',
+                    lineHeight: 1.7
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#2563eb', fontWeight: 700, fontSize: 17 }}>الإجمالي:</span>
+                      <span style={{ color: '#2563eb', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#e53935', fontWeight: 700, fontSize: 17 }}>الخصم:</span>
+                      <span style={{ color: '#e53935', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.totalDiscount.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#fb8c00', fontWeight: 700, fontSize: 17 }}>الإجمالي بعد الخصم:</span>
+                      <span style={{ color: '#fb8c00', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{(totals.subtotal - totals.totalDiscount).toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: '#8e24aa', fontWeight: 700, fontSize: 17 }}>قيمة الضريبة:</span>
+                      <span style={{ color: '#8e24aa', fontWeight: 700, fontSize: 20, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{totals.totalTax.toFixed(2)}</span>
+                    </div>
+                    <hr style={{ margin: '16px 0', borderTop: '2px solid #e5e7eb' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
+                      <span style={{ color: '#2e7d32', fontWeight: 900, fontSize: 18 }}>الإجمالي النهائي:</span>
+                      <span style={{ color: '#2e7d32', fontWeight: 900, fontSize: 22, minWidth: 70, textAlign: 'left', display: 'inline-block' }}>{(totals.subtotal - totals.totalDiscount + totals.totalTax).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </TabPane>
         </Tabs>
@@ -1586,6 +1954,8 @@ const AddQuotationPage: React.FC = () => {
             type="primary" 
             size="large" 
             onClick={handleSave}
+            loading={saving}
+            disabled={saving || !addedItems.length}
             style={{
               height: 48,
               fontSize: 18,
@@ -1594,14 +1964,15 @@ const AddQuotationPage: React.FC = () => {
               backgroundColor: '#1890ff',
               borderColor: '#1890ff'
             }}
-            icon={<SaveOutlined />}
+            icon={!saving && <SaveOutlined />}
           >
-            حفظ
+            {saving ? 'جاري الحفظ...' : 'حفظ'}
           </Button>
           <Button
             type="default"
             size="large"
             onClick={handlePrint}
+            disabled={saving || !addedItems.length}
             style={{
               height: 48,
               fontSize: 18,
