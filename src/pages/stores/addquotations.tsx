@@ -553,19 +553,28 @@ const AddQuotationPage: React.FC = () => {
           mobile: customers.find(c => c.id === quotationData.customerNumber)?.mobile || '',
           taxNumber: customers.find(c => c.id === quotationData.customerNumber)?.taxFileNumber || ''
         },
-        items: addedItems.map((item, index) => ({
-          itemNumber: index + 1,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          quantity: Number(item.quantity),
-          unit: item.unit,
-          price: Number(item.price),
-          discountPercent: item.discountPercent,
-          discountValue: (Number(item.quantity) * Number(item.price) * item.discountPercent) / 100,
-          taxPercent: item.taxPercent,
-          taxValue: (Number(item.quantity) * Number(item.price) * (1 - item.discountPercent / 100) * item.taxPercent) / 100,
-          total: Number(item.quantity) * Number(item.price) * (1 - item.discountPercent / 100) * (1 + item.taxPercent / 100)
-        })),
+        items: addedItems.map((item, index) => {
+          console.log('حفظ عرض السعر - معلومات الصنف:', {
+            itemName: item.itemName,
+            itemCode: item.itemCode,
+            index: index,
+            usingItemCodeAsItemNumber: true
+          });
+          
+          return {
+            itemNumber: item.itemCode, // استخدام كود الصنف الفعلي بدلاً من الترقيم التسلسلي
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            quantity: Number(item.quantity),
+            unit: item.unit,
+            price: Number(item.price),
+            discountPercent: item.discountPercent,
+            discountValue: (Number(item.quantity) * Number(item.price) * item.discountPercent) / 100,
+            taxPercent: item.taxPercent,
+            taxValue: (Number(item.quantity) * Number(item.price) * (1 - item.discountPercent / 100) * item.taxPercent) / 100,
+            total: Number(item.quantity) * Number(item.price) * (1 - item.discountPercent / 100) * (1 + item.taxPercent / 100)
+          };
+        }),
         totals: {
           subtotal: totals.subtotal,
           totalDiscount: totals.totalDiscount,

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Table, Select, DatePicker, Button, Input, Card, Row, Col, Statistic, Modal, Popconfirm, message, Select as AntdSelect } from 'antd';
 import { SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { TableOutlined, PrinterOutlined, FileTextOutlined } from '@ant-design/icons';
-import { Building2 } from 'lucide-react';
+import { Building2, FileText } from 'lucide-react';
 import dayjs, { Dayjs } from 'dayjs';
 import { useFinancialYear } from '@/hooks/useFinancialYear';
 import { fetchBranches, Branch } from '@/lib/branches';
@@ -32,6 +32,22 @@ interface QuotationRecord {
   status: string;
   movementType: string;
   accountType: string;
+  items?: QuotationItem[]; // إضافة حقل العناصر لنقل بيانات المنتجات للفاتورة
+  invoiceCreated?: boolean; // لتتبع ما إذا تم إنشاء فاتورة من عرض السعر
+  invoiceId?: string; // رقم الفاتورة المرتبطة بعرض السعر
+}
+
+interface QuotationItem {
+  itemNumber?: string;
+  itemName?: string;
+  quantity?: number;
+  unit?: string;
+  price?: number;
+  discountPercent?: number;
+  discountValue?: number;
+  taxPercent?: number;
+  taxValue?: number;
+  total?: number;
 }
 
 interface Customer {
@@ -258,7 +274,10 @@ const Quotations: React.FC = () => {
           warehouse: data.warehouse || '',
           status: isExpired ? 'منتهي الصلاحية' : 'نشط',
           movementType: data.movementType || 'عرض سعر',
-          accountType: data.accountType || 'عميل'
+          accountType: data.accountType || 'عميل',
+          items: data.items || [], // إضافة الأصناف من عرض السعر
+          invoiceCreated: data.invoiceCreated || false, // حالة إنشاء الفاتورة
+          invoiceId: data.invoiceId || '' // رقم الفاتورة المرتبطة
         };
 
         quotationsData.push(quotation);
@@ -416,6 +435,65 @@ const Quotations: React.FC = () => {
         handleDelete(id);
       },
     });
+  };
+
+  // إنشاء فاتورة من عرض السعر
+  const handleCreateInvoice = async (quotation: QuotationRecord) => {
+    try {
+      // التحقق من وجود فاتورة مرتبطة بالفعل
+      if (quotation.invoiceCreated) {
+        message.warning('تم إنشاء فاتورة من هذا العرض مسبقاً');
+        return;
+      }
+
+      // إعداد بيانات عرض السعر للنقل إلى صفحة الفاتورة
+      const quotationData = {
+        quotationId: quotation.id,
+        quotationNumber: quotation.quotationNumber,
+        customerName: quotation.customerName,
+        customerPhone: quotation.customerPhone,
+        customerNumber: quotation.customerNumber,
+        branchId: quotation.branchId,
+        branchName: quotation.branchName,
+        paymentMethod: quotation.paymentMethod,
+        warehouse: quotation.warehouse,
+        items: quotation.items || [],
+        amount: quotation.amount,
+        date: quotation.date
+      };
+
+      // حفظ بيانات عرض السعر في localStorage للنقل إلى صفحة الفاتورة
+      localStorage.setItem('quotationData', JSON.stringify(quotationData));
+      
+      // التوجه إلى صفحة إنشاء الفاتورة
+      navigate('/management/sale');
+      window.scrollTo(0, 0);
+      
+      message.success('تم التوجه إلى صفحة إنشاء الفاتورة');
+    } catch (error) {
+      console.error('خطأ في إنشاء الفاتورة:', error);
+      message.error('حدث خطأ في إنشاء الفاتورة');
+    }
+  };
+
+  // تحديث حالة عرض السعر بعد إنشاء الفاتورة
+  const updateQuotationStatus = async (quotationId: string, invoiceId: string) => {
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      
+      await updateDoc(doc(db, 'quotations', quotationId), {
+        invoiceCreated: true,
+        invoiceId: invoiceId,
+        status: 'محول إلى فاتورة'
+      });
+      
+      message.success('تم تحديث حالة عرض السعر');
+      fetchQuotationsData(); // إعادة تحديث البيانات
+    } catch (error) {
+      console.error('خطأ في تحديث حالة عرض السعر:', error);
+      message.error('حدث خطأ في تحديث حالة عرض السعر');
+    }
   };
 
   // دالة تصدير البيانات إلى ملف Excel
@@ -605,31 +683,58 @@ const Quotations: React.FC = () => {
       title: 'الحالة',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
-      render: (status: string) => (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-          status === 'نشط' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-        }`}>
-          {status}
-        </span>
+      width: 120,
+      render: (status: string, record: QuotationRecord) => (
+        <div className="flex flex-col gap-1">
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+            status === 'نشط' ? 'bg-green-100 text-green-800' : 
+            status === 'محول إلى فاتورة' ? 'bg-blue-100 text-blue-800' :
+            'bg-red-100 text-red-800'
+          }`}>
+            {status}
+          </span>
+          {record.invoiceCreated && (
+            <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+              تم إنشاء فاتورة
+            </span>
+          )}
+        </div>
       ),
     },
     {
       title: 'الإجراءات',
       key: 'actions',
-      width: 80,
+      width: 120,
       render: (_: unknown, record: QuotationRecord) => (
-        <div className="flex gap-2">
+        <div className="flex gap-1">
+          {/* زر إنشاء فاتورة */}
           <Button
             type="text"
             size="small"
-            icon={<EditOutlined style={{ color: '#2563eb', fontSize: 18 }} />}
-            onClick={() => {
-              navigate(`/stores/quotations/edit/${record.id}`);
-              window.scrollTo(0, 0);
-            }}
-            className="hover:bg-blue-100"
+            title={record.invoiceCreated ? 'تم إنشاء فاتورة بالفعل' : 'إنشاء فاتورة'}
+            icon={<FileText style={{ color: record.invoiceCreated ? '#999' : '#52c41a', fontSize: 16 }} />}
+            onClick={() => handleCreateInvoice(record)}
+            disabled={record.invoiceCreated}
+            className={record.invoiceCreated ? "hover:bg-gray-100" : "hover:bg-green-100"}
           />
+          
+          {/* زر التعديل - يتم تعطيله إذا تم إنشاء فاتورة */}
+          <Button
+            type="text"
+            size="small"
+            title={record.invoiceCreated ? 'لا يمكن التعديل بعد إنشاء الفاتورة' : 'تعديل'}
+            icon={<EditOutlined style={{ color: record.invoiceCreated ? '#999' : '#2563eb', fontSize: 16 }} />}
+            onClick={() => {
+              if (!record.invoiceCreated) {
+                navigate(`/stores/quotations/edit/${record.id}`);
+                window.scrollTo(0, 0);
+              }
+            }}
+            disabled={record.invoiceCreated}
+            className={record.invoiceCreated ? "hover:bg-gray-100" : "hover:bg-blue-100"}
+          />
+          
+          {/* زر الحذف - متاح دائماً */}
           <Popconfirm
             title="تأكيد الحذف"
             description={`هل أنت متأكد من حذف عرض السعر رقم ${record.quotationNumber}؟`}
@@ -642,7 +747,8 @@ const Quotations: React.FC = () => {
               type="text"
               danger
               size="small"
-              icon={<DeleteOutlined style={{ color: '#f5222d', fontSize: 18 }} />}
+              title="حذف"
+              icon={<DeleteOutlined style={{ color: '#f5222d', fontSize: 16 }} />}
               className="hover:bg-red-100"
             />
           </Popconfirm>

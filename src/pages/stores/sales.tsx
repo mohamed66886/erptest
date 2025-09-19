@@ -12,6 +12,13 @@ import { FinancialYear } from '@/services/financialYearsService';
 import { fetchCashBoxes } from '../../services/cashBoxesService';
 import { fetchBankAccounts } from '../../services/bankAccountsService';
 
+// Extend Window interface to include quotationId
+declare global {
+  interface Window {
+    quotationId?: string;
+  }
+}
+
 // Lazy load heavy components
 const ItemSelect = lazy(() => import('@/components/ItemSelect'));
 const CustomerSelect = lazy(() => import('@/components/CustomerSelect'));
@@ -411,6 +418,25 @@ function getValidDateForFinancialYear(financialYear: FinancialYear | null): stri
 function calculateDueDate(invoiceDate: string): string {
   if (!invoiceDate) return '';
   return dayjs(invoiceDate).add(12, 'day').format('YYYY-MM-DD');
+}
+
+// دالة تحديث حالة عرض السعر بعد إنشاء الفاتورة
+async function updateQuotationAfterInvoiceCreation(quotationId: string, invoiceId: string): Promise<void> {
+  try {
+    const { doc, updateDoc } = await import('firebase/firestore');
+    
+    await updateDoc(doc(db, 'quotations', quotationId), {
+      invoiceCreated: true,
+      invoiceId: invoiceId,
+      status: 'محول إلى فاتورة',
+      convertedAt: new Date().toISOString()
+    });
+    
+    console.log('تم تحديث حالة عرض السعر بنجاح');
+  } catch (error) {
+    console.error('خطأ في تحديث حالة عرض السعر:', error);
+    // لا نريد إيقاف العملية إذا فشل تحديث عرض السعر
+  }
 }
 
 const SalesPage: React.FC = () => {
@@ -1293,6 +1319,120 @@ interface SavedInvoice {
     }
   }, [currentFinancialYear, calculateDueDate]);
 
+  // تحديث الإجماليات مع جمع الضريبة
+  const updateTotals = useCallback((itemsList: InvoiceItem[]) => {
+    let totalTax = 0;
+    const calculated = itemsList.reduce((acc, item) => {
+      const lineTotal = item.total || 0;
+      const discount = item.discountValue || 0;
+      const tax = item.taxValue || 0;
+      totalTax += tax;
+      return {
+        afterDiscount: acc.afterDiscount + (lineTotal - discount),
+        afterTax: acc.afterTax + (lineTotal - discount + tax),
+        total: acc.total + lineTotal
+      };
+    }, { afterDiscount: 0, afterTax: 0, total: 0 });
+    setTotals({
+      afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
+      afterTax: parseFloat(calculated.afterTax.toFixed(2)),
+      total: parseFloat(calculated.total.toFixed(2)),
+      tax: parseFloat(totalTax.toFixed(2))
+    });
+  }, []);
+
+  // التحقق من بيانات عرض السعر عند تحميل الصفحة
+  useEffect(() => {
+    const quotationData = localStorage.getItem('quotationData');
+    if (quotationData) {
+      try {
+        const data = JSON.parse(quotationData);
+        
+        // تحديث بيانات الفاتورة بناءً على عرض السعر
+        setInvoiceData(prev => ({
+          ...prev,
+          customerName: data.customerName || '',
+          customerNumber: data.customerNumber || '',
+          branch: data.branchId || '',
+          warehouse: data.warehouse || '',
+          paymentMethod: data.paymentMethod || '',
+          date: getTodayString() // استخدام تاريخ اليوم للفاتورة الجديدة
+        }));
+
+        // تحديث الأصناف من عرض السعر
+        if (data.items && Array.isArray(data.items)) {
+          const quotationItems = data.items.map((item: InvoiceItem, index: number) => ({
+            ...item,
+            key: index.toString()
+          }));
+          setItems(quotationItems);
+          
+          // حساب الإجماليات من أصناف عرض السعر
+          setTimeout(() => {
+            updateTotals(quotationItems);
+          }, 100);
+        }
+
+        // توليد رقم فاتورة جديد بناءً على الفرع
+        if (data.branchId && branches.length > 0) {
+          setTimeout(async () => {
+            try {
+              const newInvoiceNumber = await generateInvoiceNumberAsync(data.branchId, branches);
+              setInvoiceData(prev => ({
+                ...prev,
+                invoiceNumber: newInvoiceNumber
+              }));
+            } catch (error) {
+              console.error('خطأ في توليد رقم الفاتورة:', error);
+            }
+          }, 200);
+        }
+
+        // حفظ معرف عرض السعر للتحديث لاحقاً
+        (window as Window & { quotationId?: string }).quotationId = data.quotationId;
+
+        message.success(`تم تحميل بيانات عرض السعر رقم ${data.quotationNumber}`);
+        
+        // مسح البيانات من localStorage بعد الاستخدام
+        localStorage.removeItem('quotationData');
+        
+      } catch (error) {
+        console.error('خطأ في تحميل بيانات عرض السعر:', error);
+        message.error('حدث خطأ في تحميل بيانات عرض السعر');
+        localStorage.removeItem('quotationData');
+      }
+    }
+  }, [branches, updateTotals]); // إضافة dependencies المطلوبة
+
+  // توليد رقم فاتورة جديد عند تغيير الفرع
+  useEffect(() => {
+    if (invoiceData.branch && branches.length > 0) {
+      const generateNewInvoiceNumber = async () => {
+        try {
+          const newInvoiceNumber = await generateInvoiceNumberAsync(invoiceData.branch, branches);
+          setInvoiceData(prev => ({
+            ...prev,
+            invoiceNumber: newInvoiceNumber
+          }));
+        } catch (error) {
+          console.error('خطأ في توليد رقم الفاتورة:', error);
+        }
+      };
+      
+      generateNewInvoiceNumber();
+    }
+  }, [invoiceData.branch, branches]); // مراقبة تغيير الفرع والفروع
+
+  // حساب الإجماليات تلقائياً عند تغيير الأصناف
+  useEffect(() => {
+    if (items.length > 0) {
+      updateTotals(items);
+    } else {
+      // إذا لم تكن هناك أصناف، إعادة تعيين الإجماليات
+      setTotals({ afterDiscount: 0, afterTax: 0, total: 0, tax: 0 });
+    }
+  }, [items, updateTotals]); // تبسيط dependency array
+
   // دالة لجلب رصيد صنف واحد في مخزن محدد (للاستخدام في حالة المخازن المتعددة)
   const fetchSingleItemStock = async (itemName: string, warehouseId: string): Promise<number> => {
     if (!itemName || !warehouseId) return 0;
@@ -1527,6 +1667,87 @@ interface SavedInvoice {
     console.log('الفرع المحدد حالياً:', invoiceData.branch);
   }, [branches, invoiceData.branch]);
 
+  // التحقق من بيانات عرض السعر عند تحميل الصفحة
+  useEffect(() => {
+    const checkQuotationData = () => {
+      try {
+        const savedQuotationData = localStorage.getItem('quotationData');
+        if (savedQuotationData) {
+          const quotationData = JSON.parse(savedQuotationData);
+          
+          // تحديث بيانات الفاتورة ببيانات عرض السعر
+          setInvoiceData(prev => ({
+            ...prev,
+            customerName: quotationData.customerName || '',
+            customerNumber: quotationData.customerNumber || '',
+            branch: quotationData.branchId || '',
+            warehouse: quotationData.warehouse || '',
+            paymentMethod: quotationData.paymentMethod || '',
+            date: quotationData.date || prev.date
+          }));
+
+          // إضافة الأصناف من عرض السعر إذا كانت موجودة
+          if (quotationData.items && Array.isArray(quotationData.items) && quotationData.items.length > 0) {
+            const mappedItems = quotationData.items.map((quotationItem: {
+              itemNumber?: string;
+              itemName?: string;
+              quantity?: number;
+              unit?: string;
+              price?: number;
+              discountPercent?: number;
+              discountValue?: number;
+              taxPercent?: number;
+              taxValue?: number;
+              total?: number;
+            }) => {
+              // البحث عن الصنف في قائمة الأصناف للحصول على الكود الصحيح
+              const foundItem = itemNames.find(item => item.name === quotationItem.itemName);
+              const correctItemCode = foundItem ? (foundItem.itemCode || foundItem.id || foundItem.numericId || '') : (quotationItem.itemNumber || '');
+              
+              console.log('تصحيح كود الصنف من عرض السعر:', {
+                itemName: quotationItem.itemName,
+                originalItemNumber: quotationItem.itemNumber,
+                foundItem: foundItem,
+                correctItemCode: correctItemCode
+              });
+              
+              return {
+                itemNumber: correctItemCode,
+                itemName: quotationItem.itemName || '',
+                quantity: String(quotationItem.quantity || ''),
+                unit: quotationItem.unit || 'قطعة',
+                price: String(quotationItem.price || ''),
+                discountPercent: String(quotationItem.discountPercent || '0'),
+                discountValue: quotationItem.discountValue || 0,
+                taxPercent: String(quotationItem.taxPercent || taxRate),
+                taxValue: quotationItem.taxValue || 0,
+                total: quotationItem.total || 0,
+                isNewItem: false
+              };
+            });
+            setItems(mappedItems);
+          }
+
+          // حفظ معرف عرض السعر لاستخدامه عند الحفظ
+          window.quotationId = quotationData.quotationId;
+          
+          // إزالة البيانات من localStorage
+          localStorage.removeItem('quotationData');
+          
+          message.success(`تم تحميل بيانات عرض السعر رقم ${quotationData.quotationNumber}`);
+        }
+      } catch (error) {
+        console.error('خطأ في تحميل بيانات عرض السعر:', error);
+        localStorage.removeItem('quotationData'); // تنظيف البيانات في حالة الخطأ
+      }
+    };
+
+    // التحقق بعد تحميل البيانات الأساسية
+    if (branches.length > 0 && paymentMethods.length > 0) {
+      checkQuotationData();
+    }
+  }, [branches.length, paymentMethods.length, taxRate, itemNames]);
+
   const handleInvoiceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInvoiceData({ ...invoiceData, [e.target.name]: e.target.value });
   };
@@ -1612,6 +1833,14 @@ interface SavedInvoice {
 
     const selected = possibleItems[0];
     
+    console.log('Selected item for code:', {
+      selected,
+      itemCode: selected?.itemCode,
+      id: selected?.id,
+      numericId: selected?.numericId,
+      currentItemNumber: item.itemNumber
+    });
+    
     // فحص المخزون والسماح بالسالب
     if (!selected.allowNegative) {
       // فحص الكمية المتاحة في المخزون
@@ -1635,7 +1864,7 @@ interface SavedInvoice {
 
     const newItem: InvoiceItem & { warehouseId?: string; mainCategory?: string; cost?: number } = {
       ...item,
-      itemNumber: item.itemNumber || 'N/A',
+      itemNumber: selected?.itemCode || selected?.id || selected?.numericId || item.itemNumber || 'N/A',
       taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة
       discountValue,
       taxValue,
@@ -1664,26 +1893,25 @@ interface SavedInvoice {
     updateTotals(newItems);
   };
 
-  // تحديث الإجماليات مع جمع الضريبة
-  const updateTotals = (itemsList: InvoiceItem[]) => {
-    let totalTax = 0;
-    const calculated = itemsList.reduce((acc, item) => {
-      const lineTotal = item.total || 0;
-      const discount = item.discountValue || 0;
-      const tax = item.taxValue || 0;
-      totalTax += tax;
-      return {
-        afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount + tax),
-        total: acc.total + lineTotal
-      };
-    }, { afterDiscount: 0, afterTax: 0, total: 0 });
-    setTotals({
-      afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
-      afterTax: parseFloat(calculated.afterTax.toFixed(2)),
-      total: parseFloat(calculated.total.toFixed(2)),
-      tax: parseFloat(totalTax.toFixed(2))
-    });
+  // دالة تحديث حالة عرض السعر بعد إنشاء الفاتورة
+  const updateQuotationAfterInvoiceCreation = async (invoiceId: string) => {
+    const quotationId = (window as Window & { quotationId?: string }).quotationId;
+    if (!quotationId) return;
+
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'quotations', quotationId), {
+        invoiceCreated: true,
+        invoiceId: invoiceId,
+        status: 'محول إلى فاتورة'
+      });
+      
+      console.log('تم تحديث حالة عرض السعر بنجاح');
+      // مسح معرف عرض السعر من الذاكرة
+      delete (window as Window & { quotationId?: string }).quotationId;
+    } catch (error) {
+      console.error('خطأ في تحديث حالة عرض السعر:', error);
+    }
   };
 
   const handleSave = async () => {
@@ -1759,7 +1987,11 @@ interface SavedInvoice {
     try {
       // حفظ الفاتورة في Firestore مباشرة
       const { addDoc, collection } = await import('firebase/firestore');
-      await addDoc(collection(db, 'sales_invoices'), invoice);
+      const docRef = await addDoc(collection(db, 'sales_invoices'), invoice);
+      
+      // تحديث حالة عرض السعر إذا تم إنشاء الفاتورة من عرض سعر
+      await updateQuotationAfterInvoiceCreation(docRef.id);
+      
       customMessage.success('تم حفظ الفاتورة بنجاح!');
       
       // تحديث الأرصدة بعد الحفظ
@@ -2354,7 +2586,13 @@ interface SavedInvoice {
         const q = query(collection(db, 'inventory_items'), orderBy('id', 'asc'));
         const inventorySnapshot = await getDocs(q);
         const inventoryData = inventorySnapshot.docs.map(doc => {
-          const data = doc.data();
+          const data = doc.data() as { 
+            id?: number; 
+            name?: string; 
+            type?: string; 
+            parentId?: string;
+            [key: string]: unknown;
+          };
           const item = { 
             ...data, 
             id: doc.id, // Firestore document ID (string)
@@ -3979,7 +4217,7 @@ const handlePrint = () => {
                       setItem({
                         ...item,
                         itemName: value,
-                        itemNumber: selected ? (selected.itemCode || '') : '',
+                        itemNumber: selected ? (selected.itemCode || selected.id || selected.numericId || '') : '',
                         price,
                         discountPercent: selected && selected.discount ? String(selected.discount) : '0',
                         taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة دائماً
