@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Breadcrumb from '@/components/Breadcrumb';
 import { motion } from 'framer-motion';
-import { Table, Select, DatePicker, Button, Input, Card, Row, Col, Statistic, Modal, Popconfirm, message } from 'antd';
+import { Table, Select, DatePicker, Button, Input, Card, Row, Col, Statistic, Modal, Popconfirm, message, Select as AntdSelect } from 'antd';
 import { SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { TableOutlined, PrinterOutlined, FileTextOutlined } from '@ant-design/icons';
+import { Building2 } from 'lucide-react';
 import dayjs, { Dayjs } from 'dayjs';
 import { useFinancialYear } from '@/hooks/useFinancialYear';
 import { fetchBranches, Branch } from '@/lib/branches';
 import { Helmet } from "react-helmet";
+import styles from './ReceiptVoucher.module.css';
 
 const { Option } = Select;
 const { confirm } = Modal;
@@ -21,24 +23,21 @@ interface QuotationRecord {
   expiryDate: string;
   customerName: string;
   customerPhone: string;
+  customerNumber: string;
   amount: number;
   branchId: string;
   branchName: string;
   paymentMethod: string;
   warehouse: string;
-  salesRep: string;
   status: string;
+  movementType: string;
+  accountType: string;
 }
 
 interface Customer {
   id: string;
   name: string;
   phone: string;
-}
-
-interface SalesRep {
-  id: string;
-  name: string;
 }
 
 interface PaymentMethod {
@@ -58,7 +57,6 @@ const Quotations: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [salesReps, setSalesReps] = useState<SalesRep[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(true);
@@ -72,12 +70,27 @@ const Quotations: React.FC = () => {
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<Dayjs | null>(null);
   const [dateTo, setDateTo] = useState<Dayjs | null>(null);
-  const [selectedSalesRep, setSelectedSalesRep] = useState<string>('');
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [customerNumber, setCustomerNumber] = useState<string>('');
 
-  // السنة المالية من السياق
-  const { currentFinancialYear } = useFinancialYear();
+  // السنة المالية من السياق العام
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
 
   // تعيين التواريخ الافتراضية حسب السنة المالية
   useEffect(() => {
@@ -123,14 +136,6 @@ const Quotations: React.FC = () => {
         });
         setCustomers(customersData);
 
-        // جلب المندوبين
-        const salesRepsSnapshot = await getDocs(collection(db, 'salesRepresentatives'));
-        const salesRepsData: SalesRep[] = salesRepsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          name: doc.data().name || ''
-        }));
-        setSalesReps(salesRepsData);
-
         // جلب طرق الدفع
         const paymentMethodsSnapshot = await getDocs(collection(db, 'paymentMethods'));
         const paymentMethodsData: PaymentMethod[] = paymentMethodsSnapshot.docs.map(doc => ({
@@ -161,46 +166,41 @@ const Quotations: React.FC = () => {
   const fetchQuotationsData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { getDocs, collection, query, where, orderBy } = await import('firebase/firestore');
+      const { getDocs, collection, query, where, orderBy, limit } = await import('firebase/firestore');
       const { db } = await import('@/lib/firebase');
       
       const quotationsQuery = collection(db, 'quotations');
       const constraints = [];
 
-      // إضافة فلاتر البحث
-      if (dateFrom) {
+      // إضافة فلاتر البحث - نطبق فلتر التاريخ فقط في Firebase لتجنب مشكلة Index
+      // جميع الفلاتر الأخرى ستطبق في JavaScript
+      if (dateFrom && dateTo) {
         constraints.push(where('date', '>=', dayjs(dateFrom).format('YYYY-MM-DD')));
-      }
-      if (dateTo) {
+        constraints.push(where('date', '<=', dayjs(dateTo).format('YYYY-MM-DD')));
+      } else if (dateFrom) {
+        constraints.push(where('date', '>=', dayjs(dateFrom).format('YYYY-MM-DD')));
+      } else if (dateTo) {
         constraints.push(where('date', '<=', dayjs(dateTo).format('YYYY-MM-DD')));
       }
-      if (selectedBranch) {
-        constraints.push(where('branch', '==', selectedBranch));
-      }
-      if (selectedPaymentMethod) {
-        constraints.push(where('paymentMethod', '==', selectedPaymentMethod));
-      }
-      if (selectedWarehouse) {
-        constraints.push(where('warehouse', '==', selectedWarehouse));
-      }
-      if (selectedSalesRep) {
-        constraints.push(where('delegate', '==', selectedSalesRep));
-      }
-      if (selectedCustomer) {
-        constraints.push(where('customerNumber', '==', selectedCustomer));
-      }
+      
+      // لا نطبق أي فلاتر أخرى في Firebase لتجنب مشكلة Composite Index تماماً
+      // جميع الفلاتر الأخرى (الفرع، طريقة الدفع، المخزن، العميل) ستطبق في JavaScript
 
       // ترتيب حسب التاريخ
       constraints.push(orderBy('date', 'desc'));
+      
+      // إضافة حد أقصى للنتائج لتحسين الأداء (يمكن زيادته حسب الحاجة)
+      constraints.push(limit(1000));
 
-      const quotationsQueryWithConstraints = constraints.length > 0 
+      const quotationsQueryWithConstraints = constraints.length > 1 
         ? query(quotationsQuery, ...constraints)
-        : quotationsQuery;
+        : query(quotationsQuery, orderBy('date', 'desc'), limit(1000));
 
       const snapshot = await getDocs(quotationsQueryWithConstraints);
       const quotationsData: QuotationRecord[] = [];
 
       snapshot.docs.forEach(doc => {
+
         const data = doc.data();
         
         // الحصول على اسم الفرع
@@ -208,26 +208,26 @@ const Quotations: React.FC = () => {
         const branchName = branch?.name || data.branch || '';
 
         // الحصول على اسم العميل
-        // البحث عن العميل بالمعرف أولاً، ثم برقم الهاتف إذا لم يوجد
-        let customer = customers.find(c => c.id === data.customerNumber);
-        if (!customer) {
-          // إذا لم نجد العميل بالمعرف، نبحث برقم الهاتف
-          customer = customers.find(c => c.phone === data.customerNumber);
-        }
+        // البحث عن العميل بالمعرف أولاً، ثم برقم الهاتف أو رقم الحساب
+        const customer = customers.find(c => 
+          c.id === data.customerNumber || 
+          c.id === data.customer?.id ||
+          c.phone === data.customerNumber ||
+          c.phone === data.customer?.mobile
+        );
         
-        const customerName = customer?.name || data.customerName || '';
-        const phone = customer?.phone || data.customerPhone || data.phone || '';
+        // استخراج البيانات من كائن العميل في المستند أو من قاعدة البيانات
+        const customerName = customer?.name || data.customer?.name || data.customerName || '';
+        const customerPhone = customer?.phone || data.customer?.mobile || data.customerPhone || data.phone || '';
+        const customerNumber = data.customer?.id || data.customerNumber || customer?.id || '';
 
         // إضافة تسجيل للتحقق من البيانات
         console.log('Customer ID/Phone from quotation:', data.customerNumber);
+        console.log('Customer object from quotation:', data.customer);
         console.log('Found customer:', customer);
         console.log('Customer phone from customer record:', customer?.phone);
         console.log('Customer phone from quotation data:', data.customerPhone);
-        console.log('Final phone value:', phone);
-
-        // الحصول على اسم المندوب
-        const salesRep = salesReps.find(s => s.id === data.delegate);
-        const salesRepName = salesRep?.name || data.delegate || '';
+        console.log('Final phone value:', customerPhone);
 
         // حساب حالة انتهاء الصلاحية
         const today = dayjs();
@@ -249,14 +249,16 @@ const Quotations: React.FC = () => {
           date: data.date || '',
           expiryDate: data.validUntil || data.expiryDate || '',
           customerName,
-          customerPhone: phone,
+          customerPhone,
+          customerNumber,
           amount: totalAmount,
           branchId: data.branch || '',
           branchName,
           paymentMethod: data.paymentMethod || '',
           warehouse: data.warehouse || '',
-          salesRep: salesRepName,
-          status: isExpired ? 'منتهي الصلاحية' : 'نشط'
+          status: isExpired ? 'منتهي الصلاحية' : 'نشط',
+          movementType: data.movementType || 'عرض سعر',
+          accountType: data.accountType || 'عميل'
         };
 
         quotationsData.push(quotation);
@@ -265,28 +267,68 @@ const Quotations: React.FC = () => {
       // تطبيق الفلاتر الإضافية (التي لا يمكن تطبيقها في Firebase)
       let filtered = quotationsData;
 
+      // فلتر الفرع
+      if (selectedBranch) {
+        filtered = filtered.filter(q => q.branchId === selectedBranch);
+      }
+
+      // فلتر طريقة الدفع
+      if (selectedPaymentMethod) {
+        filtered = filtered.filter(q => q.paymentMethod === selectedPaymentMethod);
+      }
+
+      // فلتر المخزن
+      if (selectedWarehouse) {
+        filtered = filtered.filter(q => q.warehouse === selectedWarehouse);
+      }
+
       if (quotationNumber.trim()) {
         filtered = filtered.filter(q => 
           q.quotationNumber.toLowerCase().includes(quotationNumber.toLowerCase())
         );
       }
 
-      if (amountFrom !== null) {
+      if (amountFrom !== null && amountFrom >= 0) {
         filtered = filtered.filter(q => q.amount >= amountFrom);
       }
 
-      if (amountTo !== null) {
+      if (amountTo !== null && amountTo >= 0) {
         filtered = filtered.filter(q => q.amount <= amountTo);
       }
 
       if (customerPhone.trim()) {
         filtered = filtered.filter(q => 
-          q.customerPhone.includes(customerPhone)
+          q.customerPhone && q.customerPhone.includes(customerPhone.trim())
+        );
+      }
+
+      if (customerNumber.trim()) {
+        filtered = filtered.filter(q => 
+          (q.customerNumber && q.customerNumber.toLowerCase().includes(customerNumber.trim().toLowerCase())) ||
+          (q.customerName && q.customerName.toLowerCase().includes(customerNumber.trim().toLowerCase()))
+        );
+      }
+
+      // فلتر العميل المحدد من القائمة المنسدلة
+      if (selectedCustomer) {
+        filtered = filtered.filter(q => 
+          q.customerNumber === selectedCustomer ||
+          q.customerName === customers.find(c => c.id === selectedCustomer)?.name
         );
       }
 
       setQuotations(quotationsData);
       setFilteredQuotations(filtered);
+
+      // إظهار رسالة إذا تم الوصول للحد الأقصى من النتائج
+      if (quotationsData.length === 1000) {
+        message.warning('تم عرض أول 1000 نتيجة. يرجى تضييق نطاق البحث باستخدام فلاتر التاريخ للحصول على نتائج أكثر دقة.');
+      }
+
+      // إظهار رسالة إعلامية إذا كان هناك الكثير من النتائج بدون فلاتر
+      if (!dateFrom && !dateTo && quotationsData.length > 500) {
+        message.info('تم جلب عدد كبير من النتائج. لتحسين الأداء، يُنصح باستخدام فلاتر التاريخ.');
+      }
 
       // حساب الإحصائيات
       const stats = {
@@ -307,20 +349,44 @@ const Quotations: React.FC = () => {
     }
   }, [
     dateFrom, dateTo, selectedBranch, selectedPaymentMethod, selectedWarehouse,
-    selectedSalesRep, selectedCustomer, quotationNumber, amountFrom, amountTo,
-    customerPhone, branches, customers, salesReps
+    selectedCustomer, quotationNumber, amountFrom, amountTo,
+    customerPhone, customerNumber, branches, customers
   ]);
 
   // تشغيل البحث تلقائياً عند تحميل الصفحة أو تغيير المعايير
   useEffect(() => {
     if (!branchesLoading && branches.length >= 0) {
-      fetchQuotationsData();
+      const timeoutId = setTimeout(() => {
+        fetchQuotationsData();
+      }, 300); // تأخير قصير لتجنب البحث المتكرر عند الكتابة السريعة
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [branchesLoading, branches.length, fetchQuotationsData]);
 
   // عند الضغط على بحث
   const handleSearch = () => {
     fetchQuotationsData();
+  };
+
+  // مسح جميع خيارات البحث
+  const clearAllFilters = () => {
+    setQuotationNumber('');
+    setSelectedBranch('');
+    setAmountFrom(null);
+    setAmountTo(null);
+    setSelectedPaymentMethod('');
+    setSelectedWarehouse('');
+    setSelectedCustomer('');
+    setCustomerPhone('');
+    setCustomerNumber('');
+    // إعادة تعيين التواريخ للسنة المالية الحالية
+    if (currentFinancialYear) {
+      const start = dayjs(currentFinancialYear.startDate);
+      const end = dayjs(currentFinancialYear.endDate);
+      setDateFrom(start);
+      setDateTo(end);
+    }
   };
 
   // حذف عرض سعر
@@ -374,12 +440,13 @@ const Quotations: React.FC = () => {
       return [
         quotation.quotationNumber,
         quotation.date,
+        quotation.movementType || 'عرض سعر',
+        quotation.customerNumber || '',
         quotation.customerName,
         quotation.customerPhone,
         quotation.amount.toFixed(2),
         quotation.branchName,
         paymentMethod?.name || quotation.paymentMethod,
-        quotation.salesRep,
         quotation.status
       ];
     });
@@ -391,12 +458,13 @@ const Quotations: React.FC = () => {
     sheet.columns = [
       { header: 'رقم العرض', key: 'quotationNumber', width: 15 },
       { header: 'التاريخ', key: 'date', width: 12 },
+      { header: 'نوع الحركة', key: 'movementType', width: 12 },
+      { header: 'رقم الحساب', key: 'customerNumber', width: 15 },
       { header: 'العميل', key: 'customerName', width: 20 },
       { header: 'رقم الهاتف', key: 'customerPhone', width: 15 },
       { header: 'المبلغ', key: 'amount', width: 12 },
       { header: 'الفرع', key: 'branchName', width: 15 },
       { header: 'طريقة الدفع', key: 'paymentMethod', width: 12 },
-      { header: 'المندوب', key: 'salesRep', width: 15 },
       { header: 'الحالة', key: 'status', width: 12 }
     ];
 
@@ -472,13 +540,39 @@ const Quotations: React.FC = () => {
       width: 100,
       sorter: (a: QuotationRecord, b: QuotationRecord) => dayjs(a.date).unix() - dayjs(b.date).unix(),
     },
-    // تم حذف عمود تاريخ الانتهاء بناءً على طلب المستخدم
+    {
+      title: 'نوع الحركة',
+      dataIndex: 'movementType',
+      key: 'movementType',
+      width: 100,
+      render: (movementType: string) => (
+        <span className="text-blue-800 font-medium bg-blue-50 px-2 py-1 rounded">
+          {movementType || 'عرض سعر'}
+        </span>
+      ),
+    },
+    {
+      title: 'رقم الحساب',
+      dataIndex: 'customerNumber',
+      key: 'customerNumber',
+      width: 110,
+      render: (customerNumber: string) => (
+        <span className="text-gray-900 font-mono text-sm">
+          {customerNumber || '-'}
+        </span>
+      ),
+    },
     {
       title: 'العميل',
       dataIndex: 'customerName',
       key: 'customerName',
       width: 150,
       sorter: (a: QuotationRecord, b: QuotationRecord) => a.customerName.localeCompare(b.customerName),
+      render: (customerName: string) => (
+        <span className="text-gray-900 font-medium">
+          {customerName || '-'}
+        </span>
+      ),
     },
     {
       title: 'رقم الهاتف',
@@ -506,15 +600,6 @@ const Quotations: React.FC = () => {
       key: 'branchName',
       width: 120,
       sorter: (a: QuotationRecord, b: QuotationRecord) => a.branchName.localeCompare(b.branchName),
-    },
-    // تم حذف عمود طريقة الدفع بناءً على طلب المستخدم
-    // تم حذف عمود المخزن بناءً على طلب المستخدم
-    {
-      title: 'المندوب',
-      dataIndex: 'salesRep',
-      key: 'salesRep',
-      width: 120,
-      sorter: (a: QuotationRecord, b: QuotationRecord) => a.salesRep.localeCompare(b.salesRep),
     },
     {
       title: 'الحالة',
@@ -577,6 +662,19 @@ const Quotations: React.FC = () => {
     }
   }, []);
 
+  // ستايل مشابه لصفحة الإضافة
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: "8px 16px",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.07)",
+    background: "#fff",
+    border: "1.5px solid #d9d9d9",
+    transition: "border-color 0.3s",
+  };
+  const labelStyle = { fontSize: 18, fontWeight: 500 };
+
   return (
     <div className="p-2 sm:p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen w-full max-w-full">
       <Helmet>
@@ -585,12 +683,53 @@ const Quotations: React.FC = () => {
         <meta name="keywords" content="ERP, عروض أسعار, إدارة, عملاء, مبيعات, Quotations, Management, Sales" />
       </Helmet>
       
-      <div className="p-2 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden w-full max-w-full">
-        <div className="flex items-center">
-          <FileTextOutlined className="h-8 w-8 text-blue-600 ml-3" />
-          <h1 className="text-2xl font-bold text-gray-800">عروض الأسعار</h1>
+    <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center gap-6">
+        <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+          <Building2 className="h-8 w-8 text-blue-600 dark:text-blue-300" />
         </div>
-        <p className="text-gray-600 mt-2">عرض وإدارة عروض الأسعار</p>
+        <div className="flex flex-col ">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">عروض الأسعار</h1>
+          <p className="text-gray-600 dark:text-gray-400">إدارة وعرض عروض الأسعار</p>
+        </div>
+      </div>
+          
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+            <span className="flex items-center gap-2">
+            <FileTextOutlined className="text-purple-600 dark:text-purple-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
+            </span>
+            <div className="min-w-[160px]">
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
+                styles={{
+                  popup: {
+                    root: { textAlign: 'right', fontSize: 16 }
+                  }
+                }}
+                size="middle"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
+            </div>
+          </div>
+        </div>
         <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
       </div>
 
@@ -621,31 +760,45 @@ const Quotations: React.FC = () => {
               navigate('/stores/quotations/new');
               window.scrollTo(0, 0);
             }}
-            className="bg-blue-600 hover:bg-green-700 border-green-600 hover:border-green-700 text-white"
+            style={{ 
+              height: 48, 
+              fontSize: 16, 
+              borderRadius: 8, 
+              background: '#1677ff',
+              borderColor: '#52c41a',
+              color: '#fff',
+              fontWeight: 500,
+              padding: "8px 24px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+            }}
+            size="large"
           >
             إضافة عرض سعر جديد
           </Button>
         </div>
         
-        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">رقم عرض السعر</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">رقم عرض السعر</label>
             <Input
               value={quotationNumber}
               onChange={(e) => setQuotationNumber(e.target.value)}
               placeholder="ادخل رقم عرض السعر"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
             />
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">الفرع</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">الفرع</label>
             <Select
               value={selectedBranch}
               onChange={setSelectedBranch}
               placeholder="اختر الفرع"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
               allowClear
+             className={styles.noAntBorder}
               loading={branchesLoading}
               showSearch
               filterOption={(input, option) =>
@@ -661,111 +814,62 @@ const Quotations: React.FC = () => {
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">المبلغ من</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">المبلغ من</label>
             <Input
               type="number"
               value={amountFrom}
               onChange={(e) => setAmountFrom(e.target.value ? parseFloat(e.target.value) : null)}
               placeholder="المبلغ الأدنى"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
             />
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">المبلغ إلى</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">المبلغ إلى</label>
             <Input
               type="number"
               value={amountTo}
               onChange={(e) => setAmountTo(e.target.value ? parseFloat(e.target.value) : null)}
               placeholder="المبلغ الأعلى"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
             />
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">طريقة الدفع</label>
-            <Select
-              value={selectedPaymentMethod}
-              onChange={setSelectedPaymentMethod}
-              placeholder="اختر طريقة الدفع"
-              className="w-full"
-              allowClear
-            >
-              {paymentMethods.map(method => (
-                <Option key={method.id} value={method.id}>
-                  {method.name}
-                </Option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">المخزن</label>
-            <Select
-              value={selectedWarehouse}
-              onChange={setSelectedWarehouse}
-              placeholder="اختر المخزن"
-              className="w-full"
-              allowClear
-            >
-              {warehouses.map(warehouse => (
-                <Option key={warehouse.id} value={warehouse.id}>
-                  {warehouse.name || warehouse.nameAr || warehouse.nameEn || warehouse.id}
-                </Option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">من تاريخ</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">من تاريخ</label>
             <DatePicker
               value={dateFrom}
               onChange={setDateFrom}
               placeholder="اختر التاريخ"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
               format="YYYY-MM-DD"
             />
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">إلى تاريخ</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">إلى تاريخ</label>
             <DatePicker
               value={dateTo}
               onChange={setDateTo}
               placeholder="اختر التاريخ"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
               format="YYYY-MM-DD"
             />
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">المندوب</label>
-            <Select
-              value={selectedSalesRep}
-              onChange={setSelectedSalesRep}
-              placeholder="اختر المندوب"
-              className="w-full"
-              allowClear
-              showSearch
-              filterOption={(input, option) =>
-                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
-              }
-            >
-              {salesReps.map(rep => (
-                <Option key={rep.id} value={rep.id}>
-                  {rep.name}
-                </Option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">العميل</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">العميل</label>
             <Select
               value={selectedCustomer}
               onChange={setSelectedCustomer}
               placeholder="اختر العميل"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
+             className={styles.noAntBorder}
               allowClear
               showSearch
               filterOption={(input, option) =>
@@ -780,13 +884,16 @@ const Quotations: React.FC = () => {
             </Select>
           </div>
 
+
+
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-600 mb-1">رقم الهاتف</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">رقم الهاتف</label>
             <Input
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
               placeholder="ادخل رقم الهاتف"
-              className="w-full"
+              style={largeControlStyle}
+              size="large"
             />
           </div>
         </div>
@@ -797,9 +904,35 @@ const Quotations: React.FC = () => {
             icon={<SearchOutlined />}
             onClick={handleSearch}
             loading={isLoading}
-            className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+            style={{ 
+              height: 48, 
+              fontSize: 16, 
+              borderRadius: 8, 
+              background: '#1677ff',
+              borderColor: '#1677ff',
+              fontWeight: 500,
+              padding: "8px 24px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+            }}
+            size="large"
           >
             بحث
+          </Button>
+
+          <Button
+            onClick={clearAllFilters}
+            style={{ 
+              height: 48, 
+              fontSize: 16, 
+              borderRadius: 8, 
+              borderColor: '#d9d9d9',
+              fontWeight: 500,
+              padding: "8px 24px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+            }}
+            size="large"
+          >
+            مسح الفلاتر
           </Button>
 
         </div>
@@ -833,17 +966,36 @@ const Quotations: React.FC = () => {
                 <Button
                   icon={<DownloadOutlined />}
                   onClick={handleExport}
-                  className="bg-green-600 hover:bg-green-700 border-green-600 text-white ml-2 px-5 py-2 text-base font-bold"
-                  size="middle"
+                  style={{ 
+                    height: 48, 
+                    fontSize: 16, 
+                    borderRadius: 8, 
+                    background: '#52c41a',
+                    borderColor: '#52c41a',
+                    color: '#fff',
+                    fontWeight: 500,
+                    padding: "8px 24px",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                  }}
+                  size="large"
                 >
                   تصدير Excel
                 </Button>
                 <Button
-                  icon={<PrinterOutlined style={{ fontSize: 18, color: '#2563eb' }} />}
+                  icon={<PrinterOutlined style={{ fontSize: 18, color: '#fff' }} />}
                   onClick={() => window.print()}
-                  className="bg-blue-100 hover:bg-blue-200 border-blue-200 text-blue-700 ml-2 px-5 py-2 text-base font-bold"
-                  size="middle"
-                  style={{ boxShadow: 'none' }}
+                  style={{ 
+                    height: 48, 
+                    fontSize: 16, 
+                    borderRadius: 8, 
+                    background: '#1677ff',
+                    borderColor: '#1677ff',
+                    color: '#fff',
+                    fontWeight: 500,
+                    padding: "8px 24px",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                  }}
+                  size="large"
                 >
                   طباعة
                 </Button>
@@ -858,7 +1010,7 @@ const Quotations: React.FC = () => {
             dataSource={filteredQuotations}
             loading={isLoading}
             size="small"
-            scroll={{ x: 1400 }}
+            scroll={{ x: 1600 }}
             pagination={{
               total: filteredQuotations.length,
               pageSize: 10,

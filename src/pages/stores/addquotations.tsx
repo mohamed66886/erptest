@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined, FileTextOutlined } from '@ant-design/icons';
-import { FileText } from 'lucide-react';
+import { SearchOutlined, SaveOutlined, PlusOutlined, UserOutlined, FileTextOutlined, CloseOutlined } from '@ant-design/icons';
+import { FileText, Calendar, Building2 } from 'lucide-react';
+import { motion, useAnimation } from 'framer-motion';
 import { useAuth } from '@/contexts/useAuth';
 import { collection, getDocs, addDoc, query, where, orderBy } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider, Tabs, Typography } from 'antd';
+import { Button, Input, Select, Table, message, Form, Row, Col, DatePicker, Spin, Modal, Space, Card, Divider, Tabs, Typography, Select as AntdSelect } from 'antd';
 import Breadcrumb from "../../components/Breadcrumb";
 import { db } from '@/lib/firebase';
 import { useFinancialYear } from '@/hooks/useFinancialYear';
@@ -15,7 +16,7 @@ import { GiMagicBroom } from 'react-icons/gi';
 import * as XLSX from 'xlsx';
 import { Upload } from 'antd';
 import ItemSearchModal from '@/components/ItemSearchModal';
-import styles from '@/styles/SelectStyles.module.css';
+import styles from './ReceiptVoucher.module.css';
 
 // Type definitions
 interface Branch {
@@ -136,6 +137,7 @@ const { TabPane } = Tabs;
 
 const AddQuotationPage: React.FC = () => {
   const { user } = useAuth();
+  const controls = useAnimation();
   
   // المتغيرات الجديدة للواجهة المطلوبة
   const [periodRange, setPeriodRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
@@ -147,6 +149,30 @@ const AddQuotationPage: React.FC = () => {
   const [sideName, setSideName] = useState("");
   const [operationClass, setOperationClass] = useState<string | null>(null);
   const [statement, setStatement] = useState("");
+
+  // إضافة CSS للصف المعدل
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .edited-row {
+        background-color: #e6f7ff !important;
+        border: 2px solid #91d5ff !important;
+      }
+      
+      .edited-row:hover {
+        background-color: #bae7ff !important;
+      }
+      
+      .edited-row td {
+        background-color: inherit !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
 
   // متغيرات الأصناف
   const [activeTab, setActiveTab] = useState("new");
@@ -257,6 +283,18 @@ const AddQuotationPage: React.FC = () => {
     }
   };
 
+  // دالة لإعادة تعيين الحقول
+  const resetFields = () => {
+    setItemCode('');
+    setItemName('');
+    setQuantity('1');
+    setUnit('قطعة');
+    setPrice('');
+    setDiscountPercent(0);
+    const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
+    setTaxPercent(defaultTaxRate);
+  };
+
   const handleAddNewItem = () => {
     // التحقق من صحة البيانات
     if (!itemCode.trim()) {
@@ -274,15 +312,6 @@ const AddQuotationPage: React.FC = () => {
 
     const finalUnit = unit && unit.trim() ? unit : "قطعة";
 
-    // التحقق من عدم تكرار الصنف
-    const isDuplicate = addedItems.some(item => 
-      item.itemCode === itemCode.trim() && item.itemName === itemName.trim()
-    );
-
-    if (isDuplicate) {
-      return message.error('هذا الصنف موجود بالفعل في القائمة. يمكنك تعديل الكمية من خلال زر التعديل');
-    }
-
     // إضافة الصنف
     const newItem = {
       itemCode: itemCode.trim(),
@@ -294,20 +323,71 @@ const AddQuotationPage: React.FC = () => {
       taxPercent: taxPercent || 0
     };
 
-    setAddedItems(items => [...items, newItem]);
+    setAddedItems(items => {
+      let newItems;
+      
+      // التحقق من أننا في وضع التعديل أم الإضافة
+      if (editingItemIndex !== null) {
+        // في وضع التعديل - نحديث الصنف الموجود
+        newItems = [...items];
+        newItems[editingItemIndex] = newItem;
+        setEditingItemIndex(null); // إعادة تعيين حالة التعديل
+        message.success('تم تحديث الصنف بنجاح');
+      } else {
+        // في وضع الإضافة - التحقق من التكرار
+        const existingIndex = items.findIndex(item => 
+          item.itemCode === newItem.itemCode && item.itemName === newItem.itemName
+        );
+        
+        if (existingIndex !== -1) {
+          // الصنف موجود - عرض خيارات للمستخدم
+          Modal.confirm({
+            title: 'صنف موجود بالفعل',
+            content: `الصنف "${newItem.itemName}" موجود بالفعل في القائمة. ماذا تريد أن تفعل؟`,
+            okText: 'دمج الكميات',
+            cancelText: 'استبدال الصنف',
+            onOk: () => {
+              // دمج الكميات
+              newItems = [...items];
+              const existingItem = newItems[existingIndex];
+              const existingQty = Number(existingItem.quantity) || 0;
+              const newQty = Number(newItem.quantity) || 0;
+              const totalQty = existingQty + newQty;
+              
+              newItems[existingIndex] = {
+                ...newItem,
+                quantity: totalQty.toString()
+              };
+              setAddedItems(newItems);
+              resetFields();
+              message.success(`تم دمج الكميات - الكمية الجديدة: ${totalQty}`);
+            },
+            onCancel: () => {
+              // استبدال الصنف
+              newItems = [...items];
+              newItems[existingIndex] = newItem;
+              setAddedItems(newItems);
+              resetFields();
+              message.success('تم استبدال الصنف بالبيانات الجديدة');
+            }
+          });
+          return items; // إرجاع القائمة الحالية حتى يتم التحديث من داخل المودال
+        } else {
+          // صنف جديد - إضافة عادية
+          newItems = [...items, newItem];
+          message.success('تم إضافة الصنف بنجاح');
+        }
+      }
+      
+      return newItems;
+    });
     
-    // إعادة تعيين الحقول
-    setItemCode('');
-    setItemName('');
-    setQuantity('1');
-    setUnit('قطعة');
-    setPrice('');
-    setDiscountPercent(0);
-    // الحفاظ على نسبة الضريبة من إعدادات الشركة
-    const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
-    setTaxPercent(defaultTaxRate);
-
-    message.success(`تم إضافة الصنف "${itemName.trim()}" بنجاح`);
+    // إعادة تعيين الحقول فقط إذا لم يكن هناك تكرار أو كان في وضع التعديل
+    if (editingItemIndex !== null || !addedItems.some(item => 
+      item.itemCode === newItem.itemCode && item.itemName === newItem.itemName
+    )) {
+      resetFields();
+    }
   };
 
   // دوال إدارة الإكسل
@@ -401,6 +481,8 @@ const AddQuotationPage: React.FC = () => {
 
             if (newItems.length > 0) {
               setAddedItems(prev => [...prev, ...newItems]);
+              // إعادة تعيين فهرس الصف المعدل
+              setEditingItemIndex(null);
               message.success(`تم إضافة ${newItems.length} صنف من ملف الإكسل بنجاح`);
             } else {
               message.warning("جميع الأصناف في الملف موجودة بالفعل");
@@ -506,6 +588,7 @@ const AddQuotationPage: React.FC = () => {
       
       // إعادة تعيين النموذج
       setAddedItems([]);
+      setEditingItemIndex(null); // إعادة تعيين فهرس الصف المعدل
       setQuotationData(prev => ({
         ...prev,
         customerNumber: '',
@@ -1005,8 +1088,23 @@ const AddQuotationPage: React.FC = () => {
     }
   };
 
-  // السنة المالية من السياق
-  const { currentFinancialYear } = useFinancialYear();
+  // السنة المالية من السياق العام
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
 
   // تعيين الفترة المحاسبية حسب السنة المالية
   useEffect(() => {
@@ -1123,6 +1221,9 @@ const AddQuotationPage: React.FC = () => {
     };
     fetchCustomers();
   }, []);
+
+  // حالة تتبع الصف المعدل
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
 
   // جلب بيانات الأصناف
   useEffect(() => {
@@ -1288,8 +1389,8 @@ const AddQuotationPage: React.FC = () => {
               setDiscountPercent(record.discountPercent);
               setTaxPercent(record.taxPercent);
               setActiveTab('new');
-              // حذف الصنف من القائمة ليتم تعديله بعد الحفظ
-              setAddedItems(items => items.filter((_, i) => i !== idx));
+              // تحديد الصنف المحدد للتعديل بدلاً من حذفه
+              setEditingItemIndex(idx);
             }}
             style={{ color: '#2563eb', borderColor: '#2563eb' }}
           >
@@ -1307,6 +1408,8 @@ const AddQuotationPage: React.FC = () => {
                 okType: 'danger',
                 onOk: () => {
                   setAddedItems(items => items.filter((_, i) => i !== idx));
+                  // إعادة تعيين فهرس الصف المعدل
+                  setEditingItemIndex(null);
                   message.success('تم حذف الصنف بنجاح');
                 }
               });
@@ -1363,15 +1466,55 @@ const AddQuotationPage: React.FC = () => {
           </div>
         </div>
       )}
-      
-      <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-        <div className="flex items-center">
-          <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-blue-600 ml-1 sm:ml-3" />
-          <h1 className="text-lg sm:text-2xl font-bold text-gray-800">إضافة عرض سعر</h1>
+
+      <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center gap-6">
+        <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+          <Building2 className="h-8 w-8 text-blue-600 dark:text-blue-300" />
         </div>
-        <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة وعرض عروض الأسعار</p>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-blue-500"></div>
+        <div className="flex flex-col ">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">إضافة عرض سعر</h1>
+          <p className="text-gray-600 dark:text-gray-400">إدارة وعرض عروض الأسعار</p>
+        </div>
       </div>
+          
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+            <span className="flex items-center gap-2">
+            <FileTextOutlined className="text-purple-600 dark:text-purple-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
+            </span>
+            <div className="min-w-[160px]">
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
+                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                size="middle"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
+            </div>
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+      </div>
+ 
+
+
       
       <Breadcrumb
         items={[
@@ -1421,6 +1564,7 @@ const AddQuotationPage: React.FC = () => {
               allowClear
               style={largeControlStyle}
               size="large"
+             className={styles.noAntBorder}
               showSearch
               optionFilterProp="children"
             >
@@ -1441,6 +1585,8 @@ const AddQuotationPage: React.FC = () => {
               style={largeControlStyle}
               size="large"
               showSearch
+              className={styles.noAntBorder}
+              
               optionFilterProp="children"
             >
               {warehouses.map(w => (
@@ -1452,7 +1598,9 @@ const AddQuotationPage: React.FC = () => {
           </div>
                     <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحركة</label>
-            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} size="large">
+            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} 
+             className={styles.noAntBorder}
+            size="large">
               <Select.Option value="عرض سعر">عرض سعر - Quotation</Select.Option>
               <Select.Option value="عرض سعر مبدئي">عرض سعر مبدئي - Preliminary Quote</Select.Option>
               <Select.Option value="عرض سعر نهائي">عرض سعر نهائي - Final Quote</Select.Option>
@@ -1461,7 +1609,9 @@ const AddQuotationPage: React.FC = () => {
 
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحساب</label>
-            <Select value={accountType} onChange={setAccountType} placeholder="اختر نوع الحساب" allowClear style={largeControlStyle} size="large">
+            <Select value={accountType} onChange={setAccountType} placeholder="اختر نوع الحساب" allowClear
+             className={styles.noAntBorder}
+            style={largeControlStyle} size="large">
               <Select.Option value="عميل">عميل</Select.Option>
               <Select.Option value="عميل محتمل">عميل محتمل</Select.Option>
             </Select>
@@ -1498,7 +1648,9 @@ const AddQuotationPage: React.FC = () => {
                       setShowAccountModal(true);
                     }}
                   >
-                    <SearchOutlined style={{ color: '#0074D9' }} />
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
+                      </svg>
                   </button>
                 }
               />
@@ -1608,6 +1760,24 @@ const AddQuotationPage: React.FC = () => {
         
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
           <TabPane tab="صنف جديد" key="new">
+            {/* رسالة التعديل */}
+            {editingItemIndex !== null && (
+              <div style={{
+                backgroundColor: '#e6f7ff',
+                border: '1px solid #91d5ff',
+                borderRadius: 8,
+                padding: '12px 16px',
+                marginBottom: 16,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}>
+                <span style={{ color: '#0958d9', fontSize: 16, fontWeight: 600 }}>
+                  📝 جاري تعديل الصنف رقم {editingItemIndex + 1}
+                </span>
+              </div>
+            )}
+            
             <div className="flex flex-row flex-wrap gap-3 items-end w-full">
               <div className="flex-1 min-w-[180px] flex flex-col gap-1">
                 <label style={labelStyle}>رقم الصنف</label>
@@ -1633,7 +1803,9 @@ const AddQuotationPage: React.FC = () => {
                       }}
                       onClick={() => setShowItemModal(true)}
                     >
-                      <SearchOutlined style={{ color: '#0074D9' }} />
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 4v6h6V4H4zm10 0v6h6V4h-6zM4 14v6h6v-6H4zm10 0v6h6v-6h-6z" stroke="currentColor" strokeWidth="2"/>
+                      </svg>
                     </button>
                   }
                 />
@@ -1645,6 +1817,7 @@ const AddQuotationPage: React.FC = () => {
                   value={itemName}
                   onChange={handleItemSelect}
                   placeholder="اختر الصنف"
+             className={styles.noAntBorder}
                   style={{ ...largeControlStyle, width: '100%' }}
                   size="large"
                   allowClear
@@ -1736,6 +1909,7 @@ const AddQuotationPage: React.FC = () => {
                   onChange={(value) => setUnit(value)}
                   placeholder="الوحدة"
                   allowClear
+             className={styles.noAntBorder}
               style={largeControlStyle}
               size="large"
                   options={units.map(unit => ({ label: unit, value: unit }))}
@@ -1779,7 +1953,7 @@ const AddQuotationPage: React.FC = () => {
                 />
               </div>
               <div className="flex-1 min-w-[90px] flex flex-col gap-1">
-                <label style={labelStyle}>الضريبة % (تلقائي)</label>
+                <label style={labelStyle}>الضريبة % </label>
                 <Input 
                   type="number" 
                   min={0} 
@@ -1794,7 +1968,31 @@ const AddQuotationPage: React.FC = () => {
               </div>
               <div className="flex-1 min-w-[120px] flex flex-col gap-1 justify-end">
                 <label style={{ visibility: 'hidden', height: 0 }}>إضافة الصنف</label>
-                <Button type="primary" className="bg-blue-600" style={{ height: 48, fontSize: 18, borderRadius: 8, width: '100%' }} onClick={handleAddNewItem}>إضافة الصنف</Button>
+                <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                  <Button 
+                    type="primary" 
+                    className="bg-blue-600" 
+                    style={{ height: 48, fontSize: 16, borderRadius: 8, flex: 1 }} 
+                    onClick={handleAddNewItem}
+                    icon={editingItemIndex !== null ? <SaveOutlined /> : <PlusOutlined />}
+                  >
+                    {editingItemIndex !== null ? 'حفظ ' : 'إضافة '}
+                  </Button>
+                  {editingItemIndex !== null && (
+                    <Button 
+                      type="default" 
+                      style={{ height: 48, fontSize: 16, borderRadius: 8, width: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+                      onClick={() => {
+                        // إلغاء التعديل وإعادة تعيين الحقول
+                        resetFields();
+                        setEditingItemIndex(null);
+                        message.info('تم إلغاء التعديل');
+                      }}
+                      icon={<CloseOutlined />}
+                      title="إلغاء التعديل"
+                    />
+                  )}
+                </div>
               </div>
             </div>
             {/* جدول الأصناف المضافة */}
@@ -1813,6 +2011,9 @@ const AddQuotationPage: React.FC = () => {
                     pagination={false}
                     bordered
                     locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+                    rowClassName={(record, index) => 
+                      editingItemIndex === index ? 'edited-row' : ''
+                    }
                   />
                   {/* الإجماليات */}
                   <div style={{
@@ -1902,6 +2103,9 @@ const AddQuotationPage: React.FC = () => {
                     pagination={false}
                     bordered
                     locale={{ emptyText: 'لا توجد أصناف مضافة بعد' }}
+                    rowClassName={(record, index) => 
+                      editingItemIndex === index ? 'edited-row' : ''
+                    }
                   />
                   {/* الإجماليات */}
                   <div style={{
