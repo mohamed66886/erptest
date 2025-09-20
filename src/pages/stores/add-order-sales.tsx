@@ -1093,18 +1093,8 @@ interface CompanyData {
     return 'EN-' + Math.floor(100000 + Math.random() * 900000);
   }
 
-  const generateAndSetQuotationNumber = async (branchIdValue: string) => {
-    const quotationNumber = await generateSalesOrderNumberAsync(branchIdValue, branches);
-    setQuotationData(prev => ({ ...prev, quotationNumber, entryNumber: generateEntryNumber() }));
-  };
-
   // توليد رقم عرض سعر عند تحميل الصفحة لأول مرة إذا كان رقم الفرع موجود
-  useEffect(() => {
-    if (branchCode) {
-      generateAndSetQuotationNumber(branchCode);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchCode]);
+  // سيتم التعامل مع هذا في useEffect لاحقاً
   
   // استخدام hook السنة المالية
   const { 
@@ -1250,6 +1240,38 @@ interface SavedQuotation {
     return current.isBefore(startDate, 'day') || current.isAfter(endDate, 'day');
   }, [currentFinancialYear]);
 
+  // تحديث الإجماليات مع جمع الضريبة
+  const updateTotals = useCallback((itemsList: SalesOrderItem[]) => {
+    let totalTax = 0;
+    const calculated = itemsList.reduce((acc, item) => {
+      const lineTotal = item.total || 0;
+      const discount = item.discountValue || 0;
+      const tax = item.taxValue || 0;
+      totalTax += tax;
+      return {
+        afterDiscount: acc.afterDiscount + (lineTotal - discount),
+        afterTax: acc.afterTax + (lineTotal - discount + tax),
+        total: acc.total + lineTotal
+      };
+    }, { afterDiscount: 0, afterTax: 0, total: 0 });
+    setTotals({
+      afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
+      afterTax: parseFloat(calculated.afterTax.toFixed(2)),
+      total: parseFloat(calculated.total.toFixed(2)),
+      tax: parseFloat(totalTax.toFixed(2))
+    });
+  }, []);
+
+  // دالة توليد وتعيين رقم أمر البيع
+  const generateAndSetQuotationNumber = useCallback(async (branchIdValue: string) => {
+    try {
+      const quotationNumber = await generateSalesOrderNumberAsync(branchIdValue, branches);
+      setQuotationData(prev => ({ ...prev, quotationNumber, entryNumber: generateEntryNumber() }));
+    } catch (error) {
+      console.error('خطأ في توليد رقم أمر البيع:', error);
+    }
+  }, [branches]);
+
   // تحديث التاريخ الافتراضي عند تغيير السنة المالية
   useEffect(() => {
     if (currentFinancialYear) {
@@ -1261,6 +1283,114 @@ interface SavedQuotation {
       }));
     }
   }, [currentFinancialYear, calculateDueDate]);
+
+  // توليد رقم أمر البيع افتراضي عند تحميل الصفحة
+  useEffect(() => {
+    if (!quotationData.quotationNumber && branches.length > 0) {
+      // استخدام أول فرع متاح كافتراضي
+      const defaultBranch = branches[0];
+      if (defaultBranch) {
+        generateAndSetQuotationNumber(defaultBranch.id);
+      }
+    }
+  }, [branches, quotationData.quotationNumber, generateAndSetQuotationNumber]);
+
+  // التحقق من بيانات عرض السعر عند تحميل الصفحة
+  useEffect(() => {
+    const quotationDataFromStorage = localStorage.getItem('quotationData');
+    if (quotationDataFromStorage) {
+      try {
+        const data = JSON.parse(quotationDataFromStorage);
+        console.log('تم العثور على بيانات عرض السعر:', data);
+        
+        // تحديث بيانات أمر البيع بناءً على عرض السعر
+        setQuotationData(prev => ({
+          ...prev,
+          customerName: data.customerName || '',
+          customerNumber: data.customerNumber || '',
+          branch: data.branchId || '',
+          warehouse: data.warehouse || '',
+          paymentMethod: data.paymentMethod || '',
+          date: getTodayString(), // استخدام تاريخ اليوم لأمر البيع الجديد
+          validUntil: calculateValidUntilDate(getTodayString()) // حساب تاريخ انتهاء الصلاحية
+        }));
+
+        // تحديث الأصناف من عرض السعر
+        if (data.items && Array.isArray(data.items)) {
+          console.log('عدد الأصناف في عرض السعر:', data.items.length);
+          const quotationItems = data.items.map((item: SalesOrderItem, index: number) => ({
+            ...item,
+            key: index.toString()
+          }));
+          setItems(quotationItems);
+          
+          // حساب الإجماليات من أصناف عرض السعر
+          setTimeout(() => {
+            console.log('حساب الإجماليات للأصناف:', quotationItems);
+            updateTotals(quotationItems);
+          }, 100);
+        }
+
+        // توليد رقم أمر بيع جديد بناءً على الفرع
+        const generateSalesOrderNumber = async () => {
+          if (data.branchId) {
+            try {
+              // انتظار حتى يتم تحميل الفروع إذا لم تكن محملة بعد
+              let branchesToUse = branches;
+              if (branches.length === 0) {
+                await fetchBasicData();
+                // إعادة جلب الفروع من الحالة بعد fetchBasicData
+                branchesToUse = branches;
+              }
+              
+              const newSalesOrderNumber = await generateSalesOrderNumberAsync(data.branchId, branchesToUse);
+              console.log('رقم أمر البيع الجديد:', newSalesOrderNumber);
+              setQuotationData(prev => ({
+                ...prev,
+                quotationNumber: newSalesOrderNumber
+              }));
+            } catch (error) {
+              console.error('خطأ في توليد رقم أمر البيع:', error);
+            }
+          }
+        };
+
+        // تشغيل توليد رقم أمر البيع مع تأخير
+        setTimeout(generateSalesOrderNumber, 300);
+
+        customMessage.success(`تم تحميل بيانات عرض السعر رقم ${data.quotationNumber}`);
+        
+        // مسح البيانات من localStorage بعد الاستخدام
+        localStorage.removeItem('quotationData');
+        
+      } catch (error) {
+        console.error('خطأ في تحميل بيانات عرض السعر:', error);
+        customMessage.error('حدث خطأ في تحميل بيانات عرض السعر');
+        localStorage.removeItem('quotationData');
+      }
+    }
+  }, [branches, updateTotals, customMessage, fetchBasicData]); // تغيير dependencies
+
+  // useEffect إضافي للتعامل مع توليد رقم أمر البيع عند تحميل الفروع المتأخر
+  useEffect(() => {
+    // التحقق من وجود فرع محدد بدون رقم أمر بيع
+    if (quotationData.branch && !quotationData.quotationNumber && branches.length > 0) {
+      const generateNumber = async () => {
+        try {
+          const newSalesOrderNumber = await generateSalesOrderNumberAsync(quotationData.branch, branches);
+          console.log('توليد رقم أمر البيع المتأخر:', newSalesOrderNumber);
+          setQuotationData(prev => ({
+            ...prev,
+            quotationNumber: newSalesOrderNumber
+          }));
+        } catch (error) {
+          console.error('خطأ في توليد رقم أمر البيع المتأخر:', error);
+        }
+      };
+      
+      setTimeout(generateNumber, 100);
+    }
+  }, [quotationData.branch, quotationData.quotationNumber, branches]);
 
   // دالة لجلب رصيد صنف واحد في مخزن محدد (للاستخدام في حالة المخازن المتعددة)
   const fetchSingleItemStock = async (itemName: string, warehouseId: string): Promise<number> => {
@@ -1309,6 +1439,13 @@ interface SavedQuotation {
       fetchItemStocks(quotationData.warehouse);
     }
   }, [quotationData.warehouse, itemNames, warehouseMode, fetchItemStocks]);
+
+  // حساب الإجماليات تلقائياً عند تغيير الأصناف
+  useEffect(() => {
+    if (items.length > 0) {
+      updateTotals(items);
+    }
+  }, [items, updateTotals]);
 
   // دالة فحص المخزون المتاح
   const checkStockAvailability = async (itemName: string, warehouseId: string): Promise<number> => {
@@ -1623,28 +1760,6 @@ interface SavedQuotation {
     setItems(newItems);
     setItem(initialItem);
     updateTotals(newItems);
-  };
-
-  // تحديث الإجماليات مع جمع الضريبة
-  const updateTotals = (itemsList: SalesOrderItem[]) => {
-    let totalTax = 0;
-    const calculated = itemsList.reduce((acc, item) => {
-      const lineTotal = item.total || 0;
-      const discount = item.discountValue || 0;
-      const tax = item.taxValue || 0;
-      totalTax += tax;
-      return {
-        afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount + tax),
-        total: acc.total + lineTotal
-      };
-    }, { afterDiscount: 0, afterTax: 0, total: 0 });
-    setTotals({
-      afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
-      afterTax: parseFloat(calculated.afterTax.toFixed(2)),
-      total: parseFloat(calculated.total.toFixed(2)),
-      tax: parseFloat(totalTax.toFixed(2))
-    });
   };
 
   const handleSave = async () => {

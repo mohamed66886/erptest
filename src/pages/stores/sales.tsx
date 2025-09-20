@@ -1997,9 +1997,36 @@ interface SavedInvoice {
       source: 'sales'
     };
 
-    // Add multiplePayment only if multiplePaymentMode is true
+    // Add multiplePayment only if multiplePaymentMode is true and has valid data
     if (multiplePaymentMode && invoiceData.multiplePayment) {
-      invoice.multiplePayment = invoiceData.multiplePayment;
+      // تنظيف بيانات الدفع المتعدد من القيم الفارغة أو undefined
+      const cleanMultiplePayment: MultiplePayment = {};
+      
+      if (invoiceData.multiplePayment.cash?.amount && parseFloat(invoiceData.multiplePayment.cash.amount) > 0) {
+        cleanMultiplePayment.cash = {
+          amount: invoiceData.multiplePayment.cash.amount,
+          cashBoxId: invoiceData.multiplePayment.cash.cashBoxId || invoiceData.cashBox || ''
+        };
+      }
+      
+      if (invoiceData.multiplePayment.bank?.amount && parseFloat(invoiceData.multiplePayment.bank.amount) > 0) {
+        cleanMultiplePayment.bank = {
+          amount: invoiceData.multiplePayment.bank.amount,
+          bankId: invoiceData.multiplePayment.bank.bankId || ''
+        };
+      }
+      
+      if (invoiceData.multiplePayment.card?.amount && parseFloat(invoiceData.multiplePayment.card.amount) > 0) {
+        cleanMultiplePayment.card = {
+          amount: invoiceData.multiplePayment.card.amount,
+          bankId: invoiceData.multiplePayment.card.bankId || ''
+        };
+      }
+      
+      // إضافة بيانات الدفع المتعدد فقط إذا كانت تحتوي على بيانات صحيحة
+      if (Object.keys(cleanMultiplePayment).length > 0) {
+        invoice.multiplePayment = cleanMultiplePayment;
+      }
     }
     try {
       // حفظ الفاتورة في Firestore مباشرة
@@ -4950,7 +4977,7 @@ const handlePrint = () => {
               columns={itemColumns} 
               dataSource={items} 
               pagination={false} 
-              rowKey={(record) => `${record.itemNumber}-${record.itemName}-${record.quantity}-${record.price}`}
+              rowKey={(record, index) => `${record.itemNumber}-${record.itemName}-${index}-${Date.now()}`}
               bordered
               scroll={{ x: true }}
               size="middle"

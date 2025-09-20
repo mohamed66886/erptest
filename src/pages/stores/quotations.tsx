@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Breadcrumb from '@/components/Breadcrumb';
 import { motion } from 'framer-motion';
 import { Table, Select, DatePicker, Button, Input, Card, Row, Col, Statistic, Modal, Popconfirm, message, Select as AntdSelect } from 'antd';
-import { SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import { TableOutlined, PrinterOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Building2, FileText } from 'lucide-react';
 import dayjs, { Dayjs } from 'dayjs';
@@ -476,6 +476,39 @@ const Quotations: React.FC = () => {
     }
   };
 
+  // إنشاء أمر بيع من عرض السعر
+  const handleCreateSalesOrder = async (quotation: QuotationRecord) => {
+    try {
+      // إعداد بيانات عرض السعر للنقل إلى صفحة أمر البيع
+      const quotationData = {
+        quotationId: quotation.id,
+        quotationNumber: quotation.quotationNumber,
+        customerName: quotation.customerName,
+        customerPhone: quotation.customerPhone,
+        customerNumber: quotation.customerNumber,
+        branchId: quotation.branchId,
+        branchName: quotation.branchName,
+        paymentMethod: quotation.paymentMethod,
+        warehouse: quotation.warehouse,
+        items: quotation.items || [],
+        amount: quotation.amount,
+        date: quotation.date
+      };
+
+      // حفظ بيانات عرض السعر في localStorage للنقل إلى صفحة أمر البيع
+      localStorage.setItem('quotationData', JSON.stringify(quotationData));
+      
+      // التوجه إلى صفحة إنشاء أمر البيع
+      navigate('/stores/sales-order/new');
+      window.scrollTo(0, 0);
+      
+      message.success('تم التوجه إلى صفحة إنشاء أمر البيع');
+    } catch (error) {
+      console.error('خطأ في إنشاء أمر البيع:', error);
+      message.error('حدث خطأ في إنشاء أمر البيع');
+    }
+  };
+
   // تحديث حالة عرض السعر بعد إنشاء الفاتورة
   const updateQuotationStatus = async (quotationId: string, invoiceId: string) => {
     try {
@@ -704,7 +737,7 @@ const Quotations: React.FC = () => {
     {
       title: 'الإجراءات',
       key: 'actions',
-      width: 120,
+      width: 160,
       render: (_: unknown, record: QuotationRecord) => (
         <div className="flex gap-1">
           {/* زر إنشاء فاتورة */}
@@ -716,6 +749,16 @@ const Quotations: React.FC = () => {
             onClick={() => handleCreateInvoice(record)}
             disabled={record.invoiceCreated}
             className={record.invoiceCreated ? "hover:bg-gray-100" : "hover:bg-green-100"}
+          />
+          
+          {/* زر إنشاء أمر بيع */}
+          <Button
+            type="text"
+            size="small"
+            title="إنشاء أمر بيع"
+            icon={<ShoppingCartOutlined style={{ color: '#722ed1', fontSize: 16 }} />}
+            onClick={() => handleCreateSalesOrder(record)}
+            className="hover:bg-purple-100"
           />
           
           {/* زر التعديل - يتم تعطيله إذا تم إنشاء فاتورة */}
@@ -1116,7 +1159,7 @@ const Quotations: React.FC = () => {
             dataSource={filteredQuotations}
             loading={isLoading}
             size="small"
-            scroll={{ x: 1600 }}
+            scroll={{ x: 1700 }}
             pagination={{
               total: filteredQuotations.length,
               pageSize: 10,
