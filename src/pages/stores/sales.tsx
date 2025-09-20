@@ -1323,14 +1323,22 @@ interface SavedInvoice {
   const updateTotals = useCallback((itemsList: InvoiceItem[]) => {
     let totalTax = 0;
     const calculated = itemsList.reduce((acc, item) => {
-      const lineTotal = item.total || 0;
+      // حساب الإجمالي الأساسي للسطر (السعر × الكمية)
+      const quantity = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      const subtotal = quantity * price;
+      
       const discount = item.discountValue || 0;
       const tax = item.taxValue || 0;
       totalTax += tax;
+      
+      const afterDiscount = subtotal - discount;
+      const finalLineTotal = afterDiscount + tax;
+      
       return {
-        afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount + tax),
-        total: acc.total + lineTotal
+        afterDiscount: acc.afterDiscount + afterDiscount,
+        afterTax: acc.afterTax + finalLineTotal,
+        total: acc.total + subtotal // الإجمالي قبل الخصم والضريبة
       };
     }, { afterDiscount: 0, afterTax: 0, total: 0 });
     setTotals({
@@ -1704,11 +1712,20 @@ interface SavedInvoice {
               const foundItem = itemNames.find(item => item.name === quotationItem.itemName);
               const correctItemCode = foundItem ? (foundItem.itemCode || foundItem.id || foundItem.numericId || '') : (quotationItem.itemNumber || '');
               
+              // حساب الإجمالي الأساسي (السعر × الكمية) قبل الخصم والضريبة
+              const quantity = Number(quotationItem.quantity) || 0;
+              const price = Number(quotationItem.price) || 0;
+              const basicTotal = quantity * price;
+              
               console.log('تصحيح كود الصنف من عرض السعر:', {
                 itemName: quotationItem.itemName,
                 originalItemNumber: quotationItem.itemNumber,
                 foundItem: foundItem,
-                correctItemCode: correctItemCode
+                correctItemCode: correctItemCode,
+                quantity,
+                price,
+                basicTotal,
+                originalTotal: quotationItem.total
               });
               
               return {
@@ -1721,7 +1738,7 @@ interface SavedInvoice {
                 discountValue: quotationItem.discountValue || 0,
                 taxPercent: String(quotationItem.taxPercent || taxRate),
                 taxValue: quotationItem.taxValue || 0,
-                total: quotationItem.total || 0,
+                total: basicTotal, // استخدام الإجمالي الأساسي بدلاً من القيمة القادمة من عرض السعر
                 isNewItem: false
               };
             });

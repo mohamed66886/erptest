@@ -207,6 +207,8 @@ const AddQuotationPage: React.FC = () => {
   // متغيرات التحكم في الحالة
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false); // لتتبع ما إذا كان عرض السعر محفوظاً
+  const [lastSavedQuotation, setLastSavedQuotation] = useState<object | null>(null); // لحفظ بيانات آخر عرض سعر تم حفظه
 
   // البيانات الأساسية
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -591,24 +593,35 @@ const AddQuotationPage: React.FC = () => {
       };
 
       // حفظ في Firebase
-      await addDoc(collection(db, 'quotations'), quotationToSave);
+      const docRef = await addDoc(collection(db, 'quotations'), quotationToSave);
       
       message.success('تم حفظ عرض السعر بنجاح');
+      setIsSaved(true); // تعيين الحالة إلى محفوظ - الآن يمكن الطباعة
       
-      // إعادة تعيين النموذج
-      setAddedItems([]);
-      setEditingItemIndex(null); // إعادة تعيين فهرس الصف المعدل
-      setQuotationData(prev => ({
-        ...prev,
-        customerNumber: '',
-        customerName: ''
-      }));
-      setStatement('');
+      // حفظ بيانات عرض السعر المحفوظ للطباعة
+      setLastSavedQuotation({
+        id: docRef.id,
+        ...quotationToSave,
+        items: addedItems
+      });
       
-      // توليد رقم عرض سعر جديد
-      if (quotationData.branch) {
-        await generateAndSetQuotationNumber(quotationData.branch);
-      }
+      // إعادة تعيين النموذج لعرض سعر جديد بعد فترة قصيرة
+      setTimeout(() => {
+        setAddedItems([]);
+        setEditingItemIndex(null);
+        setQuotationData(prev => ({
+          ...prev,
+          customerNumber: '',
+          customerName: ''
+        }));
+        setStatement('');
+        setIsSaved(false); // إعادة تعيين حالة الحفظ لعرض السعر الجديد
+        
+        // توليد رقم عرض سعر جديد
+        if (quotationData.branch) {
+          generateAndSetQuotationNumber(quotationData.branch);
+        }
+      }, 100); // انتظار 100ms فقط
       
     } catch (error) {
       console.error('خطأ في حفظ عرض السعر:', error);
@@ -620,11 +633,41 @@ const AddQuotationPage: React.FC = () => {
 
   // دالة الطباعة لعرض السعر
   const handlePrint = async () => {
+    // التحقق من أن عرض السعر تم حفظه أولاً
+    if (!isSaved || !lastSavedQuotation) {
+      message.warning('يجب حفظ عرض السعر أولاً قبل الطباعة');
+      return;
+    }
+
+    // استخدام البيانات المحفوظة للطباعة
+    const savedData = lastSavedQuotation as {
+      quotationNumber: string;
+      date: string;
+      branch: string;
+      warehouse: string;
+      validUntil?: string;
+      delegate?: string;
+      customer: { 
+        name: string;
+        id?: string;
+        mobile?: string;
+      };
+      items: Array<{
+        itemCode: string;
+        itemName: string;
+        quantity: string;
+        unit: string;
+        price: string;
+        discountPercent: number;
+        taxPercent: number;
+      }>;
+    };
+
     // التحقق من وجود البيانات المطلوبة
-    if (!quotationData.branch) return message.error('يرجى اختيار الفرع');
-    if (!quotationData.warehouse) return message.error('يرجى اختيار المخزن');
-    if (!quotationData.customerName) return message.error('يرجى إدخال اسم العميل');
-    if (!addedItems.length) return message.error('يرجى إضافة الأصناف');
+    if (!savedData.branch) return message.error('يرجى اختيار الفرع');
+    if (!savedData.warehouse) return message.error('يرجى اختيار المخزن');
+    if (!savedData.customer?.name) return message.error('يرجى إدخال اسم العميل');
+    if (!savedData.items?.length) return message.error('يرجى إضافة الأصناف');
 
     // جلب بيانات الشركة من الإعدادات (إذا لم تكن محملة بالفعل)
     let currentCompanyData = companyData;
@@ -659,18 +702,18 @@ const AddQuotationPage: React.FC = () => {
 
     // بيانات عرض السعر
     const quotationTotals = {
-      subtotal: addedItems.reduce((sum, item) => {
+      subtotal: savedData.items.reduce((sum, item) => {
         const qty = Number(item.quantity) || 0;
         const price = Number(item.price) || 0;
         return sum + (qty * price);
       }, 0),
-      totalDiscount: addedItems.reduce((sum, item) => {
+      totalDiscount: savedData.items.reduce((sum, item) => {
         const qty = Number(item.quantity) || 0;
         const price = Number(item.price) || 0;
         const discount = Number(item.discountPercent) || 0;
         return sum + ((qty * price * discount) / 100);
       }, 0),
-      totalTax: addedItems.reduce((sum, item) => {
+      totalTax: savedData.items.reduce((sum, item) => {
         const qty = Number(item.quantity) || 0;
         const price = Number(item.price) || 0;
         const discount = Number(item.discountPercent) || 0;
@@ -935,16 +978,16 @@ const AddQuotationPage: React.FC = () => {
           <!-- Info Row Section: Quotation info (right), QR (center), Customer info (left) -->
           <div class="info-row-container">
             <table class="info-row-table right">
-              <tr><td class="label">رقم عرض السعر</td><td class="value">${quotationNumber || ''}</td></tr>
-              <tr><td class="label">تاريخ عرض السعر</td><td class="value">${quotationDate.format('YYYY-MM-DD') || ''}</td></tr>
-              <tr><td class="label">تاريخ الانتهاء</td><td class="value">${refDate ? refDate.format('YYYY-MM-DD') : ''}</td></tr>
+              <tr><td class="label">رقم عرض السعر</td><td class="value">${savedData.quotationNumber || ''}</td></tr>
+              <tr><td class="label">تاريخ عرض السعر</td><td class="value">${savedData.date || ''}</td></tr>
+              <tr><td class="label">تاريخ الانتهاء</td><td class="value">${savedData.validUntil || ''}</td></tr>
               <tr><td class="label">نوع الحركة</td><td class="value">${movementType || ''}</td></tr>
             </table>
             <div class="qr-center">
               <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">
                 ${(() => {
-                  const branch = branches.find(b => b.id === quotationData.branch);
-                  return branch ? (branch.name || branch.id) : (quotationData.branch || '');
+                  const branch = branches.find(b => b.id === savedData.branch);
+                  return branch ? (branch.name || branch.id) : (savedData.branch || '');
                 })()}
               </div>
               <div class="qr-code">
@@ -952,13 +995,10 @@ const AddQuotationPage: React.FC = () => {
               </div>
             </div>
             <table class="info-row-table left">
-              <tr><td class="label">اسم العميل</td><td class="value">${quotationData.customerName || ''}</td></tr>
-              <tr><td class="label">رقم العميل</td><td class="value">${quotationData.customerNumber || ''}</td></tr>
+              <tr><td class="label">اسم العميل</td><td class="value">${savedData.customer?.name || ''}</td></tr>
+              <tr><td class="label">رقم العميل</td><td class="value">${savedData.customer?.id || ''}</td></tr>
               <tr><td class="label">نوع الحساب</td><td class="value">${accountType || ''}</td></tr>
-              <tr><td class="label">رقم الموبايل</td><td class="value">${(() => {
-                const customer = customers.find(c => c.id === quotationData.customerNumber);
-                return customer?.mobile || customer?.phone || '';
-              })()}</td></tr>
+              <tr><td class="label">رقم الموبايل</td><td class="value">${savedData.customer?.mobile || ''}</td></tr>
             </table>
           </div>
           
@@ -981,7 +1021,7 @@ const AddQuotationPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              ${addedItems.map((item, idx) => {
+              ${savedData.items.map((item, idx) => {
                 const subtotal = Number(item.price) * Number(item.quantity);
                 const discountValue = (subtotal * Number(item.discountPercent)) / 100;
                 const afterDiscount = subtotal - discountValue;
@@ -1036,12 +1076,12 @@ const AddQuotationPage: React.FC = () => {
           <!-- Signature Section -->
           <div class="signature">
             <div class="signature-box">
-              <div>اسم العميل: ${quotationData.customerName || ''}</div>
+              <div>اسم العميل: ${savedData.customer?.name || ''}</div>
               <div>التوقيع: ___________________</div>
             </div>
             <div class="signature-box">
-              <div>المندوب: ${quotationData.delegate || ''}</div>
-              <div>التاريخ: ${quotationDate.format('YYYY-MM-DD') || ''}</div>
+              <div>المندوب: ${savedData.delegate || ''}</div>
+              <div>التاريخ: ${savedData.date || ''}</div>
             </div>
           </div>
           
@@ -1123,6 +1163,11 @@ const AddQuotationPage: React.FC = () => {
       setPeriodRange([start, end]);
     }
   }, [currentFinancialYear]);
+
+  // إعادة تعيين حالة الحفظ عند تعديل البيانات
+  useEffect(() => {
+    setIsSaved(false);
+  }, [addedItems, quotationData, statement]);
 
   // رقم عرض السعر تلقائي
   const [quotationNumber, setQuotationNumber] = useState("");
@@ -2162,44 +2207,63 @@ const AddQuotationPage: React.FC = () => {
         </Tabs>
 
         {/* أزرار الحفظ والطباعة */}
-        <div className="flex gap-4 mt-8 justify-center">
-          <Button 
-            type="primary" 
-            size="large" 
-            onClick={handleSave}
-            loading={saving}
-            disabled={saving || !addedItems.length}
-            style={{
-              height: 48,
-              fontSize: 18,
-              borderRadius: 8,
-              padding: '0 32px',
-              backgroundColor: '#1890ff',
-              borderColor: '#1890ff'
-            }}
-            icon={!saving && <SaveOutlined />}
-          >
-            {saving ? 'جاري الحفظ...' : 'حفظ'}
-          </Button>
-          <Button
-            type="default"
-            size="large"
-            onClick={handlePrint}
-            disabled={saving || !addedItems.length}
-            style={{
-              height: 48,
-              fontSize: 18,
-              borderRadius: 8,
-              padding: '0 32px',
-              backgroundColor: '#fff',
-              borderColor: '#1890ff',
-              color: '#1890ff',
-              boxShadow: '0 1px 6px rgba(0,0,0,0.07)'
-            }}
-            icon={<FileTextOutlined />}
-          >
-            طباعة
-          </Button>
+        <div className="flex flex-col items-center gap-4 mt-8">
+          <div className="flex gap-4 justify-center">
+            <Button 
+              type="primary" 
+              size="large" 
+              onClick={handleSave}
+              loading={saving}
+              disabled={saving || !addedItems.length}
+              style={{
+                height: 48,
+                fontSize: 18,
+                borderRadius: 8,
+                padding: '0 32px',
+                backgroundColor: '#1890ff',
+                borderColor: '#1890ff'
+              }}
+              icon={!saving && <SaveOutlined />}
+            >
+              {saving ? 'جاري الحفظ...' : 'حفظ'}
+            </Button>
+            <Button
+              type="default"
+              size="large"
+              onClick={handlePrint}
+              disabled={saving || !addedItems.length || !isSaved}
+              style={{
+                height: 48,
+                fontSize: 18,
+                borderRadius: 8,
+                padding: '0 32px',
+                backgroundColor: !isSaved ? '#f5f5f5' : '#fff',
+                borderColor: !isSaved ? '#d9d9d9' : '#1890ff',
+                color: !isSaved ? '#999' : '#1890ff',
+                boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+                cursor: !isSaved ? 'not-allowed' : 'pointer'
+              }}
+              icon={<FileTextOutlined />}
+              title={!isSaved ? 'يجب حفظ عرض السعر أولاً قبل الطباعة' : 'طباعة عرض السعر'}
+            >
+              طباعة
+            </Button>
+          </div>
+          {!isSaved && addedItems.length > 0 && (
+            <div style={{
+              fontSize: 14,
+              color: '#ff9800',
+              background: '#fff7e0',
+              padding: '8px 16px',
+              borderRadius: 6,
+              border: '1px solid #ffe0a3',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8
+            }}>
+              ⚠️ يجب حفظ عرض السعر أولاً لتفعيل زر الطباعة
+            </div>
+          )}
         </div>
       </div>
     </div>
