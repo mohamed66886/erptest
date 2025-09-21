@@ -35,6 +35,9 @@ interface QuotationRecord {
   items?: QuotationItem[]; // إضافة حقل العناصر لنقل بيانات المنتجات للفاتورة
   invoiceCreated?: boolean; // لتتبع ما إذا تم إنشاء فاتورة من عرض السعر
   invoiceId?: string; // رقم الفاتورة المرتبطة بعرض السعر
+  salesOrderCreated?: boolean; // لتتبع ما إذا تم إنشاء أمر بيع من عرض السعر
+  salesOrderId?: string; // رقم أمر البيع المرتبط بعرض السعر
+  convertedTo?: 'invoice' | 'salesOrder' | null; // نوع التحويل
 }
 
 interface QuotationItem {
@@ -80,8 +83,7 @@ const Quotations: React.FC = () => {
   // خيارات البحث
   const [quotationNumber, setQuotationNumber] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
-  const [amountFrom, setAmountFrom] = useState<number | null>(null);
-  const [amountTo, setAmountTo] = useState<number | null>(null);
+  const [amount, setAmount] = useState<number | null>(null); // حقل واحد فقط للمبلغ
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<Dayjs | null>(null);
@@ -89,6 +91,7 @@ const Quotations: React.FC = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerNumber, setCustomerNumber] = useState<string>('');
+  const [selectedMovementType, setSelectedMovementType] = useState<string>(''); // فلتر نوع الحركة
 
   // السنة المالية من السياق العام
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
@@ -125,7 +128,9 @@ const Quotations: React.FC = () => {
     totalQuotations: 0,
     totalAmount: 0,
     activeQuotations: 0,
-    expiredQuotations: 0
+    expiredQuotations: 0,
+    convertedToInvoice: 0,
+    convertedToSalesOrder: 0
   });
 
   // جلب البيانات الأساسية
@@ -277,7 +282,10 @@ const Quotations: React.FC = () => {
           accountType: data.accountType || 'عميل',
           items: data.items || [], // إضافة الأصناف من عرض السعر
           invoiceCreated: data.invoiceCreated || false, // حالة إنشاء الفاتورة
-          invoiceId: data.invoiceId || '' // رقم الفاتورة المرتبطة
+          invoiceId: data.invoiceId || '', // رقم الفاتورة المرتبطة
+          salesOrderCreated: data.salesOrderCreated || false, // حالة إنشاء أمر البيع
+          salesOrderId: data.salesOrderId || '', // رقم أمر البيع المرتبط
+          convertedTo: data.convertedTo || null // نوع التحويل
         };
 
         quotationsData.push(quotation);
@@ -307,12 +315,9 @@ const Quotations: React.FC = () => {
         );
       }
 
-      if (amountFrom !== null && amountFrom >= 0) {
-        filtered = filtered.filter(q => q.amount >= amountFrom);
-      }
-
-      if (amountTo !== null && amountTo >= 0) {
-        filtered = filtered.filter(q => q.amount <= amountTo);
+      // فلتر المبلغ (مطابقة جزئية)
+      if (amount !== null && !isNaN(amount)) {
+        filtered = filtered.filter(q => q.amount.toString().includes(amount.toString()));
       }
 
       if (customerPhone.trim()) {
@@ -336,6 +341,11 @@ const Quotations: React.FC = () => {
         );
       }
 
+      // فلتر نوع الحركة
+      if (selectedMovementType) {
+        filtered = filtered.filter(q => q.movementType === selectedMovementType);
+      }
+
       setQuotations(quotationsData);
       setFilteredQuotations(filtered);
 
@@ -353,8 +363,11 @@ const Quotations: React.FC = () => {
       const stats = {
         totalQuotations: filtered.length,
         totalAmount: filtered.reduce((sum, q) => sum + q.amount, 0),
-        activeQuotations: filtered.filter(q => q.status === 'نشط').length,
-        expiredQuotations: filtered.filter(q => q.status === 'منتهي الصلاحية').length
+        activeQuotations: filtered.filter(q => q.status === 'نشط' && !q.convertedTo).length,
+        expiredQuotations: filtered.filter(q => q.status === 'منتهي الصلاحية').length,
+        finishedQuotations: filtered.filter(q => q.status === 'منتهية').length,
+        convertedToInvoice: filtered.filter(q => q.convertedTo === 'invoice').length,
+        convertedToSalesOrder: filtered.filter(q => q.convertedTo === 'salesOrder').length
       };
       setTotalStats(stats);
 
@@ -368,8 +381,8 @@ const Quotations: React.FC = () => {
     }
   }, [
     dateFrom, dateTo, selectedBranch, selectedPaymentMethod, selectedWarehouse,
-    selectedCustomer, quotationNumber, amountFrom, amountTo,
-    customerPhone, customerNumber, branches, customers
+    selectedCustomer, quotationNumber, amount,
+    customerPhone, customerNumber, branches, customers, selectedMovementType
   ]);
 
   // تشغيل البحث تلقائياً عند تحميل الصفحة أو تغيير المعايير
@@ -392,13 +405,13 @@ const Quotations: React.FC = () => {
   const clearAllFilters = () => {
     setQuotationNumber('');
     setSelectedBranch('');
-    setAmountFrom(null);
-    setAmountTo(null);
+    setAmount(null);
     setSelectedPaymentMethod('');
     setSelectedWarehouse('');
     setSelectedCustomer('');
     setCustomerPhone('');
     setCustomerNumber('');
+    setSelectedMovementType(''); // إعادة تعيين فلتر نوع الحركة
     // إعادة تعيين التواريخ للسنة المالية الحالية
     if (currentFinancialYear) {
       const start = dayjs(currentFinancialYear.startDate);
@@ -440,11 +453,18 @@ const Quotations: React.FC = () => {
   // إنشاء فاتورة من عرض السعر
   const handleCreateInvoice = async (quotation: QuotationRecord) => {
     try {
-      // التحقق من وجود فاتورة مرتبطة بالفعل
-      if (quotation.invoiceCreated) {
-        message.warning('تم إنشاء فاتورة من هذا العرض مسبقاً');
+      // التحقق من وجود تحويل سابق
+      if (quotation.convertedTo) {
+        if (quotation.convertedTo === 'invoice') {
+          message.warning('تم إنشاء فاتورة من هذا العرض مسبقاً');
+        } else {
+          message.warning('تم تحويل هذا العرض إلى أمر بيع، لا يمكن إنشاء فاتورة');
+        }
         return;
       }
+
+      // تحديث حالة عرض السعر قبل التوجه
+      await updateQuotationConversionStatus(quotation.id, 'invoice', '');
 
       // إعداد بيانات عرض السعر للنقل إلى صفحة الفاتورة
       const quotationData = {
@@ -479,6 +499,19 @@ const Quotations: React.FC = () => {
   // إنشاء أمر بيع من عرض السعر
   const handleCreateSalesOrder = async (quotation: QuotationRecord) => {
     try {
+      // التحقق من وجود تحويل سابق
+      if (quotation.convertedTo) {
+        if (quotation.convertedTo === 'salesOrder') {
+          message.warning('تم إنشاء أمر بيع من هذا العرض مسبقاً');
+        } else {
+          message.warning('تم تحويل هذا العرض إلى فاتورة، لا يمكن إنشاء أمر بيع');
+        }
+        return;
+      }
+
+      // تحديث حالة عرض السعر قبل التوجه
+      await updateQuotationConversionStatus(quotation.id, 'salesOrder', '');
+
       // إعداد بيانات عرض السعر للنقل إلى صفحة أمر البيع
       const quotationData = {
         quotationId: quotation.id,
@@ -526,6 +559,43 @@ const Quotations: React.FC = () => {
     } catch (error) {
       console.error('خطأ في تحديث حالة عرض السعر:', error);
       message.error('حدث خطأ في تحديث حالة عرض السعر');
+    }
+  };
+
+  // تحديث حالة التحويل لعرض السعر
+  const updateQuotationConversionStatus = async (quotationId: string, convertedTo: 'invoice' | 'salesOrder', documentId: string) => {
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      
+      const updateData: {
+        convertedTo: 'invoice' | 'salesOrder';
+        status: string;
+        movementType: string;
+        invoiceCreated?: boolean;
+        invoiceId?: string;
+        salesOrderCreated?: boolean;
+        salesOrderId?: string;
+      } = {
+        convertedTo: convertedTo,
+        status: 'منتهية',
+        movementType: 'عرض سعر نهائي'
+      };
+
+      if (convertedTo === 'invoice') {
+        updateData.invoiceCreated = true;
+        updateData.invoiceId = documentId;
+      } else {
+        updateData.salesOrderCreated = true;
+        updateData.salesOrderId = documentId;
+      }
+      
+      await updateDoc(doc(db, 'quotations', quotationId), updateData);
+      
+      fetchQuotationsData(); // إعادة تحديث البيانات
+    } catch (error) {
+      console.error('خطأ في تحديث حالة التحويل:', error);
+      message.error('حدث خطأ في تحديث حالة التحويل');
     }
   };
 
@@ -721,14 +791,20 @@ const Quotations: React.FC = () => {
         <div className="flex flex-col gap-1">
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
             status === 'نشط' ? 'bg-green-100 text-green-800' : 
-            status === 'محول إلى فاتورة' ? 'bg-blue-100 text-blue-800' :
-            'bg-red-100 text-red-800'
+            status === 'منتهية' ? 'bg-gray-100 text-gray-800' :
+            status === 'منتهي الصلاحية' ? 'bg-red-100 text-red-800' :
+            'bg-blue-100 text-blue-800'
           }`}>
             {status}
           </span>
-          {record.invoiceCreated && (
+          {record.convertedTo === 'invoice' && (
+            <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              محول إلى فاتورة
+            </span>
+          )}
+          {record.convertedTo === 'salesOrder' && (
             <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-              تم إنشاء فاتورة
+              محول إلى أمر بيع
             </span>
           )}
         </div>
@@ -744,37 +820,55 @@ const Quotations: React.FC = () => {
           <Button
             type="text"
             size="small"
-            title={record.invoiceCreated ? 'تم إنشاء فاتورة بالفعل' : 'إنشاء فاتورة'}
-            icon={<FileText style={{ color: record.invoiceCreated ? '#999' : '#52c41a', fontSize: 16 }} />}
+            title={
+              record.convertedTo === 'invoice' ? 'تم إنشاء فاتورة بالفعل' :
+              record.convertedTo === 'salesOrder' ? 'تم تحويل العرض إلى أمر بيع' :
+              'إنشاء فاتورة'
+            }
+            icon={<FileText style={{ 
+              color: record.convertedTo ? '#999' : '#52c41a', 
+              fontSize: 16 
+            }} />}
             onClick={() => handleCreateInvoice(record)}
-            disabled={record.invoiceCreated}
-            className={record.invoiceCreated ? "hover:bg-gray-100" : "hover:bg-green-100"}
+            disabled={!!record.convertedTo}
+            className={record.convertedTo ? "hover:bg-gray-100" : "hover:bg-green-100"}
           />
           
           {/* زر إنشاء أمر بيع */}
           <Button
             type="text"
             size="small"
-            title="إنشاء أمر بيع"
-            icon={<ShoppingCartOutlined style={{ color: '#722ed1', fontSize: 16 }} />}
+            title={
+              record.convertedTo === 'salesOrder' ? 'تم إنشاء أمر بيع بالفعل' :
+              record.convertedTo === 'invoice' ? 'تم تحويل العرض إلى فاتورة' :
+              'إنشاء أمر بيع'
+            }
+            icon={<ShoppingCartOutlined style={{ 
+              color: record.convertedTo ? '#999' : '#722ed1', 
+              fontSize: 16 
+            }} />}
             onClick={() => handleCreateSalesOrder(record)}
-            className="hover:bg-purple-100"
+            disabled={!!record.convertedTo}
+            className={record.convertedTo ? "hover:bg-gray-100" : "hover:bg-purple-100"}
           />
           
-          {/* زر التعديل - يتم تعطيله إذا تم إنشاء فاتورة */}
+          {/* زر التعديل - يتم تعطيله إذا تم التحويل */}
           <Button
             type="text"
             size="small"
-            title={record.invoiceCreated ? 'لا يمكن التعديل بعد إنشاء الفاتورة' : 'تعديل'}
-            icon={<EditOutlined style={{ color: record.invoiceCreated ? '#999' : '#2563eb', fontSize: 16 }} />}
+            title={record.convertedTo ? 'لا يمكن التعديل بعد التحويل' : 'تعديل'}
+            icon={<EditOutlined style={{ 
+              color: record.convertedTo ? '#999' : '#2563eb', 
+              fontSize: 16 
+            }} />}
             onClick={() => {
-              if (!record.invoiceCreated) {
+              if (!record.convertedTo) {
                 navigate(`/stores/quotations/edit/${record.id}`);
                 window.scrollTo(0, 0);
               }
             }}
-            disabled={record.invoiceCreated}
-            className={record.invoiceCreated ? "hover:bg-gray-100" : "hover:bg-blue-100"}
+            disabled={!!record.convertedTo}
+            className={record.convertedTo ? "hover:bg-gray-100" : "hover:bg-blue-100"}
           />
           
           {/* زر الحذف - متاح دائماً */}
@@ -963,24 +1057,12 @@ const Quotations: React.FC = () => {
           </div>
 
           <div className="flex flex-col">
-            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">المبلغ من</label>
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">المبلغ</label>
             <Input
               type="number"
-              value={amountFrom}
-              onChange={(e) => setAmountFrom(e.target.value ? parseFloat(e.target.value) : null)}
-              placeholder="المبلغ الأدنى"
-              style={largeControlStyle}
-              size="large"
-            />
-          </div>
-
-          <div className="flex flex-col">
-            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">المبلغ إلى</label>
-            <Input
-              type="number"
-              value={amountTo}
-              onChange={(e) => setAmountTo(e.target.value ? parseFloat(e.target.value) : null)}
-              placeholder="المبلغ الأعلى"
+              value={amount !== null ? amount : ''}
+              onChange={(e) => setAmount(e.target.value ? parseFloat(e.target.value) : null)}
+              placeholder="ادخل المبلغ المطلوب"
               style={largeControlStyle}
               size="large"
             />
@@ -1033,7 +1115,22 @@ const Quotations: React.FC = () => {
             </Select>
           </div>
 
-
+          <div className="flex flex-col">
+            <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">نوع الحركة</label>
+            <Select
+              value={selectedMovementType}
+              onChange={setSelectedMovementType}
+              placeholder="اختر نوع الحركة"
+              style={largeControlStyle}
+              size="large"
+              allowClear
+              className={styles.noAntBorder}
+            >
+              <Option value="عرض سعر">عرض سعر</Option>
+              <Option value="عرض سعر نهائي">عرض سعر نهائي</Option>
+              <Option value="أخرى">أخرى</Option>
+            </Select>
+          </div>
 
           <div className="flex flex-col">
             <label style={labelStyle} className="text-sm font-medium text-gray-600 mb-1">رقم الهاتف</label>
