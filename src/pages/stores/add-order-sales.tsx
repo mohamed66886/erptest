@@ -1244,16 +1244,45 @@ interface SavedQuotation {
   const updateTotals = useCallback((itemsList: SalesOrderItem[]) => {
     let totalTax = 0;
     const calculated = itemsList.reduce((acc, item) => {
-      const lineTotal = item.total || 0;
-      const discount = item.discountValue || 0;
-      const tax = item.taxValue || 0;
+      // حساب الإجمالي الصحيح: الكمية × السعر
+      const quantity = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      const lineTotal = quantity * price;
+      
+      // استخدام قيم الخصم والضريبة المحفوظة أو حسابها من جديد
+      const discount = Number(item.discountValue) || 0;
+      const tax = Number(item.taxValue) || 0;
       totalTax += tax;
+      
+      // الإجمالي بعد الخصم
+      const afterDiscount = lineTotal - discount;
+      // الإجمالي النهائي (بعد الخصم + الضريبة)
+      const finalTotal = afterDiscount + tax;
+      
+      console.log(`تفاصيل الصنف ${item.itemName}:`, {
+        quantity,
+        price,
+        lineTotal,
+        discount,
+        tax,
+        afterDiscount,
+        finalTotal
+      });
+      
       return {
-        afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount + tax),
+        afterDiscount: acc.afterDiscount + afterDiscount,
+        afterTax: acc.afterTax + finalTotal,
         total: acc.total + lineTotal
       };
     }, { afterDiscount: 0, afterTax: 0, total: 0 });
+    
+    console.log('النتائج النهائية:', {
+      total: calculated.total,
+      afterDiscount: calculated.afterDiscount,
+      afterTax: calculated.afterTax,
+      tax: totalTax
+    });
+    
     setTotals({
       afterDiscount: parseFloat(calculated.afterDiscount.toFixed(2)),
       afterTax: parseFloat(calculated.afterTax.toFixed(2)),
@@ -1318,10 +1347,23 @@ interface SavedQuotation {
         // تحديث الأصناف من عرض السعر
         if (data.items && Array.isArray(data.items)) {
           console.log('عدد الأصناف في عرض السعر:', data.items.length);
-          const quotationItems = data.items.map((item: SalesOrderItem, index: number) => ({
-            ...item,
-            key: index.toString()
-          }));
+          console.log('بيانات الأصناف من عرض السعر:', data.items);
+          
+          const quotationItems = data.items.map((item: SalesOrderItem, index: number) => {
+            console.log(`الصنف ${index + 1}:`, {
+              itemName: item.itemName,
+              quantity: item.quantity,
+              price: item.price,
+              total: item.total,
+              discountValue: item.discountValue,
+              taxValue: item.taxValue
+            });
+            
+            return {
+              ...item,
+              key: index.toString()
+            };
+          });
           setItems(quotationItems);
           
           // حساب الإجماليات من أصناف عرض السعر
