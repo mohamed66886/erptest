@@ -463,9 +463,6 @@ const Quotations: React.FC = () => {
         return;
       }
 
-      // تحديث حالة عرض السعر قبل التوجه
-      await updateQuotationConversionStatus(quotation.id, 'invoice', '');
-
       // إعداد بيانات عرض السعر للنقل إلى صفحة الفاتورة
       const quotationData = {
         quotationId: quotation.id,
@@ -508,9 +505,6 @@ const Quotations: React.FC = () => {
         }
         return;
       }
-
-      // تحديث حالة عرض السعر قبل التوجه
-      await updateQuotationConversionStatus(quotation.id, 'salesOrder', '');
 
       // إعداد بيانات عرض السعر للنقل إلى صفحة أمر البيع
       const quotationData = {

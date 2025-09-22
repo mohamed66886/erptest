@@ -428,7 +428,9 @@ async function updateQuotationAfterInvoiceCreation(quotationId: string, invoiceI
     await updateDoc(doc(db, 'quotations', quotationId), {
       invoiceCreated: true,
       invoiceId: invoiceId,
+      convertedTo: 'invoice',
       status: 'محول إلى فاتورة',
+      movementType: 'عرض سعر نهائي',
       convertedAt: new Date().toISOString()
     });
     
@@ -1881,7 +1883,7 @@ interface SavedInvoice {
 
     const newItem: InvoiceItem & { warehouseId?: string; mainCategory?: string; cost?: number } = {
       ...item,
-      itemNumber: selected?.itemCode || selected?.id || selected?.numericId || item.itemNumber || 'N/A',
+      itemNumber: selected?.itemCode || selected?.id || String(selected?.numericId) || item.itemNumber || 'N/A',
       taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة
       discountValue,
       taxValue,
@@ -1920,7 +1922,10 @@ interface SavedInvoice {
       await updateDoc(doc(db, 'quotations', quotationId), {
         invoiceCreated: true,
         invoiceId: invoiceId,
-        status: 'محول إلى فاتورة'
+        convertedTo: 'invoice',
+        status: 'محول إلى فاتورة',
+        movementType: 'عرض سعر نهائي',
+        convertedAt: new Date().toISOString()
       });
       
       console.log('تم تحديث حالة عرض السعر بنجاح');
@@ -4261,7 +4266,7 @@ const handlePrint = () => {
                       setItem({
                         ...item,
                         itemName: value,
-                        itemNumber: selected ? (selected.itemCode || selected.id || selected.numericId || '') : '',
+                        itemNumber: selected ? (selected.itemCode || selected.id || String(selected.numericId) || '') : '',
                         price,
                         discountPercent: selected && selected.discount ? String(selected.discount) : '0',
                         taxPercent: taxRate, // استخدام نسبة الضريبة من إعدادات الشركة دائماً

@@ -1400,6 +1400,9 @@ interface SavedQuotation {
         // تشغيل توليد رقم أمر البيع مع تأخير
         setTimeout(generateSalesOrderNumber, 300);
 
+        // حفظ معرف عرض السعر للتحديث لاحقاً
+        (window as Window & { quotationId?: string }).quotationId = data.quotationId;
+
         customMessage.success(`تم تحميل بيانات عرض السعر رقم ${data.quotationNumber}`);
         
         // مسح البيانات من localStorage بعد الاستخدام
@@ -1804,6 +1807,30 @@ interface SavedQuotation {
     updateTotals(newItems);
   };
 
+  // دالة تحديث حالة عرض السعر بعد إنشاء أمر البيع
+  const updateQuotationAfterSalesOrderCreation = async (salesOrderId: string) => {
+    const quotationId = (window as Window & { quotationId?: string }).quotationId;
+    if (!quotationId) return;
+
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'quotations', quotationId), {
+        salesOrderCreated: true,
+        salesOrderId: salesOrderId,
+        convertedTo: 'salesOrder',
+        status: 'محول إلى أمر بيع',
+        movementType: 'عرض سعر نهائي',
+        convertedAt: new Date().toISOString()
+      });
+      
+      console.log('تم تحديث حالة عرض السعر بنجاح');
+      // مسح معرف عرض السعر من الذاكرة
+      delete (window as Window & { quotationId?: string }).quotationId;
+    } catch (error) {
+      console.error('خطأ في تحديث حالة عرض السعر:', error);
+    }
+  };
+
   const handleSave = async () => {
     if (items.length === 0) {
       customMessage.error('لا يمكن حفظ أمر البيع بدون أصناف');
@@ -1841,7 +1868,11 @@ interface SavedQuotation {
     try {
       // حفظ أمر البيع في Firestore مباشرة
       const { addDoc, collection } = await import('firebase/firestore');
-      await addDoc(collection(db, 'salesOrders'), quotation);
+      const docRef = await addDoc(collection(db, 'salesOrders'), quotation);
+      
+      // تحديث حالة عرض السعر إذا تم إنشاء أمر البيع من عرض سعر
+      await updateQuotationAfterSalesOrderCreation(docRef.id);
+      
       customMessage.success('تم حفظ أمر البيع بنجاح!');
       
       // حفظ بيانات آخر أمر بيع محفوظ للطباعة
