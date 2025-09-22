@@ -237,7 +237,7 @@ function InvoiceProfits() {
             <tr>
               <th style="width: 80px;">رقم الفاتورة/المرتجع</th>
               <th style="width: 70px;">التاريخ</th>
-              <th style="width: 80px;">قيمة الفاتورة</th>
+              <th style="width: 100px;">السعر قبل الضريبة والخصم</th>
               <th style="width: 60px;">الخصم</th>
               <th style="width: 85px;">المبلغ بعد الخصم</th>
               <th style="width: 65px;">التكلفة</th>
@@ -271,7 +271,7 @@ function InvoiceProfits() {
               <tr><th colspan="2">الإجماليات النهائية</th></tr>
             </thead>
             <tbody>
-              <tr><td class="total-label">إجمالي قيمة الفواتير:</td><td class="total-value">${totalAmount.toLocaleString()} ر.س</td></tr>
+              <tr><td class="total-label">إجمالي السعر قبل الضريبة والخصم:</td><td class="total-value">${totalAmount.toLocaleString()} ر.س</td></tr>
               <tr><td class="total-label">إجمالي الخصم:</td><td class="total-value">${totalDiscount.toLocaleString()} ر.س</td></tr>
               <tr><td class="total-label">المبلغ بعد الخصم:</td><td class="total-value">${totalAfterDiscount.toLocaleString()} ر.س</td></tr>
               <tr><td class="total-label">إجمالي التكلفة:</td><td class="total-value">${totalCost.toLocaleString()} ر.س</td></tr>
@@ -532,7 +532,7 @@ function InvoiceProfits() {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.quantity) || 0;
-          const total = Number(item.total) || price * quantity;
+          const total = price * quantity; // السعر قبل الضريبة والخصم
           const discountValue = Number(item.discountValue) || 0;
           const discountPercent = Number(item.discountPercent) || 0;
           const taxValue = Number(item.taxValue) || 0;
@@ -928,7 +928,7 @@ function InvoiceProfits() {
     sheet.columns = [
       { header: 'رقم الفاتورة/المرتجع', key: 'invoiceNumber', width: 25 },
       { header: 'التاريخ', key: 'date', width: 15 },
-      { header: 'قيمة الفاتورة', key: 'total', width: 15 },
+      { header: 'السعر قبل الضريبة والخصم', key: 'total', width: 20 },
       { header: 'الخصم', key: 'discount', width: 15 },
       { header: 'المبلغ بعد الخصم', key: 'afterDiscount', width: 18 },
       { header: 'التكلفة', key: 'cost', width: 15 },
@@ -1282,10 +1282,10 @@ function InvoiceProfits() {
                 render: (text: string) => dayjs(text).format('YYYY-MM-DD')
               },
               {
-                title: 'قيمة الفاتورة',
+                title: 'السعر قبل الضريبة والخصم',
                 dataIndex: 'total',
                 key: 'total',
-                width: 140,
+                width: 160,
                 align: 'center',
                 sorter: (a: InvoiceRecord, b: InvoiceRecord) => a.total - b.total,
                 render: (value: number, record: InvoiceRecord) => {
