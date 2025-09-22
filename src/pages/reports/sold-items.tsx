@@ -56,6 +56,8 @@ interface SoldItemRecord {
   salePrice: number;
   quantity: number;
   totalAmount: number;
+  baseTotal: number; // المبلغ الأساسي قبل الخصم
+  discountValue: number; // قيمة الخصم
   invoiceNumber: string;
   date: string;
   branch: string;
@@ -123,7 +125,7 @@ const SoldItems: React.FC = () => {
   const [chartData, setChartData] = useState<ChartDataItem[]>([]);
 
   // بيانات الشركة
-  const [companyData, setCompanyData] = useState<any>({});
+  const [companyData, setCompanyData] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
     fetchBranches().then(data => {
@@ -483,6 +485,13 @@ const SoldItems: React.FC = () => {
               parentName = parentItem?.name || '';
             }
             
+            // حساب الإجمالي الأساسي قبل الخصم
+            const baseTotal = (parseFloat(item.price) || 0) * (parseFloat(item.quantity) || 0);
+            // جلب قيمة الخصم من البيانات
+            const discountValue = parseFloat(item.discountValue) || 0;
+            // حساب الإجمالي بعد الخصم
+            const totalAfterDiscount = baseTotal - discountValue;
+            
             const record: SoldItemRecord = {
               key: `${docSnapshot.id}-${item.itemNumber}-${Math.random()}`,
               itemNumber: item.itemNumber || '',
@@ -491,7 +500,9 @@ const SoldItems: React.FC = () => {
               unit: item.unit || '',
               salePrice: parseFloat(item.price) || 0,
               quantity: parseFloat(item.quantity) || 0,
-              totalAmount: (parseFloat(item.price) || 0) * (parseFloat(item.quantity) || 0),
+              totalAmount: totalAfterDiscount, // استخدام الإجمالي بعد الخصم
+              baseTotal: baseTotal, // المبلغ الأساسي قبل الخصم
+              discountValue: discountValue, // قيمة الخصم
               invoiceNumber,
               date,
               branch,
@@ -513,9 +524,15 @@ const SoldItems: React.FC = () => {
       records.forEach(item => {
         const key = item.itemNumber;
         if (groupedItems[key]) {
-          // إضافة الكمية إلى الصنف الموجود (مع الاحتفاظ بسعر البيع الأصلي)
+          // إضافة الكمية والمبالغ إلى الصنف الموجود
           groupedItems[key].quantity += item.quantity;
-          groupedItems[key].totalAmount += item.totalAmount;
+          groupedItems[key].baseTotal += item.baseTotal; // جمع المبلغ الأساسي
+          groupedItems[key].discountValue += item.discountValue; // جمع الخصم
+          // إعادة حساب الإجمالي بعد الخصم
+          groupedItems[key].totalAmount = groupedItems[key].baseTotal - groupedItems[key].discountValue;
+          // تحديث متوسط سعر البيع بعد الخصم
+          groupedItems[key].salePrice = groupedItems[key].quantity > 0 ? 
+            groupedItems[key].totalAmount / groupedItems[key].quantity : 0;
         } else {
           // إضافة صنف جديد
           groupedItems[key] = { ...item };
@@ -874,9 +891,9 @@ const SoldItems: React.FC = () => {
               <th style="width: 200px;">اسم الصنف</th>
               <th style="width: 100px;">الفئة</th>
               <th style="width: 80px;">الوحدة</th>
-              <th style="width: 100px;">سعر البيع</th>
+              <th style="width: 100px;">سعر البيع (بعد الخصم)</th>
               <th style="width: 120px;">الكمية المباعة</th>
-              <th style="width: 120px;">القيمة المباعة</th>
+              <th style="width: 120px;">الإجمالي بعد الخصم</th>
             </tr>
           </thead>
           <tbody>
@@ -916,7 +933,7 @@ const SoldItems: React.FC = () => {
                 <td class="total-value">${avgPrice.toLocaleString()} ر.س</td>
               </tr>
               <tr class="final-total">
-                <td class="total-label">إجمالي القيمة:</td>
+                <td class="total-label">إجمالي القيمة بعد الخصم:</td>
                 <td class="total-value">${totalAmount.toLocaleString()} ر.س</td>
               </tr>
             </tbody>
@@ -1043,9 +1060,9 @@ const SoldItems: React.FC = () => {
       { header: 'اسم الصنف', key: 'itemName', width: 40 },
       { header: 'الفئة', key: 'category', width: 15 },
       { header: 'الوحدة', key: 'unit', width: 10 },
-      { header: 'سعر البيع', key: 'salePrice', width: 12 },
+      { header: 'سعر البيع (بعد الخصم)', key: 'salePrice', width: 12 },
       { header: 'الكمية المباعة', key: 'quantity', width: 15 },
-      { header: 'القيمة المباعة', key: 'totalAmount', width: 15 },
+      { header: 'الإجمالي بعد الخصم', key: 'totalAmount', width: 15 },
 
     ];
 
@@ -1531,7 +1548,7 @@ const SoldItems: React.FC = () => {
               ),
             },
             {
-              title: 'سعر البيع',
+              title: 'سعر البيع (بعد الخصم)',
               dataIndex: 'salePrice',
               key: 'salePrice',
               minWidth: 120,
@@ -1555,7 +1572,7 @@ const SoldItems: React.FC = () => {
               ),
             },
             {
-              title: ' القيمة المباعة',
+              title: 'الإجمالي بعد الخصم',
               dataIndex: 'totalAmount',
               key: 'totalAmount',
               minWidth: 140,
