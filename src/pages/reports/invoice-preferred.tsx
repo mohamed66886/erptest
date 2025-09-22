@@ -226,8 +226,8 @@ const InvoicePreferred: React.FC = () => {
       } catch (e) {
         console.log('DEBUG - error fetching inventory_items:', e);
       }
-      let q = collection(db, 'sales_invoices');
-      let filters: any[] = [];
+      let q;
+      const filters: any[] = [];
       const params = filtersParams || {};
       if (params.branchId) filters.push(where('branch', '==', params.branchId));
       if (params.invoiceNumber) filters.push(where('invoiceNumber', '==', params.invoiceNumber));
@@ -236,13 +236,15 @@ const InvoicePreferred: React.FC = () => {
       if (params.warehouseId) filters.push(where('warehouse', '==', params.warehouseId));
       if (filters.length > 0) {
         const { query: qFn } = await import('firebase/firestore');
-        q = qFn(q, ...filters);
+        q = qFn(collection(db, 'sales_invoices'), ...filters);
+      } else {
+        q = collection(db, 'sales_invoices');
       }
       // لا يمكن عمل تصفية مباشرة على الحقول غير المفهرسة أو الفرعية، سنستخدم الفلاتر بعد الجلب
       const snapshot = await getDocs(q);
-      let salesRecords: InvoiceRecord[] = [];
+      const salesRecords: InvoiceRecord[] = [];
       snapshot.forEach(doc => {
-        const data = doc.data();
+        const data = doc.data() as any;
         const invoiceNumber = data.invoiceNumber || '';
         const date = data.date || '';
         const branch = data.branch || '';
@@ -256,13 +258,64 @@ const InvoicePreferred: React.FC = () => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.quantity) || 0;
-          const total = Number(item.total) || price * quantity;
-          const discountValue = Number(item.discountValue) || 0;
+          
+          // حساب الإجمالي الأساسي
+          const total = price * quantity;
+          
+          // حساب قيمة الخصم - إما من القيمة المحفوظة أو من النسبة
+          let discountValue = Number(item.discountValue) || 0;
           const discountPercent = Number(item.discountPercent) || 0;
-          const taxValue = Number(item.taxValue) || 0;
+          
+          // إذا لم تكن قيمة الخصم محفوظة، احسبها من النسبة
+          if (!item.discountValue && discountPercent > 0) {
+            discountValue = (total * discountPercent) / 100;
+          }
+          
+          // حساب المبلغ بعد الخصم
+          const totalAfterDiscount = total - discountValue;
+          
+          // حساب قيمة الضريبة - إما من القيمة المحفوظة أو من النسبة
+          let taxValue = Number(item.taxValue) || 0;
           const taxPercent = Number(item.taxPercent) || 0;
-          const net = Number(item.net) || (total - discountValue + taxValue);
+          
+          // إذا لم تكن قيمة الضريبة محفوظة، احسبها من النسبة على المبلغ بعد الخصم
+          if (!item.taxValue && taxPercent > 0) {
+            taxValue = (totalAfterDiscount * taxPercent) / 100;
+          }
+          
+          // حساب الصافي النهائي - استخدم القيمة المحفوظة أو احسبها
+          const net = Number(item.net) || (totalAfterDiscount + taxValue);
+          
           const profit = (price - cost) * quantity;
+          
+          // إضافة console.log للتحقق من صحة الحسابات
+          console.log('Sales Invoice Calculation:', {
+            itemName: item.itemName,
+            price,
+            quantity,
+            total,
+            discountPercent,
+            discountValue,
+            totalAfterDiscount,
+            taxPercent,
+            taxValue,
+            net,
+            profit
+          });
+          
+          // التحقق من صحة الحسابات
+          const calculatedTotal = price * quantity;
+          const calculatedDiscountValue = discountPercent > 0 ? (calculatedTotal * discountPercent) / 100 : 0;
+          const calculatedAfterDiscount = calculatedTotal - (item.discountValue || calculatedDiscountValue);
+          const calculatedTaxValue = taxPercent > 0 ? (calculatedAfterDiscount * taxPercent) / 100 : 0;
+          const calculatedNet = calculatedAfterDiscount + (item.taxValue || calculatedTaxValue);
+          
+          if (Math.abs(total - calculatedTotal) > 0.01) {
+            console.warn('Total mismatch:', { stored: total, calculated: calculatedTotal, item: item.itemName });
+          }
+          if (Math.abs(net - calculatedNet) > 0.01) {
+            console.warn('Net mismatch:', { stored: net, calculated: calculatedNet, item: item.itemName });
+          }
           // استخراج رقم العميل من جميع الحقول المحتملة مع التأكد من أنها سترينج
           const customerPhone =
             (typeof item.customerPhone === 'string' && item.customerPhone.trim() !== '' && item.customerPhone) ||
@@ -317,8 +370,8 @@ const InvoicePreferred: React.FC = () => {
           console.log('DEBUG - Pushed salesRecord with seller:', seller, 'for item:', item.itemName);
         });
       });
-      let qReturn = collection(db, 'sales_returns');
-      let filtersReturn: any[] = [];
+      let qReturn;
+      const filtersReturn: any[] = [];
       if (params.branchId) filtersReturn.push(where('branch', '==', params.branchId));
       if (params.invoiceNumber) filtersReturn.push(where('invoiceNumber', '==', params.invoiceNumber));
       if (params.dateFrom) filtersReturn.push(where('date', '>=', dayjs(params.dateFrom).format('YYYY-MM-DD')));
@@ -326,17 +379,19 @@ const InvoicePreferred: React.FC = () => {
       if (params.warehouseId) filtersReturn.push(where('warehouse', '==', params.warehouseId));
       if (filtersReturn.length > 0) {
         const { query: qFn } = await import('firebase/firestore');
-        qReturn = qFn(qReturn, ...filtersReturn);
+        qReturn = qFn(collection(db, 'sales_returns'), ...filtersReturn);
+      } else {
+        qReturn = collection(db, 'sales_returns');
       }
       const snapshotReturn = await getDocs(qReturn);
-      let returnRecords: InvoiceRecord[] = [];
+      const returnRecords: InvoiceRecord[] = [];
       snapshotReturn.forEach(doc => {
-      const data = doc.data();
+      const data = doc.data() as any;
         // استخدم رقم المرتجع بدلاً من رقم الفاتورة في المرتجع
         const referenceNumber = data.referenceNumber || '';
         const invoiceNumber = referenceNumber || data.invoiceNumber || '';
         const date = data.date || '';
-        const branch = typeof doc.data().branch === 'string' ? doc.data().branch : '';
+        const branch = typeof data.branch === 'string' ? data.branch : '';
         const customer = data.customerName || data.customer || '';
         const customerPhone = data.customerPhone || '';
         const seller = data.seller || '';
@@ -346,14 +401,53 @@ const InvoicePreferred: React.FC = () => {
         items.forEach((item: any, idx: number) => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
-          const quantity = Number(item.returnedQty) || 0;
+          const quantity = Number(item.returnedQty) || 0; // للمرتجعات نستخدم returnedQty
+          
+          // حساب الإجمالي الأساسي (موجب لأن هذا هو المبلغ الأساسي)
           const total = price * quantity;
+          
+          // حساب قيمة الخصم - للمرتجعات تكون موجبة (لأننا نحتاج لطرحها من الإجمالي)
+          let discountValue = Math.abs(Number(item.discountValue)) || 0;
           const discountPercent = Number(item.discountPercent) || 0;
-          const discountValue = -(total * discountPercent / 100); // تطبيق الإشارة السالبة للمرتجعات
+          
+          // إذا لم تكن قيمة الخصم محفوظة، احسبها من النسبة
+          if (!item.discountValue && discountPercent > 0) {
+            discountValue = (total * discountPercent) / 100;
+          }
+          
+          // حساب المبلغ بعد الخصم
+          const totalAfterDiscount = total - discountValue;
+          
+          // حساب قيمة الضريبة - للمرتجعات تكون موجبة (لأننا نحتاج لإضافتها)
+          let taxValue = Math.abs(Number(item.taxValue)) || 0;
           const taxPercent = Number(item.taxPercent) || 0;
-          const taxValue = -((total - (total * discountPercent / 100)) * taxPercent / 100); // تطبيق الإشارة السالبة للمرتجعات
-          const net = -(total - (total * discountPercent / 100) + ((total - (total * discountPercent / 100)) * taxPercent / 100)); // تطبيق الإشارة السالبة للمرتجعات
-          const profit = (price - cost) * quantity * -1;
+          
+          // إذا لم تكن قيمة الضريبة محفوظة، احسبها من النسبة على المبلغ بعد الخصم
+          if (!item.taxValue && taxPercent > 0) {
+            taxValue = (totalAfterDiscount * taxPercent) / 100;
+          }
+          
+          // حساب الصافي النهائي - للمرتجعات يكون سالب (لأنه مرتجع)
+          const netBeforeSign = totalAfterDiscount + taxValue;
+          const net = -Math.abs(Number(item.net) || netBeforeSign);
+          
+          // الربح للمرتجعات يكون سالب
+          const profit = -Math.abs((price - cost) * quantity);
+          
+          // إضافة console.log للتحقق من صحة الحسابات للمرتجعات
+          console.log('Return Calculation:', {
+            itemName: item.itemName,
+            price,
+            quantity,
+            total,
+            discountPercent,
+            discountValue: -discountValue,
+            totalAfterDiscount,
+            taxPercent,
+            taxValue: -taxValue,
+            net,
+            profit
+          });
           // استخراج رقم العميل من جميع الحقول المحتملة مع التأكد من أنها سترينج
           const customerPhone =
             (typeof item.customerPhone === 'string' && item.customerPhone.trim() !== '' && item.customerPhone) ||
@@ -386,12 +480,12 @@ const InvoicePreferred: React.FC = () => {
             itemNumber: item.itemNumber || '',
             itemName: item.itemName || '',
             mainCategory: parentName,
-            quantity,
+            quantity: -quantity, // الكمية سالبة للمرتجعات
             price,
-            total,
-            discountValue,
+            total: -total, // الإجمالي سالب للمرتجعات
+            discountValue: -discountValue, // قيمة الخصم سالبة للمرتجعات
             discountPercent,
-            taxValue,
+            taxValue: -taxValue, // قيمة الضريبة سالبة للمرتجعات
             taxPercent,
             net,
             cost,
@@ -411,6 +505,9 @@ const InvoicePreferred: React.FC = () => {
       });
       // بدلاً من التجميع، اعرض كل الأصناف مباشرة
       const all = [...salesRecords, ...returnRecords];
+      
+      console.log(`DEBUG - Fetched ${salesRecords.length} sales records and ${returnRecords.length} return records`);
+      
       // تصفية إضافية بعد الجلب
       let filteredAll = all;
       if (params.customerName) {
@@ -434,9 +531,22 @@ const InvoicePreferred: React.FC = () => {
         );
       }
       setInvoices(filteredAll);
-      console.log('DEBUG - setInvoices called with:', all);
+      console.log('DEBUG - setInvoices called with:', filteredAll);
+      
+      // إحصائيات سريعة للتحقق من صحة البيانات
+      const totalSalesItems = salesRecords.length;
+      const totalReturnItems = returnRecords.length;
+      const totalValue = filteredAll.reduce((sum, item) => sum + (item.net || 0), 0);
+      
+      console.log('Data Summary:', {
+        totalSalesItems,
+        totalReturnItems,
+        totalItems: filteredAll.length,
+        totalValue: totalValue.toFixed(2)
+      });
+      
       // Debug: طباعة النتائج النهائية في الكونسول
-      console.log('DEBUG - Final result array:', all);
+      console.log('DEBUG - Final result array:', filteredAll);
     } catch (err) {
       setInvoices([]);
       console.log('DEBUG - fetchInvoices error:', err);
@@ -459,24 +569,59 @@ const InvoicePreferred: React.FC = () => {
         inv.itemData.items.forEach((item: any) => {
           const price = Number(item.price) || 0;
           const quantity = Number(item.quantity) || Number(item.returnedQty) || 0;
-          const discountValue = Number(item.discountValue) || 0;
-          const totalAfterDiscount = (price * quantity) - discountValue;
+          
+          // حساب الخصم والضرائب بطريقة صحيحة
+          let discountValue = Number(item.discountValue) || 0;
+          const discountPercent = Number(item.discountPercent) || 0;
+          
+          // إذا لم تكن قيمة الخصم محفوظة، احسبها من النسبة
+          if (!item.discountValue && discountPercent > 0) {
+            discountValue = (price * quantity * discountPercent) / 100;
+          }
+          
+          // للمرتجعات، تأكد من أن الخصم سالب
+          if (inv.isReturn) {
+            discountValue = -Math.abs(discountValue);
+          }
+          
+          const totalAfterDiscount = (price * quantity) - Math.abs(discountValue);
+          
+          let taxValue = Number(item.taxValue) || 0;
+          const taxPercent = Number(item.taxPercent) || 0;
+          
+          // إذا لم تكن قيمة الضريبة محفوظة، احسبها من النسبة
+          if (!item.taxValue && taxPercent > 0) {
+            taxValue = (totalAfterDiscount * taxPercent) / 100;
+          }
+          
+          // للمرتجعات، تأكد من أن الضريبة سالبة
+          if (inv.isReturn) {
+            taxValue = -Math.abs(taxValue);
+          }
+          
+          const net = Number(item.net) || (inv.isReturn ? 
+            -(totalAfterDiscount + Math.abs(taxValue)) : 
+            (totalAfterDiscount + Math.abs(taxValue))
+          );
+          
           allRows.push({
             ...inv,
             itemNumber: item.itemNumber || '',
             itemName: item.itemName || '',
             mainCategory: inv.mainCategory || '',
-            quantity,
+            quantity: inv.isReturn ? -Math.abs(quantity) : quantity,
             price,
             discountValue,
-            discountPercent: Number(item.discountPercent) || 0,
-            taxValue: Number(item.taxValue) || 0,
-            taxPercent: Number(item.taxPercent) || 0,
-            net: Number(item.net) || 0,
+            discountPercent,
+            taxValue,
+            taxPercent,
+            net,
             unit: item.unit || inv.unit || (inv.itemData && inv.itemData.unit) || '',
             createdAt: item.createdAt || inv.createdAt,
             warehouse: item.warehouseId || inv.warehouse,
-            totalAfterDiscount: totalAfterDiscount < 0 ? 0 : totalAfterDiscount,
+            totalAfterDiscount: inv.isReturn ? 
+              -(totalAfterDiscount > 0 ? totalAfterDiscount : 0) : 
+              (totalAfterDiscount > 0 ? totalAfterDiscount : 0),
             itemData: item,
           });
         });
@@ -620,7 +765,6 @@ const InvoicePreferred: React.FC = () => {
     const tableData = getFilteredRows();
 
     const exportData = tableData.map(row => {
-      const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
       const parseTime = (val: unknown) => {
         if (!val) return '';
         if (typeof val === 'object' && val !== null && 'seconds' in val) {
@@ -633,8 +777,17 @@ const InvoicePreferred: React.FC = () => {
         return '';
       };
 
-      const subtotal = (row.price || 0) * (row.quantity || 0);
-      const afterDiscount = subtotal - (row.discountValue || 0);
+      // استخدم البيانات المحسوبة بالفعل من الصف بدلاً من إعادة الحساب
+      const quantity = row.quantity || 0;
+      const price = row.price || 0;
+      const discountValue = row.discountValue || 0;
+      const discountPercent = row.discountPercent || 0;
+      const taxValue = row.taxValue || 0;
+      const taxPercent = row.taxPercent || 0;
+      const net = row.net || 0;
+      
+      // حساب الإجمالي بعد الخصم من البيانات الموجودة
+      const totalAfterDiscount = row.totalAfterDiscount || ((price * Math.abs(quantity)) - Math.abs(discountValue));
 
       return [
         row.invoiceNumber || '',
@@ -643,18 +796,18 @@ const InvoicePreferred: React.FC = () => {
         row.itemNumber || '',
         row.itemName || '',
         row.mainCategory || '',
-        sign * (row.quantity || 0),
-        'قطعة',
-        Number(row.price || 0),
-        Number(row.discountPercent || 0).toFixed(2) + '%',
-        (sign * (row.discountValue || 0)).toFixed(2),
-        (sign * afterDiscount).toFixed(2),
-        (sign * (row.taxValue || 0)).toFixed(2),
-        (sign * (row.net || 0)).toFixed(2),
+        quantity,
+        row.unit || 'قطعة',
+        Number(price).toFixed(2),
+        Number(discountPercent).toFixed(2) + '%',
+        Number(discountValue).toFixed(2),
+        Number(totalAfterDiscount).toFixed(2),
+        Number(taxValue).toFixed(2),
+        Number(net).toFixed(2),
         row.customer || '',
         (row.customerPhone && row.customerPhone.trim() !== '' ? row.customerPhone : 'غير متوفر'),
         parseTime(row.createdAt) || (row.date ? dayjs(row.date).format('YYYY-MM-DD HH:mm:ss') : ''),
-        Number(row.taxPercent || 15).toFixed(2) + '%',
+        Number(taxPercent).toFixed(2) + '%',
         'ر.س',
         getWarehouseName(row.warehouse) || '',
         getBranchName(row.branch) || '',
@@ -703,13 +856,12 @@ const InvoicePreferred: React.FC = () => {
       let totalNet = 0;
 
       tableData.forEach((row) => {
-        const sign = row.invoiceType === 'مرتجع' ? -1 : 1;
-        totalQuantity += sign * (row.quantity || 0);
-        const subtotal = (row.price || 0) * (row.quantity || 0);
-        totalDiscount += (row.discountValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
-        totalAfterDiscount += sign * (subtotal - Math.abs(row.discountValue || 0));
-        totalTax += (row.taxValue || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
-        totalNet += (row.net || 0); // القيمة تحتوي على الإشارة الصحيحة بالفعل
+        // استخدم البيانات المحسوبة بالفعل
+        totalQuantity += row.quantity || 0;
+        totalDiscount += row.discountValue || 0;
+        totalAfterDiscount += row.totalAfterDiscount || 0;
+        totalTax += row.taxValue || 0;
+        totalNet += row.net || 0;
       });
 
       // إضافة صف فارغ قبل الإجماليات
@@ -1630,6 +1782,8 @@ const InvoicePreferred: React.FC = () => {
           </div>
         ) : (
           <>
+
+            
             <Table  
               style={{ direction: 'rtl' }}
               columns={[
@@ -1708,8 +1862,8 @@ const InvoicePreferred: React.FC = () => {
                   key: 'quantity',
                   minWidth: 100,
                   render: (quantity: number, record: InvoiceItemRow) => {
-                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                    return `${(sign * (quantity || 0)).toLocaleString()}`;
+                    // الكمية تحتوي بالفعل على الإشارة الصحيحة
+                    return `${(quantity || 0).toLocaleString()}`;
                   },
                   sorter: (a: InvoiceItemRow, b: InvoiceItemRow) => (a.quantity || 0) - (b.quantity || 0),
                 },
@@ -1750,10 +1904,8 @@ const InvoicePreferred: React.FC = () => {
                   key: 'afterDiscount',
                   minWidth: 140,
                   render: (record: InvoiceItemRow) => {
-                    const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                    const subtotal = (record.price || 0) * (record.quantity || 0);
-                    const afterDiscount = subtotal - (record.discountValue || 0);
-                    return `${(sign * afterDiscount).toFixed(2)}`;
+                    // استخدم القيمة المحسوبة بالفعل
+                    return `${(record.totalAfterDiscount || 0).toFixed(2)}`;
                   },
                 },
                 {

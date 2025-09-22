@@ -23,6 +23,10 @@ interface WarehouseOption {
   nameEn?: string;
 }
 
+interface GroupedInvoice extends InvoiceRecord {
+  _rows: InvoiceRecord[];
+}
+
 interface PaymentMethodOption {
   id: string;
   name: string;
@@ -30,7 +34,7 @@ interface PaymentMethodOption {
 
 interface InvoiceRecord {
   key: string;
-  id?: string;
+  id?: string; // معرف الفاتورة أو المرتجع
   invoiceNumber: string;
   entryNumber?: string;
   date: string;
@@ -253,6 +257,7 @@ const Invoice: React.FC = () => {
       let salesRecords: InvoiceRecord[] = [];
       snapshot.forEach(doc => {
         const data = doc.data();
+        const invoiceId = doc.id; // معرف الفاتورة من Firestore
         const invoiceNumber = data.invoiceNumber || '';
         // إذا كان هناك رقم فاتورة للبحث، نفلتر هنا بالمطابقة الجزئية
         if (params.invoiceNumber && !invoiceNumber.toLowerCase().includes(params.invoiceNumber.toLowerCase())) {
@@ -270,12 +275,15 @@ const Invoice: React.FC = () => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.quantity) || 0;
-          const total = Number(item.total) || price * quantity;
+          // حساب الإجمالي الصحيح (السعر × الكمية)
+          const subtotal = price * quantity;
           const discountValue = Number(item.discountValue) || 0;
           const discountPercent = Number(item.discountPercent) || 0;
           const taxValue = Number(item.taxValue) || 0;
           const taxPercent = Number(item.taxPercent) || 0;
-          const net = Number(item.net) || (total - discountValue + taxValue);
+          // حساب الصافي بعد الخصم والضريبة
+          const afterDiscount = subtotal - discountValue;
+          const net = afterDiscount + taxValue;
           const profit = (price - cost) * quantity;
           // استخراج رقم العميل من جميع الحقول المحتملة مع التأكد من أنها سترينج
           const customerPhone =
@@ -301,6 +309,7 @@ const Invoice: React.FC = () => {
           }
           salesRecords.push({
             key: doc.id + '-' + idx,
+            id: invoiceId, // إضافة معرف الفاتورة
             invoiceNumber,
             entryNumber,
             date,
@@ -310,7 +319,7 @@ const Invoice: React.FC = () => {
             mainCategory: parentName,
             quantity,
             price,
-            total,
+            total: subtotal, // استخدام subtotal بدلاً من total
             discountValue,
             discountPercent,
             taxValue,
@@ -346,6 +355,7 @@ const Invoice: React.FC = () => {
       let returnRecords: InvoiceRecord[] = [];
       snapshotReturn.forEach(doc => {
       const data = doc.data();
+        const returnId = doc.id; // معرف المرتجع من Firestore
         // استخدم رقم المرتجع بدلاً من رقم الفاتورة في المرتجع
         const referenceNumber = data.referenceNumber || '';
         const invoiceNumber = referenceNumber || data.invoiceNumber || '';
@@ -362,13 +372,16 @@ const Invoice: React.FC = () => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.returnedQty) || 0;
-          const total = Number(item.total) || price * quantity;
+          // حساب الإجمالي الصحيح للمرتجع
+          const subtotal = price * quantity;
           const discountValue = Number(item.discountValue) || 0;
           const discountPercent = Number(item.discountPercent) || 0;
           const taxValue = Number(item.taxValue) || 0;
           const taxPercent = Number(item.taxPercent) || 0;
-          const net = Number(item.net) || (total - discountValue + taxValue);
-          const profit = (price - cost) * quantity * -1;
+          // حساب الصافي بعد الخصم والضريبة (مع إشارة سالبة للمرتجع)
+          const afterDiscount = subtotal - discountValue;
+          const net = afterDiscount + taxValue;
+          const profit = (price - cost) * quantity * -1; // ربح سالب للمرتجع
           // استخراج رقم العميل من جميع الحقول المحتملة مع التأكد من أنها سترينج
           const customerPhone =
             (typeof item.customerPhone === 'string' && item.customerPhone.trim() !== '' && item.customerPhone) ||
@@ -395,7 +408,7 @@ const Invoice: React.FC = () => {
           }
           returnRecords.push({
             key: 'return-' + doc.id + '-' + idx,
-            id: doc.id, // إضافة معرف المرتجع
+            id: returnId, // استخدام معرف المرتجع الصحيح
             invoiceNumber, // سيحمل رقم المرتجع في حالة المرتجع
             entryNumber,
             date,
@@ -405,7 +418,7 @@ const Invoice: React.FC = () => {
             mainCategory: parentName,
             quantity,
             price,
-            total,
+            total: subtotal, // استخدام subtotal بدلاً من total
             discountValue,
             discountPercent,
             taxValue,
@@ -2200,7 +2213,9 @@ const handlePrintTable = () => {
                   (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
                 );
                 const totalAmount = invoiceRows.reduce((sum: number, row: any) => {
-                  return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+                  // حساب السعر × الكمية لكل صنف
+                  const lineTotal = (Number(row.price) || 0) * (Number(row.quantity) || 0);
+                  return sum + lineTotal;
                 }, 0);
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
                 return `${(sign * totalAmount).toLocaleString()} ر.س`;
@@ -2212,7 +2227,8 @@ const handlePrintTable = () => {
                     (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
                   );
                   return invoiceRows.reduce((sum: number, row: any) => {
-                    return sum + ((Number(row.price) || 0) * (Number(row.quantity) || 0));
+                    const lineTotal = (Number(row.price) || 0) * (Number(row.quantity) || 0);
+                    return sum + lineTotal;
                   }, 0);
                 };
                 return getInvoiceTotal(a) - getInvoiceTotal(b);
@@ -2281,25 +2297,73 @@ const handlePrintTable = () => {
             },
             {
               title: 'الضرائب',
-              dataIndex: 'taxValue',
               key: 'taxValue',
               minWidth: 100,
-              render: (tax: number, record: any) => {
+              render: (record: any) => {
+                // حساب إجمالي الضرائب للفاتورة
+                const invoiceRows = getFilteredRows().filter(
+                  (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                );
+                const totalTax = invoiceRows.reduce((sum: number, row: any) => {
+                  return sum + (Number(row.taxValue) || 0);
+                }, 0);
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * (tax || 0)).toLocaleString()} ر.س`;
+                return `${(sign * totalTax).toLocaleString()} ر.س`;
               },
-              sorter: (a: any, b: any) => (a.taxValue || 0) - (b.taxValue || 0),
+              sorter: (a: any, b: any) => {
+                const getTotalTax = (record: any) => {
+                  const invoiceRows = getFilteredRows().filter(
+                    (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                  );
+                  return invoiceRows.reduce((sum: number, row: any) => {
+                    return sum + (Number(row.taxValue) || 0);
+                  }, 0);
+                };
+                return getTotalTax(a) - getTotalTax(b);
+              },
             },
             {
               title: 'الإجمالي النهائي',
-              dataIndex: 'net',
               key: 'net',
               minWidth: 140,
-              render: (net: number, record: any) => {
+              render: (record: any) => {
+                // حساب الإجمالي النهائي للفاتورة (الإجمالي - الخصم + الضريبة)
+                const invoiceRows = getFilteredRows().filter(
+                  (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                );
+                const totalAmount = invoiceRows.reduce((sum: number, row: any) => {
+                  const lineTotal = (Number(row.price) || 0) * (Number(row.quantity) || 0);
+                  return sum + lineTotal;
+                }, 0);
+                const totalDiscount = invoiceRows.reduce((sum: number, row: any) => {
+                  return sum + (Number(row.discountValue) || 0);
+                }, 0);
+                const totalTax = invoiceRows.reduce((sum: number, row: any) => {
+                  return sum + (Number(row.taxValue) || 0);
+                }, 0);
+                const net = totalAmount - totalDiscount + totalTax;
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * (net || 0)).toLocaleString()} ر.س`;
+                return `${(sign * net).toLocaleString()} ر.س`;
               },
-              sorter: (a: any, b: any) => (a.net || 0) - (b.net || 0),
+              sorter: (a: any, b: any) => {
+                const getNetTotal = (record: any) => {
+                  const invoiceRows = getFilteredRows().filter(
+                    (row: any) => row.invoiceNumber === record.invoiceNumber && row.invoiceType === record.invoiceType
+                  );
+                  const totalAmount = invoiceRows.reduce((sum: number, row: any) => {
+                    const lineTotal = (Number(row.price) || 0) * (Number(row.quantity) || 0);
+                    return sum + lineTotal;
+                  }, 0);
+                  const totalDiscount = invoiceRows.reduce((sum: number, row: any) => {
+                    return sum + (Number(row.discountValue) || 0);
+                  }, 0);
+                  const totalTax = invoiceRows.reduce((sum: number, row: any) => {
+                    return sum + (Number(row.taxValue) || 0);
+                  }, 0);
+                  return totalAmount - totalDiscount + totalTax;
+                };
+                return getNetTotal(a) - getNetTotal(b);
+              },
             },
             {
               title: 'نوع الفاتورة',
@@ -2360,20 +2424,22 @@ const handlePrintTable = () => {
 
           ]}
           dataSource={(() => {
-            // تجميع البيانات بنفس طريقة الكود السابق
+            // تجميع البيانات حسب رقم الفاتورة ونوعها لعرض فاتورة واحدة لكل صف
             const grouped = Object.values(
               getPaginatedRows().reduce((acc, inv) => {
                 const key = inv.invoiceNumber + '-' + inv.invoiceType;
                 if (!acc[key]) {
+                  // إنشاء سجل موحد للفاتورة بأول صنف
                   acc[key] = {
                     ...inv,
                     key: key,
-                    _rows: []
+                    id: inv.id, // التأكد من وجود المعرف
+                    _rows: [] // للاحتفاظ بجميع الأصناف للاستخدام في الحسابات
                   };
                 }
                 acc[key]._rows.push(inv);
                 return acc;
-              }, {})
+              }, {} as Record<string, GroupedInvoice>)
             );
             return grouped;
           })()}

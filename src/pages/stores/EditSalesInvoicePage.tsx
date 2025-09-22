@@ -1617,14 +1617,22 @@ interface SavedInvoice {
   const updateTotals = (itemsList: InvoiceItem[]) => {
     let totalTax = 0;
     const calculated = itemsList.reduce((acc, item) => {
-      const lineTotal = item.total || 0;
+      // حساب الإجمالي الأساسي للسطر (السعر × الكمية)
+      const quantity = Number(item.quantity) || 0;
+      const price = Number(item.price) || 0;
+      const subtotal = quantity * price;
+      
       const discount = item.discountValue || 0;
       const tax = item.taxValue || 0;
       totalTax += tax;
+      
+      const afterDiscount = subtotal - discount;
+      const finalLineTotal = afterDiscount + tax;
+      
       return {
-        afterDiscount: acc.afterDiscount + (lineTotal - discount),
-        afterTax: acc.afterTax + (lineTotal - discount + tax),
-        total: acc.total + lineTotal
+        afterDiscount: acc.afterDiscount + afterDiscount,
+        afterTax: acc.afterTax + finalLineTotal,
+        total: acc.total + subtotal // الإجمالي قبل الخصم والضريبة
       };
     }, { afterDiscount: 0, afterTax: 0, total: 0 });
     setTotals({
@@ -2400,7 +2408,7 @@ interface SavedInvoice {
     } else {
       console.log('شرط التحميل غير محقق');
     }
-  }, [invoiceNumberParam]);
+  }, [invoiceNumberParam, isEditMode, loadInvoiceForEdit]);
 
   // تحديد المندوب الافتراضي بناءً على المستخدم الحالي
   useEffect(() => {
