@@ -142,7 +142,7 @@ const AddQuotationPage: React.FC = () => {
   // المتغيرات الجديدة للواجهة المطلوبة
   const [periodRange, setPeriodRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
   const [refDate, setRefDate] = useState<dayjs.Dayjs | null>(null);
-  const [movementType, setMovementType] = useState<string | null>("عرض سعر");
+  const [movementType, setMovementType] = useState<string | null>("عرض سعر مبدئي");
   const [accountType, setAccountType] = useState<string | null>("عميل");
   const [sideType, setSideType] = useState<string | null>(null);
   const [sideNumber, setSideNumber] = useState("");
@@ -1652,10 +1652,15 @@ const AddQuotationPage: React.FC = () => {
           </div>
                     <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحركة</label>
-            <Select value={movementType} onChange={setMovementType} placeholder="اختر نوع الحركة" allowClear style={largeControlStyle} 
-             className={styles.noAntBorder}
-            size="large">
-              <Select.Option value="عرض سعر">عرض سعر - Quotation</Select.Option>
+            <Select 
+              value={movementType || "عرض سعر مبدئي"} 
+              onChange={setMovementType} 
+              placeholder="اختر نوع الحركة" 
+              style={largeControlStyle} 
+              className={styles.noAntBorder}
+              size="large"
+              disabled
+            >
               <Select.Option value="عرض سعر مبدئي">عرض سعر مبدئي - Preliminary Quote</Select.Option>
               <Select.Option value="عرض سعر نهائي">عرض سعر نهائي - Final Quote</Select.Option>
             </Select>

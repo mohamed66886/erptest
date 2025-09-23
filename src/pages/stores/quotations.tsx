@@ -1120,9 +1120,8 @@ const Quotations: React.FC = () => {
               allowClear
               className={styles.noAntBorder}
             >
-              <Option value="عرض سعر">عرض سعر</Option>
+              <Option value="عرض سعر مبدئي">عرض سعر مبدئي</Option>
               <Option value="عرض سعر نهائي">عرض سعر نهائي</Option>
-              <Option value="أخرى">أخرى</Option>
             </Select>
           </div>
 
