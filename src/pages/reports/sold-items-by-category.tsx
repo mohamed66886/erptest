@@ -29,6 +29,18 @@ interface ChartDataItem {
   totalAmount: number;
 }
 
+interface InvoiceItem {
+  quantity?: string | number;
+  totalAmount?: string | number;
+  total?: string | number;
+  name?: string;
+  itemName?: string;
+  itemNumber?: string;
+  price?: string | number;
+  discountValue?: string | number;
+  discount?: string | number;
+}
+
 const SoldItemsByCategory: React.FC = () => {
   const [showMore, setShowMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -164,6 +176,7 @@ const SoldItemsByCategory: React.FC = () => {
   }, []);
 
   // جلب بيانات المبيعات حسب الفئة من Firebase
+  // ملاحظة: يتم حساب المبالغ بعد خصم قيمة الخصم من الإجمالي الأساسي
   const fetchCategorySales = async () => {
     setIsLoading(true);
     try {
@@ -289,7 +302,7 @@ const SoldItemsByCategory: React.FC = () => {
         });
         
         if (invoice.items && Array.isArray(invoice.items)) {
-          invoice.items.forEach((item: { quantity?: string | number; totalAmount?: string | number; total?: string | number; name?: string; itemName?: string; itemNumber?: string }, itemIndex: number) => {
+          invoice.items.forEach((item: InvoiceItem, itemIndex: number) => {
             // جرب عدة حقول للحصول على اسم الصنف
             let itemName = item.name || item.itemName;
             
@@ -311,19 +324,39 @@ const SoldItemsByCategory: React.FC = () => {
             const categoryName = findParentCategory(itemName);
             const quantity = typeof item.quantity === 'string' ? parseFloat(item.quantity) || 0 : item.quantity || 0;
             
-            // جرب عدة حقول للحصول على المبلغ الإجمالي
+            // حساب المبلغ الإجمالي بعد الخصم
             let totalAmount = 0;
+            
+            // جرب الحصول على المبلغ الإجمالي والخصم
+            let baseTotal = 0;
             if (item.totalAmount !== undefined) {
-              totalAmount = typeof item.totalAmount === 'string' ? parseFloat(item.totalAmount) || 0 : item.totalAmount || 0;
+              baseTotal = typeof item.totalAmount === 'string' ? parseFloat(item.totalAmount) || 0 : item.totalAmount || 0;
             } else if (item.total !== undefined) {
-              totalAmount = typeof item.total === 'string' ? parseFloat(item.total) || 0 : item.total || 0;
+              baseTotal = typeof item.total === 'string' ? parseFloat(item.total) || 0 : item.total || 0;
+            } else {
+              // حساب الإجمالي الأساسي من السعر والكمية
+              const price = typeof item.price === 'string' ? parseFloat(item.price) || 0 : item.price || 0;
+              baseTotal = price * quantity;
             }
+            
+            // جرب الحصول على قيمة الخصم
+            let discountValue = 0;
+            if (item.discountValue !== undefined) {
+              discountValue = typeof item.discountValue === 'string' ? parseFloat(item.discountValue) || 0 : item.discountValue || 0;
+            } else if (item.discount !== undefined) {
+              discountValue = typeof item.discount === 'string' ? parseFloat(item.discount) || 0 : item.discount || 0;
+            }
+            
+            // المبلغ النهائي بعد الخصم
+            totalAmount = baseTotal - discountValue;
 
             console.log(`صنف ${itemIndex + 1}:`, {
               itemName,
               categoryName,
               quantity,
-              totalAmount,
+              baseTotal: baseTotal.toFixed(2),
+              discountValue: discountValue.toFixed(2),
+              totalAmountAfterDiscount: totalAmount.toFixed(2),
               rawItem: item
             });
 
@@ -540,7 +573,7 @@ const SoldItemsByCategory: React.FC = () => {
               <th>رقم الفئة</th>
               <th>الفئة</th>
               <th>إجمالي الكمية المباعة</th>
-              <th>إجمالي المبلغ</th>
+              <th>إجمالي المبلغ (بعد الخصم)</th>
               <th>أكثر صنف مباع</th>
               <th>كمية أكثر صنف مباع</th>
             </tr>
@@ -627,7 +660,7 @@ const SoldItemsByCategory: React.FC = () => {
       { header: 'رقم الفئة', key: 'categoryNumber', width: 12 },
       { header: 'الفئة', key: 'categoryName', width: 25 },
       { header: 'إجمالي الكمية المباعة', key: 'totalQuantity', width: 18 },
-      { header: 'إجمالي المبلغ', key: 'totalAmount', width: 15 },
+      { header: 'إجمالي المبلغ (بعد الخصم)', key: 'totalAmount', width: 20 },
       { header: 'أكثر صنف مباع', key: 'mostSoldItem', width: 20 },
       { header: 'كمية أكثر صنف مباع', key: 'mostSoldItemQuantity', width: 18 },
     ];
@@ -720,7 +753,7 @@ const SoldItemsByCategory: React.FC = () => {
       render: (value: number) => value?.toFixed(2) || '0.00'
     },
     {
-      title: 'إجمالي المبلغ',
+      title: 'إجمالي المبلغ (بعد الخصم)',
       dataIndex: 'totalAmount',
       key: 'totalAmount',
       width: 150,
@@ -791,7 +824,7 @@ const SoldItemsByCategory: React.FC = () => {
             <BarChartOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-emerald-600 ml-1 sm:ml-3" />
             <h1 className="text-lg sm:text-2xl font-bold text-gray-800">تقرير الأصناف المباعة حسب الفئة</h1>
           </div>
-          <p className="text-xs sm:text-base text-gray-600 mt-2">عرض وإدارة تقرير الأصناف المباعة حسب الفئة</p>
+          <p className="text-xs sm:text-base text-gray-600 mt-2">عرض وإدارة تقرير الأصناف المباعة حسب الفئة </p>
           <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-green-500"></div>
         </div>
 
