@@ -135,45 +135,24 @@ const SoldItemsByCategory: React.FC = () => {
     fetchCompany();
   }, []);
 
-  // جلب الفئات من قاعدة البيانات
+  // جلب الفئات من قاعدة البيانات (أصناف المستوى الأول)
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const { getDocs, collection } = await import('firebase/firestore');
+        const { getDocs, collection, query, where } = await import('firebase/firestore');
         const { db } = await import('@/lib/firebase');
         
-        let options: Array<{id: string, name: string}> = [];
-        try {
-          const snap = await getDocs(collection(db, 'categories'));
-          options = snap.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              name: data.name || data.categoryName || doc.id
-            };
-          });
-        } catch (error) {
-          console.log('لا توجد مجموعة categories منفصلة، جاري جلب الفئات من inventory_items');
-        }
+        // جلب أصناف المستوى الأول فقط كفئات
+        const q = query(collection(db, 'inventory_items'), where('type', '==', 'مستوى أول'));
+        const snapshot = await getDocs(q);
         
-        if (options.length === 0) {
-          const snap = await getDocs(collection(db, 'inventory_items'));
-          const categorySet = new Set<string>();
-          
-          snap.docs.forEach(doc => {
-            const data = doc.data();
-            if (data.type === 'رئيسي' || data.type === 'مستوى أول') {
-              if (data.name) {
-                categorySet.add(data.name);
-              }
-            }
-          });
-          
-          options = Array.from(categorySet).map((name, index) => ({
-            id: `category_${index}`,
-            name
-          }));
-        }
+        const options = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || 'غير محدد'
+          };
+        });
         
         setCategories(options);
       } catch (error) {
@@ -191,6 +170,95 @@ const SoldItemsByCategory: React.FC = () => {
       const { getDocs, collection, query, where } = await import('firebase/firestore');
       const { db } = await import('@/lib/firebase');
       
+      // أولاً: جلب جميع الأصناف من inventory_items لتحديد الفئات
+      const itemsSnapshot = await getDocs(collection(db, 'inventory_items'));
+      const itemsMap = new Map<string, { name: string; parentId?: number; type: string; id: number; itemCode?: string }>();
+      
+      console.log('عدد الأصناف المجلبة:', itemsSnapshot.docs.length);
+      
+      itemsSnapshot.docs.forEach(doc => {
+        const item = doc.data();
+        if (item.name && item.id !== undefined) {
+          const itemData = {
+            name: item.name,
+            parentId: item.parentId,
+            type: item.type,
+            id: item.id,
+            itemCode: item.itemCode
+          };
+          
+          // أضف الصنف باسمه
+          itemsMap.set(item.name, itemData);
+          
+          // أضف الصنف برقمه أيضاً للبحث السريع
+          if (item.itemCode) {
+            itemsMap.set(item.itemCode, itemData);
+          }
+          
+          // أضف الصنف بـ ID أيضاً
+          itemsMap.set(item.id.toString(), itemData);
+        }
+      });
+      
+      console.log('خريطة الأصناف:', Array.from(itemsMap.entries()).slice(0, 5));
+
+      // دالة للعثور على الفئة (المستوى الأول) للصنف المباع
+      const findParentCategory = (itemName: string): string => {
+        console.log('البحث عن فئة للصنف:', itemName);
+        let item = itemsMap.get(itemName);
+        
+        // إذا لم نجد الصنف بالاسم، جرب البحث برقم/كود الصنف
+        if (!item) {
+          // جرب البحث في جميع الأصناف
+          for (const [key, itemData] of itemsMap) {
+            if (itemData.itemCode === itemName || 
+                itemData.id.toString() === itemName ||
+                itemData.name === itemName) {
+              item = itemData;
+              break;
+            }
+          }
+        }
+        
+        if (!item) {
+          console.log('الصنف غير موجود في الخريطة:', itemName);
+          return 'بدون فئة';
+        }
+        
+        console.log('بيانات الصنف:', item);
+        
+        // إذا كان الصنف من المستوى الأول، فهو الفئة نفسها
+        if (item.type === 'مستوى أول') {
+          console.log('الصنف من المستوى الأول:', item.name);
+          return item.name;
+        }
+        
+        // إذا كان الصنف من المستوى الثاني، ابحث عن الأب (المستوى الأول)
+        if (item.type === 'مستوى ثاني' && item.parentId) {
+          console.log('الصنف من المستوى الثاني، البحث عن الأب ID:', item.parentId);
+          for (const [parentName, parentItem] of itemsMap) {
+            if (parentItem.id === item.parentId && parentItem.type === 'مستوى أول') {
+              console.log('تم العثور على الأب (المستوى الأول):', parentItem.name);
+              return parentItem.name;
+            }
+          }
+        }
+        
+        // إذا كان الصنف رئيسي، ابحث عن أول صنف مستوى أول تابع له
+        if (item.type === 'رئيسي') {
+          console.log('الصنف رئيسي، البحث عن طفل من المستوى الأول');
+          for (const [childName, childItem] of itemsMap) {
+            if (childItem.parentId === item.id && childItem.type === 'مستوى أول') {
+              console.log('تم العثور على طفل من المستوى الأول:', childItem.name);
+              return childItem.name;
+            }
+          }
+        }
+        
+        console.log('لم يتم العثور على فئة مناسبة للصنف:', itemName);
+        return 'بدون فئة';
+      };
+      
       const baseQuery = collection(db, 'sales_invoices');
       const constraints = [];
       
@@ -201,6 +269,8 @@ const SoldItemsByCategory: React.FC = () => {
       const finalQuery = constraints.length > 0 ? query(baseQuery, ...constraints) : baseQuery;
       const snapshot = await getDocs(finalQuery);
       
+      console.log('عدد الفواتير المجلبة:', snapshot.docs.length);
+      
       // معالجة البيانات لحساب المبيعات لكل فئة
       const categoryMap = new Map<string, {
         categoryName: string;
@@ -209,14 +279,53 @@ const SoldItemsByCategory: React.FC = () => {
         items: Map<string, { name: string; quantity: number }>;
       }>();
 
-      snapshot.docs.forEach(doc => {
+      snapshot.docs.forEach((doc, index) => {
         const invoice = doc.data();
+        console.log(`فاتورة ${index + 1}:`, {
+          id: doc.id,
+          hasItems: !!invoice.items,
+          itemsLength: invoice.items?.length || 0,
+          sampleItems: invoice.items?.slice(0, 2)
+        });
+        
         if (invoice.items && Array.isArray(invoice.items)) {
-          invoice.items.forEach((item: { category?: string; quantity?: string | number; totalAmount?: string | number; name?: string }) => {
-            const categoryName = item.category || 'بدون فئة';
+          invoice.items.forEach((item: { quantity?: string | number; totalAmount?: string | number; total?: string | number; name?: string; itemName?: string; itemNumber?: string }, itemIndex: number) => {
+            // جرب عدة حقول للحصول على اسم الصنف
+            let itemName = item.name || item.itemName;
+            
+            // إذا لم نجد اسم الصنف، حاول استخدام رقم الصنف للعثور على الاسم
+            if (!itemName && item.itemNumber) {
+              // البحث في خريطة الأصناف عن طريق الرقم أو الكود
+              for (const [name, itemData] of itemsMap) {
+                if (itemData.id.toString() === item.itemNumber || name.includes(item.itemNumber)) {
+                  itemName = name;
+                  break;
+                }
+              }
+            }
+            
+            // إذا لم نجد اسم الصنف بعد، استخدم رقم الصنف أو "غير محدد"
+            if (!itemName) {
+              itemName = item.itemNumber || 'غير محدد';
+            }
+            const categoryName = findParentCategory(itemName);
             const quantity = typeof item.quantity === 'string' ? parseFloat(item.quantity) || 0 : item.quantity || 0;
-            const totalAmount = typeof item.totalAmount === 'string' ? parseFloat(item.totalAmount) || 0 : item.totalAmount || 0;
-            const itemName = item.name || 'غير محدد';
+            
+            // جرب عدة حقول للحصول على المبلغ الإجمالي
+            let totalAmount = 0;
+            if (item.totalAmount !== undefined) {
+              totalAmount = typeof item.totalAmount === 'string' ? parseFloat(item.totalAmount) || 0 : item.totalAmount || 0;
+            } else if (item.total !== undefined) {
+              totalAmount = typeof item.total === 'string' ? parseFloat(item.total) || 0 : item.total || 0;
+            }
+
+            console.log(`صنف ${itemIndex + 1}:`, {
+              itemName,
+              categoryName,
+              quantity,
+              totalAmount,
+              rawItem: item
+            });
 
             if (!categoryMap.has(categoryName)) {
               categoryMap.set(categoryName, {
@@ -240,6 +349,8 @@ const SoldItemsByCategory: React.FC = () => {
           });
         }
       });
+      
+      console.log('خريطة الفئات النهائية:', Array.from(categoryMap.entries()));
 
       // تحويل البيانات إلى تنسيق الجدول
       const records: CategorySalesRecord[] = Array.from(categoryMap.entries()).map(([categoryName, data], index) => {
@@ -693,61 +804,60 @@ const SoldItemsByCategory: React.FC = () => {
         />
 
         {/* خيارات البحث والفلترة */}
-        <motion.div
+        <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="bg-white p-6 rounded-lg shadow-sm border"
+          className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2 space-x-reverse">
-              <SearchOutlined className="h-5 w-5 text-blue-600" />
-              <h3 className="text-lg font-semibold text-gray-800">خيارات البحث والفلترة</h3>
-            </div>
-            <Button
-              type="link"
-              onClick={() => setShowMore(!showMore)}
-              className="text-blue-600 hover:text-blue-800"
-            >
-              {showMore ? 'عرض أقل' : 'عرض المزيد'}
-            </Button>
-          </div>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+          
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+            <SearchOutlined className="text-emerald-600" /> خيارات البحث
+          </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label style={labelStyle}>من تاريخ</label>
-              <DatePicker
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="flex flex-col">
+              <span style={labelStyle}>من تاريخ</span>
+              <DatePicker 
                 value={dateFrom}
                 onChange={setDateFrom}
-                locale={arEG}
                 placeholder="اختر التاريخ"
                 style={largeControlStyle}
-                className="w-full"
+                size="large"
+                format="YYYY-MM-DD"
+                locale={arEG}
               />
             </div>
-
-            <div>
-              <label style={labelStyle}>إلى تاريخ</label>
-              <DatePicker
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>إلى تاريخ</span>
+              <DatePicker 
                 value={dateTo}
                 onChange={setDateTo}
-                locale={arEG}
                 placeholder="اختر التاريخ"
                 style={largeControlStyle}
-                className="w-full"
+                size="large"
+                format="YYYY-MM-DD"
+                locale={arEG}
               />
             </div>
-
-            <div>
-              <label style={labelStyle}>الفرع</label>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>الفرع</span>
               <Select
                 value={branchId}
                 onChange={setBranchId}
                 placeholder="اختر الفرع"
-                style={largeControlStyle}
-                className="w-full"
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                optionFilterProp="label"
                 allowClear
+                showSearch
                 loading={branchesLoading}
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
               >
                 {branches.map(branch => (
                   <Option key={branch.id} value={branch.id}>
@@ -757,16 +867,22 @@ const SoldItemsByCategory: React.FC = () => {
               </Select>
             </div>
 
-            <div>
-              <label style={labelStyle}>الفئة</label>
+            <div className="flex flex-col">
+              <span style={labelStyle}>الفئة</span>
               <Select
                 value={categoryId}
                 onChange={setCategoryId}
                 placeholder="اختر الفئة"
-                style={largeControlStyle}
-                className="w-full"
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                optionFilterProp="label"
                 allowClear
+                showSearch
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
               >
+                <Option value="">جميع الفئات ({categories.length})</Option>
                 {categories.map(category => (
                   <Option key={category.id} value={category.id}>
                     {category.name}
@@ -776,20 +892,217 @@ const SoldItemsByCategory: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-center mt-6">
+          <div className="flex items-center gap-4 mt-4">
             <Button
               type="primary"
-              size="large"
               icon={<SearchOutlined />}
               onClick={fetchCategorySales}
               loading={isLoading}
               className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+              size="large"
             >
-              بحث
+              {isLoading ? "جاري البحث..." : "بحث"}
             </Button>
+            <span className="text-gray-500 text-sm">نتائج البحث: {filteredCategories.length}</span>
           </div>
+          
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="absolute left-4 top-4 flex items-center gap-2 cursor-pointer text-blue-600 select-none"
+            onClick={() => setShowMore((prev) => !prev)}
+          >
+            <span className="text-sm font-medium">{showMore ? "إخفاء الخيارات الإضافية" : "عرض خيارات أكثر"}</span>
+            <motion.svg
+              animate={{ rotate: showMore ? 180 : 0 }}
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2.5}
+              stroke="currentColor"
+              className="w-4 h-4 transition-transform"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </motion.svg>
+          </motion.div>
         </motion.div>
+                {/* النتائج */}
+        <AnimatePresence>
+          {filteredCategories.length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+              className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm overflow-x-auto relative"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+              
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  نتائج البحث ({filteredCategories.length} فئة)
+                </h3>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="primary"
+                    icon={<DownloadOutlined />}
+                    onClick={handleExport}
+                    disabled={filteredCategories.length === 0}
+                    className="bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700"
+                    size="large"
+                  >
+                    تصدير Excel
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<PrinterOutlined />}
+                    onClick={handlePrint}
+                    disabled={filteredCategories.length === 0}
+                    className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+                    size="large"
+                  >
+                    طباعة
+                  </Button>
+                </div>
+              </div>
 
+              <Table  
+                style={{ direction: 'rtl' }}
+                dataSource={filteredCategories}
+                columns={[
+                  {
+                    title: 'رقم الفئة',
+                    dataIndex: 'categoryNumber',
+                    key: 'categoryNumber',
+                    minWidth: 120,
+                    sorter: (a: CategorySalesRecord, b: CategorySalesRecord) => (a.categoryNumber || '').localeCompare(b.categoryNumber || ''),
+                    render: (text: string) => (
+                      <span className="text-blue-700 font-medium">{text || 'غير محدد'}</span>
+                    ),
+                  },
+                  {
+                    title: 'الفئة',
+                    dataIndex: 'categoryName',
+                    key: 'categoryName',
+                    minWidth: 200,
+                    sorter: (a: CategorySalesRecord, b: CategorySalesRecord) => (a.categoryName || '').localeCompare(b.categoryName || ''),
+                    render: (text: string) => (
+                      <span className="text-gray-800 font-medium">{text || 'غير محدد'}</span>
+                    ),
+                  },
+                  {
+                    title: 'إجمالي الكمية المباعة',
+                    dataIndex: 'totalQuantity',
+                    key: 'totalQuantity',
+                    minWidth: 150,
+                    sorter: (a: CategorySalesRecord, b: CategorySalesRecord) => (a.totalQuantity || 0) - (b.totalQuantity || 0),
+                    render: (value: number) => (
+                      <span className="text-blue-700 font-semibold">
+                        {(value || 0).toLocaleString()}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: 'إجمالي المبلغ',
+                    dataIndex: 'totalAmount',
+                    key: 'totalAmount',
+                    minWidth: 150,
+                    sorter: (a: CategorySalesRecord, b: CategorySalesRecord) => (a.totalAmount || 0) - (b.totalAmount || 0),
+                    render: (value: number) => (
+                      <span className="text-emerald-700 font-bold">
+                        {(value || 0).toLocaleString()} ر.س
+                      </span>
+                    ),
+                  },
+                  {
+                    title: 'أكثر صنف مباع',
+                    dataIndex: 'mostSoldItem',
+                    key: 'mostSoldItem',
+                    minWidth: 200,
+                    render: (text: string) => (
+                      <span className="text-gray-600">{text || 'لا يوجد'}</span>
+                    ),
+                  },
+                  {
+                    title: 'كمية أكثر صنف مباع',
+                    dataIndex: 'mostSoldItemQuantity',
+                    key: 'mostSoldItemQuantity',
+                    minWidth: 150,
+                    sorter: (a: CategorySalesRecord, b: CategorySalesRecord) => (a.mostSoldItemQuantity || 0) - (b.mostSoldItemQuantity || 0),
+                    render: (value: number) => (
+                      <span className="text-green-700 font-semibold">
+                        {(value || 0).toLocaleString()}
+                      </span>
+                    ),
+                  },
+                ]}
+                rowKey="key"
+                pagination={false}
+                loading={isLoading}
+                scroll={{ x: 1200 }}
+                size="small"
+                bordered
+                className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+                locale={{
+                  emptyText: isLoading ? (
+                    <div className="flex justify-center items-center py-8">
+                      <div className="animate-pulse flex space-x-4">
+                        <div className="flex-1 space-y-4 py-1">
+                          <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-gray-400">لا توجد بيانات</div>
+                  )
+                }}
+                summary={() => {
+                  if (filteredCategories.length === 0) return null;
+                  
+                  return (
+                    <Table.Summary fixed>
+                      <Table.Summary.Row className=" font-bold">
+                        <Table.Summary.Cell index={0} className=" text-gray-800 font-bold">
+                          الإجماليات
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={1} className=" text-gray-800 font-bold">
+                          {filteredCategories.length} فئة
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={2} className=" text-blue-700 font-bold">
+                          {totalQuantity.toLocaleString()}
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={3} className=" text-emerald-700 font-bold">
+                          {totalAmount.toLocaleString()} ر.س
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={4}></Table.Summary.Cell>
+                        <Table.Summary.Cell index={5}></Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    </Table.Summary>
+                  );
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* رسالة عدم وجود بيانات */}
+        {!isLoading && filteredCategories.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white p-12 rounded-lg shadow-sm border text-center"
+          >
+            <FileTextOutlined className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              لا توجد بيانات للعرض
+            </h3>
+            <p className="text-gray-500">
+              قم بتحديد معايير البحث والضغط على زر "بحث" لعرض التقرير
+            </p>
+          </motion.div>
+        )}
         {/* الرسوم البيانية */}
         <AnimatePresence>
           {chartData.length > 0 && (
@@ -856,96 +1169,7 @@ const SoldItemsByCategory: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* النتائج */}
-        <AnimatePresence>
-          {filteredCategories.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3, delay: 0.2 }}
-              className="bg-white rounded-lg shadow-sm border overflow-hidden"
-            >
-              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <TableOutlined className="h-5 w-5 text-green-600" />
-                  <h3 className="text-lg font-semibold text-gray-800">
-                    تقرير الأصناف المباعة حسب الفئة ({filteredCategories.length})
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <Button
-                    type="default"
-                    icon={<DownloadOutlined />}
-                    onClick={handleExport}
-                    size="small"
-                  >
-                    تصدير Excel
-                  </Button>
-                  <Button
-                    type="default"
-                    icon={<PrinterOutlined />}
-                    onClick={handlePrint}
-                    size="small"
-                  >
-                    طباعة
-                  </Button>
-                </div>
-              </div>
 
-              <Table
-                columns={columns}
-                dataSource={filteredCategories}
-                pagination={{
-                  pageSize: 20,
-                  showSizeChanger: true,
-                  showQuickJumper: true,
-                  showTotal: (total, range) =>
-                    `${range[0]}-${range[1]} من ${total} فئة`,
-                }}
-                scroll={{ x: 800 }}
-                size="middle"
-                loading={isLoading}
-                summary={() => (
-                  <Table.Summary fixed>
-                    <Table.Summary.Row>
-                      <Table.Summary.Cell index={0} colSpan={2}>
-                        <strong>الإجمالي</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={2}>
-                        <strong>{totalQuantity.toFixed(2)}</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={3}>
-                        <strong>{totalAmount.toFixed(2)}</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} colSpan={2}>
-                        <strong>{filteredCategories.length} فئة</strong>
-                      </Table.Summary.Cell>
-                    </Table.Summary.Row>
-                  </Table.Summary>
-                )}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* رسالة عدم وجود بيانات */}
-        {!isLoading && filteredCategories.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white p-12 rounded-lg shadow-sm border text-center"
-          >
-            <FileTextOutlined className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              لا توجد بيانات للعرض
-            </h3>
-            <p className="text-gray-500">
-              قم بتحديد معايير البحث والضغط على زر "بحث" لعرض التقرير
-            </p>
-          </motion.div>
-        )}
       </div>
     </>
   );
