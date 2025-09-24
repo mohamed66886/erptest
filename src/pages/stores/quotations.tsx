@@ -4,7 +4,7 @@ import Breadcrumb from '@/components/Breadcrumb';
 import { motion } from 'framer-motion';
 import { Table, Select, DatePicker, Button, Input, Card, Row, Col, Statistic, Modal, Popconfirm, message, Select as AntdSelect } from 'antd';
 import { SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, PlusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
-import { TableOutlined, PrinterOutlined, FileTextOutlined } from '@ant-design/icons';
+import { TableOutlined, PrinterOutlined, FileTextOutlined, CodeOutlined } from '@ant-design/icons';
 import { Building2, FileText } from 'lucide-react';
 import dayjs, { Dayjs } from 'dayjs';
 import { useFinancialYear } from '@/hooks/useFinancialYear';
@@ -699,6 +699,275 @@ const Quotations: React.FC = () => {
     }, 100);
   };
 
+  // دالة طباعة البيانات بتنسيق XML
+  const handlePrintXML = () => {
+    // إنشاء محتوى XML
+    let xmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xmlContent += '<quotations>\n';
+    xmlContent += '  <metadata>\n';
+    xmlContent += `    <title>عروض الأسعار</title>\n`;
+    xmlContent += `    <exportDate>${dayjs().format('YYYY-MM-DD HH:mm:ss')}</exportDate>\n`;
+    xmlContent += `    <totalCount>${filteredQuotations.length}</totalCount>\n`;
+    xmlContent += `    <totalAmount>${filteredQuotations.reduce((sum, q) => sum + q.amount, 0).toFixed(2)}</totalAmount>\n`;
+    xmlContent += `    <financialYear>${fiscalYear}</financialYear>\n`;
+    if (dateFrom || dateTo) {
+      xmlContent += `    <dateRange>\n`;
+      xmlContent += `      <from>${dateFrom ? dayjs(dateFrom).format('YYYY-MM-DD') : 'غير محدد'}</from>\n`;
+      xmlContent += `      <to>${dateTo ? dayjs(dateTo).format('YYYY-MM-DD') : 'غير محدد'}</to>\n`;
+      xmlContent += `    </dateRange>\n`;
+    }
+    xmlContent += '  </metadata>\n';
+    xmlContent += '  <data>\n';
+
+    filteredQuotations.forEach(quotation => {
+      const paymentMethod = paymentMethods.find(pm => pm.id === quotation.paymentMethod);
+      xmlContent += '    <quotation>\n';
+      xmlContent += `      <quotationNumber>${quotation.quotationNumber || ''}</quotationNumber>\n`;
+      xmlContent += `      <date>${quotation.date || ''}</date>\n`;
+      xmlContent += `      <expiryDate>${quotation.expiryDate || ''}</expiryDate>\n`;
+      xmlContent += `      <movementType><![CDATA[${quotation.movementType || 'عرض سعر'}]]></movementType>\n`;
+      xmlContent += `      <customer>\n`;
+      xmlContent += `        <customerNumber>${quotation.customerNumber || ''}</customerNumber>\n`;
+      xmlContent += `        <customerName><![CDATA[${quotation.customerName || ''}]]></customerName>\n`;
+      xmlContent += `        <customerPhone>${quotation.customerPhone || ''}</customerPhone>\n`;
+      xmlContent += `      </customer>\n`;
+      xmlContent += `      <financial>\n`;
+      xmlContent += `        <amount>${quotation.amount.toFixed(2)}</amount>\n`;
+      xmlContent += `        <currency>SAR</currency>\n`;
+      xmlContent += `      </financial>\n`;
+      xmlContent += `      <location>\n`;
+      xmlContent += `        <branchId>${quotation.branchId || ''}</branchId>\n`;
+      xmlContent += `        <branchName><![CDATA[${quotation.branchName || ''}]]></branchName>\n`;
+      xmlContent += `        <warehouse><![CDATA[${quotation.warehouse || ''}]]></warehouse>\n`;
+      xmlContent += `      </location>\n`;
+      xmlContent += `      <paymentMethod><![CDATA[${paymentMethod?.name || quotation.paymentMethod || ''}]]></paymentMethod>\n`;
+      xmlContent += `      <status><![CDATA[${quotation.status || ''}]]></status>\n`;
+      xmlContent += `      <accountType><![CDATA[${quotation.accountType || ''}]]></accountType>\n`;
+      xmlContent += `      <convertedTo>${quotation.convertedTo || ''}</convertedTo>\n`;
+      
+      // إضافة تفاصيل الأصناف إذا كانت موجودة
+      if (quotation.items && quotation.items.length > 0) {
+        xmlContent += '      <items>\n';
+        quotation.items.forEach((item, index) => {
+          xmlContent += `        <item index="${index + 1}">\n`;
+          xmlContent += `          <itemNumber>${item.itemNumber || ''}</itemNumber>\n`;
+          xmlContent += `          <itemName><![CDATA[${item.itemName || ''}]]></itemName>\n`;
+          xmlContent += `          <quantity>${item.quantity || 0}</quantity>\n`;
+          xmlContent += `          <unit><![CDATA[${item.unit || ''}]]></unit>\n`;
+          xmlContent += `          <pricing>\n`;
+          xmlContent += `            <price>${(item.price || 0).toFixed(2)}</price>\n`;
+          xmlContent += `            <discountPercent>${item.discountPercent || 0}</discountPercent>\n`;
+          xmlContent += `            <discountValue>${(item.discountValue || 0).toFixed(2)}</discountValue>\n`;
+          xmlContent += `            <taxPercent>${item.taxPercent || 0}</taxPercent>\n`;
+          xmlContent += `            <taxValue>${(item.taxValue || 0).toFixed(2)}</taxValue>\n`;
+          xmlContent += `            <total>${(item.total || 0).toFixed(2)}</total>\n`;
+          xmlContent += `          </pricing>\n`;
+          xmlContent += '        </item>\n';
+        });
+        xmlContent += '      </items>\n';
+      }
+      
+      xmlContent += '    </quotation>\n';
+    });
+
+    xmlContent += '  </data>\n';
+    xmlContent += '</quotations>';
+
+    // إنشاء نافذة جديدة للطباعة
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html dir="rtl" lang="ar">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>عروض الأسعار - XML</title>
+          <style>
+            body { 
+              font-family: 'Tajawal', Arial, sans-serif; 
+              margin: 20px; 
+              direction: rtl; 
+              background: #f9f9f9;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              padding: 20px;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+              border-radius: 10px;
+            }
+            .metadata {
+              background: white;
+              padding: 15px;
+              margin-bottom: 20px;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .xml-content {
+              background: #f8f9fa;
+              padding: 20px;
+              border-radius: 8px;
+              border: 1px solid #e9ecef;
+              white-space: pre-wrap;
+              font-family: 'Courier New', monospace;
+              font-size: 11px;
+              line-height: 1.5;
+              overflow-x: auto;
+              max-height: 70vh;
+              overflow-y: auto;
+              direction: ltr;
+              text-align: left;
+              color: #333;
+            }
+            .buttons-container {
+              display: flex;
+              gap: 10px;
+              justify-content: center;
+              margin: 20px 0;
+              flex-wrap: wrap;
+            }
+            .summary-stats {
+              background: #e3f2fd;
+              padding: 15px;
+              border-radius: 8px;
+              margin-bottom: 20px;
+              border-left: 4px solid #2196f3;
+            }
+            .summary-stats h4 {
+              margin: 0 0 10px 0;
+              color: #1976d2;
+            }
+            .stats-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+              gap: 10px;
+              margin-top: 10px;
+            }
+            .stat-item {
+              background: white;
+              padding: 8px 12px;
+              border-radius: 4px;
+              border: 1px solid #bbdefb;
+            }
+            @media print {
+              body { background: white; }
+              .header { 
+                background: #667eea !important; 
+                -webkit-print-color-adjust: exact;
+                color-adjust: exact;
+              }
+              .xml-content { 
+                max-height: none; 
+                font-size: 10px;
+              }
+            }
+            .download-btn {
+              background: #28a745;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 5px;
+              cursor: pointer;
+              margin: 10px 5px;
+              font-size: 14px;
+            }
+            .download-btn:hover {
+              background: #218838;
+            }
+            .print-btn {
+              background: #007bff;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 5px;
+              cursor: pointer;
+              margin: 10px 5px;
+              font-size: 14px;
+            }
+            .print-btn:hover {
+              background: #0056b3;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>تقرير عروض الأسعار - XML</h1>
+            <p>تاريخ التصدير: ${dayjs().format('YYYY-MM-DD HH:mm:ss')}</p>
+          </div>
+          
+          <div class="summary-stats">
+            <h4>ملخص البيانات:</h4>
+            <div class="stats-grid">
+              <div class="stat-item"><strong>عدد عروض الأسعار:</strong> ${filteredQuotations.length}</div>
+              <div class="stat-item"><strong>إجمالي المبلغ:</strong> ${filteredQuotations.reduce((sum, q) => sum + q.amount, 0).toFixed(2)} ر.س</div>
+              <div class="stat-item"><strong>السنة المالية:</strong> ${fiscalYear}</div>
+              <div class="stat-item"><strong>فترة البحث:</strong> ${dateFrom ? dayjs(dateFrom).format('YYYY-MM-DD') : 'غير محدد'} إلى ${dateTo ? dayjs(dateTo).format('YYYY-MM-DD') : 'غير محدد'}</div>
+              <div class="stat-item"><strong>العروض النشطة:</strong> ${filteredQuotations.filter(q => q.status === 'نشط' && !q.convertedTo).length}</div>
+              <div class="stat-item"><strong>محولة لفواتير:</strong> ${filteredQuotations.filter(q => q.convertedTo === 'invoice').length}</div>
+              <div class="stat-item"><strong>محولة لأوامر بيع:</strong> ${filteredQuotations.filter(q => q.convertedTo === 'salesOrder').length}</div>
+              <div class="stat-item"><strong>منتهية الصلاحية:</strong> ${filteredQuotations.filter(q => q.status === 'منتهي الصلاحية').length}</div>
+            </div>
+          </div>
+
+          <div class="buttons-container">
+            <button class="download-btn" onclick="downloadXML()">💾 تحميل ملف XML</button>
+            <button class="print-btn" onclick="window.print()">🖨️ طباعة التقرير</button>
+            <button class="print-btn" onclick="copyToClipboard()" style="background: #ff9800;">📋 نسخ XML</button>
+          </div>
+          
+          <div class="xml-content" id="xmlContent">${xmlContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+
+          <script>
+            function downloadXML() {
+              const xmlData = \`${xmlContent}\`;
+              const blob = new Blob([xmlData], { type: 'application/xml' });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'عروض_الأسعار_' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '_' + new Date().toTimeString().slice(0,8).replace(/:/g,'') + '.xml';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(url);
+            }
+
+            function copyToClipboard() {
+              const xmlData = \`${xmlContent}\`;
+              navigator.clipboard.writeText(xmlData).then(function() {
+                alert('تم نسخ محتوى XML إلى الحافظة بنجاح!');
+              }, function(err) {
+                console.error('خطأ في النسخ: ', err);
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = xmlData;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('تم نسخ محتوى XML إلى الحافظة بنجاح!');
+              });
+            }
+
+            // تحسين شكل الطباعة
+            window.addEventListener('beforeprint', function() {
+              document.querySelector('.buttons-container').style.display = 'none';
+            });
+            
+            window.addEventListener('afterprint', function() {
+              document.querySelector('.buttons-container').style.display = 'flex';
+            });
+          </script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } else {
+      message.error('لا يمكن فتح نافذة الطباعة');
+    }
+  };
+
   // أعمدة الجدول
   const columns = [
     {
@@ -1201,7 +1470,7 @@ const Quotations: React.FC = () => {
           <div className="flex items-center gap-2 text-sm text-gray-500">
             إجمالي: {filteredQuotations.length} عرض سعر
             {filteredQuotations.length > 0 && (
-              <>
+              <div className="flex gap-2">
                 <Button
                   icon={<DownloadOutlined />}
                   onClick={handleExport}
@@ -1221,6 +1490,24 @@ const Quotations: React.FC = () => {
                   تصدير Excel
                 </Button>
                 <Button
+                  icon={<CodeOutlined style={{ fontSize: 18, color: '#fff' }} />}
+                  onClick={handlePrintXML}
+                  style={{ 
+                    height: 48, 
+                    fontSize: 16, 
+                    borderRadius: 8, 
+                    background: '#722ed1',
+                    borderColor: '#722ed1',
+                    color: '#fff',
+                    fontWeight: 500,
+                    padding: "8px 24px",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                  }}
+                  size="large"
+                >
+                  طباعة XML
+                </Button>
+                <Button
                   icon={<PrinterOutlined style={{ fontSize: 18, color: '#fff' }} />}
                   onClick={() => window.print()}
                   style={{ 
@@ -1238,7 +1525,7 @@ const Quotations: React.FC = () => {
                 >
                   طباعة
                 </Button>
-              </>
+              </div>
             )}
           </div>
         </div>

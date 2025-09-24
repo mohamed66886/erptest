@@ -91,6 +91,8 @@ import ReceiptVouchersDirectory from "./stores/ReceiptVouchersDirectory";
 import SoldItems from "./reports/sold-items";
 import BranchSales from "./reports/branch-sales";
 import SalesRepresentativeSales from "./reports/sales-representative-sales";
+import SoldItemsByCategory from "./reports/sold-items-by-category";
+import SoldItemsByType from "./reports/sold-items-by-type";
 import DiscountsOffers from "./management/discounts-offers";
 import AddDiscountOffer from "./management/discounts-offers/add";
 import EditDiscountOffer from "./management/discounts-offers/edit";
@@ -244,6 +246,8 @@ const Index = () => {
               <Route path="/reports/sold-items" element={<SoldItems />} />
               <Route path="/reports/branch-sales" element={<BranchSales />} />
               <Route path="/reports/sales-representative-sales" element={<SalesRepresentativeSales />} />
+              <Route path="/reports/sold-items-by-category" element={<SoldItemsByCategory />} />
+              <Route path="/reports/sold-items-by-type" element={<SoldItemsByType />} />
               
               {/* Management Routes */}
               <Route path="/management/financial" element={<FinancialManagement />} />

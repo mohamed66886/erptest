@@ -423,6 +423,26 @@ const SalesManagement: React.FC = () => {
         window.scrollTo(0, 0);
       }
     },
+    {
+      title: "تقرير الأصناف المباعة حسب الفئة",
+      description: "تقرير مفصل عن الأصناف المباعة لكل فئة خلال فترة محددة",
+      icon: <Package className="h-5 w-5 sm:h-6 sm:w-6" />, 
+      color: "bg-orange-800",
+      onClick: () => {
+        navigate('/reports/sold-items-by-category');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تقرير الأصناف المباعة حسب التصنيف",
+      description: "تقرير مفصل عن الأصناف المباعة لكل تصنيف خلال فترة محددة",
+      icon: <Package className="h-5 w-5 sm:h-6 sm:w-6" />, 
+      color: "bg-orange-900",
+      onClick: () => {
+        navigate('/reports/sold-items-by-type');
+        window.scrollTo(0, 0);
+      }
+    },
   ];
 
   const customerManagementCards = [
