@@ -29,6 +29,18 @@ interface ChartDataItem {
   totalAmount: number;
 }
 
+interface InvoiceItem {
+  quantity?: string | number;
+  totalAmount?: string | number;
+  total?: string | number;
+  name?: string;
+  itemName?: string;
+  itemNumber?: string;
+  price?: string | number;
+  discountValue?: string | number;
+  discount?: string | number;
+}
+
 const SoldItemsByType: React.FC = () => {
   const [showMore, setShowMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -135,7 +147,7 @@ const SoldItemsByType: React.FC = () => {
     fetchCompany();
   }, []);
 
-  // جلب التصنيفات من قاعدة البيانات
+  // جلب التصنيفات الرئيسية من قاعدة البيانات
   useEffect(() => {
     const fetchTypes = async () => {
       try {
@@ -143,36 +155,46 @@ const SoldItemsByType: React.FC = () => {
         const { db } = await import('@/lib/firebase');
         
         let options: Array<{id: string, name: string}> = [];
-        try {
-          const snap = await getDocs(collection(db, 'item_types'));
-          options = snap.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              name: data.name || data.typeName || doc.id
-            };
-          });
-        } catch (error) {
-          console.log('لا توجد مجموعة item_types منفصلة، جاري جلب التصنيفات من inventory_items');
-        }
         
-        if (options.length === 0) {
-          const snap = await getDocs(collection(db, 'inventory_items'));
-          const typeSet = new Set<string>();
+        // جلب الأصناف الرئيسية من مجموعة inventory_items
+        try {
+          const itemsSnapshot = await getDocs(collection(db, 'inventory_items'));
+          console.log('جاري جلب التصنيفات الرئيسية من inventory_items...');
           
-          snap.docs.forEach(doc => {
-            const data = doc.data();
-            if (data.itemType && typeof data.itemType === 'string') {
-              typeSet.add(data.itemType);
-            } else if (data.type && typeof data.type === 'string') {
-              typeSet.add(data.type);
+          const mainTypes = new Set<string>();
+          
+          itemsSnapshot.docs.forEach(doc => {
+            const item = doc.data();
+            // التحقق من أن الصنف من النوع الرئيسي (مرن)
+            const typeValue = (item.type || "").toString().trim().toLowerCase();
+            if ((typeValue === "رئيسي" || typeValue === "رئيسى" || typeValue === "main") && item.name) {
+              mainTypes.add(item.name);
             }
           });
           
-          options = Array.from(typeSet).map((name, index) => ({
-            id: `type_${index}`,
+          options = Array.from(mainTypes).map((name, index) => ({
+            id: `main_type_${index}`,
             name
           }));
+          
+          console.log('التصنيفات الرئيسية المجلبة:', options);
+          
+        } catch (error) {
+          console.log('خطأ في جلب التصنيفات من inventory_items:', error);
+          
+          // محاولة بديلة: البحث في item_types
+          try {
+            const snap = await getDocs(collection(db, 'item_types'));
+            options = snap.docs.map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                name: data.name || data.typeName || doc.id
+              };
+            });
+          } catch (alternativeError) {
+            console.log('لا توجد مجموعة item_types أيضاً');
+          }
         }
         
         setTypes(options);
@@ -184,12 +206,109 @@ const SoldItemsByType: React.FC = () => {
     fetchTypes();
   }, []);
 
-  // جلب بيانات المبيعات حسب التصنيف من Firebase
+  // جلب بيانات المبيعات حسب التصنيف (المستوى الرئيسي) من Firebase
   const fetchTypeSales = async () => {
     setIsLoading(true);
     try {
       const { getDocs, collection, query, where } = await import('firebase/firestore');
       const { db } = await import('@/lib/firebase');
+      
+      // جلب جميع الأصناف أولاً
+      console.log('جاري جلب الأصناف...');
+      const itemsSnapshot = await getDocs(collection(db, 'inventory_items'));
+      
+      const itemsMap = new Map<string, {
+        id: number;
+        name: string;
+        type: string;
+        parentId?: number;
+        itemCode?: string;
+      }>();
+      
+      itemsSnapshot.docs.forEach(doc => {
+        const item = doc.data();
+        if (item.name && item.id !== undefined && item.type) {
+          const itemData = {
+            id: item.id,
+            name: item.name,
+            type: item.type,
+            parentId: item.parentId,
+            itemCode: item.itemCode
+          };
+          
+          // أضف الصنف باسمه
+          itemsMap.set(item.name, itemData);
+          
+          // أضف الصنف برقمه أيضاً للبحث السريع
+          if (item.itemCode) {
+            itemsMap.set(item.itemCode, itemData);
+          }
+          
+          // أضف الصنف بـ ID أيضاً
+          itemsMap.set(item.id.toString(), itemData);
+        }
+      });
+      
+      console.log('خريطة الأصناف:', Array.from(itemsMap.entries()).slice(0, 5));
+
+      // دالة للعثور على التصنيف الرئيسي للصنف المباع
+      const findMainCategory = (itemName: string): string => {
+        console.log('البحث عن تصنيف للصنف:', itemName);
+        let item = itemsMap.get(itemName);
+        
+        // إذا لم نجد الصنف بالاسم، جرب البحث برقم/كود الصنف
+        if (!item) {
+          // جرب البحث في جميع الأصناف
+          for (const [key, itemData] of itemsMap) {
+            if (itemData.itemCode === itemName || 
+                itemData.id.toString() === itemName ||
+                itemData.name === itemName) {
+              item = itemData;
+              break;
+            }
+          }
+        }
+        
+        if (!item) {
+          console.log('الصنف غير موجود في الخريطة:', itemName);
+          return 'بدون تصنيف';
+        }
+        
+        console.log('بيانات الصنف:', item);
+        
+        // تحقق من أنواع مختلفة للتصنيف الرئيسي
+        const mainTypeVariations = ['رئيسي', 'رئيسى', 'main', 'Main', 'MAIN'];
+        if (mainTypeVariations.includes(item.type)) {
+          console.log('الصنف رئيسي:', item.name);
+          return item.name;
+        }
+        
+        // إذا كان الصنف من المستوى الأول أو الثاني، ابحث عن الأب الرئيسي
+        const subTypeVariations = ['مستوى أول', 'مستوى ثاني', 'فرعي', 'sub', 'Sub', 'SUB'];
+        if (subTypeVariations.includes(item.type) && item.parentId) {
+          console.log('البحث عن الأب الرئيسي للصنف، Parent ID:', item.parentId);
+          
+          // البحث عن الصنف الرئيسي
+          const findMainParent = (currentParentId: number): string => {
+            for (const [parentName, parentItem] of itemsMap) {
+              if (parentItem.id === currentParentId) {
+                const mainTypeVariations = ['رئيسي', 'رئيسى', 'main', 'Main', 'MAIN'];
+                if (mainTypeVariations.includes(parentItem.type)) {
+                  return parentItem.name;
+                } else if (parentItem.parentId) {
+                  return findMainParent(parentItem.parentId);
+                }
+              }
+            }
+            return 'بدون تصنيف';
+          };
+          
+          return findMainParent(item.parentId);
+        }
+        
+        console.log('لم يتم العثور على تصنيف مناسب للصنف:', itemName);
+        return 'بدون تصنيف';
+      };
       
       const baseQuery = collection(db, 'sales_invoices');
       const constraints = [];
@@ -201,7 +320,9 @@ const SoldItemsByType: React.FC = () => {
       const finalQuery = constraints.length > 0 ? query(baseQuery, ...constraints) : baseQuery;
       const snapshot = await getDocs(finalQuery);
       
-      // معالجة البيانات لحساب المبيعات لكل تصنيف
+      console.log('عدد الفواتير المجلبة:', snapshot.docs.length);
+      
+      // معالجة البيانات لحساب المبيعات لكل تصنيف رئيسي
       const typeMap = new Map<string, {
         typeName: string;
         totalQuantity: number;
@@ -209,14 +330,74 @@ const SoldItemsByType: React.FC = () => {
         items: Map<string, { name: string; quantity: number }>;
       }>();
 
-      snapshot.docs.forEach(doc => {
+      snapshot.docs.forEach((doc, index) => {
         const invoice = doc.data();
+        console.log(`فاتورة ${index + 1}:`, {
+          id: doc.id,
+          hasItems: !!invoice.items,
+          itemsLength: invoice.items?.length || 0,
+          sampleItems: invoice.items?.slice(0, 2)
+        });
+        
         if (invoice.items && Array.isArray(invoice.items)) {
-          invoice.items.forEach((item: { itemType?: string; type?: string; quantity?: string | number; totalAmount?: string | number; name?: string }) => {
-            const typeName = item.itemType || item.type || 'بدون تصنيف';
+          invoice.items.forEach((item: InvoiceItem, itemIndex: number) => {
+            // جرب عدة حقول للحصول على اسم الصنف
+            let itemName = item.name || item.itemName;
+            
+            // إذا لم نجد اسم الصنف، حاول استخدام رقم الصنف للعثور على الاسم
+            if (!itemName && item.itemNumber) {
+              // البحث في خريطة الأصناف عن طريق الرقم أو الكود
+              for (const [name, itemData] of itemsMap) {
+                if (itemData.id.toString() === item.itemNumber || name.includes(item.itemNumber)) {
+                  itemName = name;
+                  break;
+                }
+              }
+            }
+            
+            // إذا لم نجد اسم الصنف بعد، استخدم رقم الصنف أو "غير محدد"
+            if (!itemName) {
+              itemName = item.itemNumber || 'غير محدد';
+            }
+            
+            const typeName = findMainCategory(itemName);
             const quantity = typeof item.quantity === 'string' ? parseFloat(item.quantity) || 0 : item.quantity || 0;
-            const totalAmount = typeof item.totalAmount === 'string' ? parseFloat(item.totalAmount) || 0 : item.totalAmount || 0;
-            const itemName = item.name || 'غير محدد';
+            
+            // حساب المبلغ الإجمالي بعد الخصم
+            let totalAmount = 0;
+            
+            // جرب الحصول على المبلغ الإجمالي والخصم
+            let baseTotal = 0;
+            if (item.totalAmount !== undefined) {
+              baseTotal = typeof item.totalAmount === 'string' ? parseFloat(item.totalAmount) || 0 : item.totalAmount || 0;
+            } else if (item.total !== undefined) {
+              baseTotal = typeof item.total === 'string' ? parseFloat(item.total) || 0 : item.total || 0;
+            } else {
+              // حساب الإجمالي الأساسي من السعر والكمية
+              const price = typeof item.price === 'string' ? parseFloat(item.price) || 0 : item.price || 0;
+              baseTotal = price * quantity;
+            }
+            
+            // جرب الحصول على قيمة الخصم
+            let discountValue = 0;
+            if (item.discountValue !== undefined) {
+              discountValue = typeof item.discountValue === 'string' ? parseFloat(item.discountValue) || 0 : item.discountValue || 0;
+            } else if (item.discount !== undefined) {
+              discountValue = typeof item.discount === 'string' ? parseFloat(item.discount) || 0 : item.discount || 0;
+            }
+            
+            // المبلغ النهائي بعد الخصم
+            totalAmount = baseTotal - discountValue;
+
+            console.log(`صنف ${itemIndex + 1}:`, {
+              itemName,
+              typeName,
+              quantity,
+              baseTotal: baseTotal.toFixed(2),
+              discountValue: discountValue.toFixed(2),
+              totalAmountAfterDiscount: totalAmount.toFixed(2),
+              rawItem: item
+            });
 
             if (!typeMap.has(typeName)) {
               typeMap.set(typeName, {
@@ -240,6 +421,9 @@ const SoldItemsByType: React.FC = () => {
           });
         }
       });
+      
+      console.log('خريطة التصنيفات النهائية:', Array.from(typeMap.entries()));
+      console.log('عدد التصنيفات المختلفة:', typeMap.size);
 
       // تحويل البيانات إلى تنسيق الجدول
       const records: TypeSalesRecord[] = Array.from(typeMap.entries()).map(([typeName, data], index) => {
@@ -264,6 +448,9 @@ const SoldItemsByType: React.FC = () => {
           mostSoldItemQuantity
         };
       });
+
+      console.log('عدد السجلات المُنشأة:', records.length);
+      console.log('أسماء التصنيفات:', records.map(r => r.typeName));
 
       setTypeSales(records);
       setFilteredTypes(records);
@@ -290,14 +477,17 @@ const SoldItemsByType: React.FC = () => {
   useEffect(() => {
     let filtered = [...typeSales];
     
-    if (typeId) {
+    // إذا تم اختيار تصنيف معين، قم بفلترة النتائج لإظهار هذا التصنيف فقط
+    if (typeId && typeId !== "") {
       const selectedType = types.find(c => c.id === typeId);
       if (selectedType) {
+        // فلترة دقيقة بناءً على اسم التصنيف المحدد
         filtered = filtered.filter(item => 
-          item.typeName.toLowerCase().includes(selectedType.name.toLowerCase())
+          item.typeName === selectedType.name
         );
       }
     }
+    // إذا لم يتم اختيار تصنيف محدد، اعرض جميع التصنيفات
 
     setFilteredTypes(filtered);
   }, [typeSales, typeId, types]);
@@ -429,7 +619,7 @@ const SoldItemsByType: React.FC = () => {
               <th>رقم التصنيف</th>
               <th>التصنيف</th>
               <th>إجمالي الكمية المباعة</th>
-              <th>إجمالي المبلغ</th>
+              <th>إجمالي المبلغ (بعد الخصم)</th>
               <th>أكثر صنف مباع</th>
               <th>كمية أكثر صنف مباع</th>
             </tr>
@@ -516,7 +706,7 @@ const SoldItemsByType: React.FC = () => {
       { header: 'رقم التصنيف', key: 'typeNumber', width: 12 },
       { header: 'التصنيف', key: 'typeName', width: 25 },
       { header: 'إجمالي الكمية المباعة', key: 'totalQuantity', width: 18 },
-      { header: 'إجمالي المبلغ', key: 'totalAmount', width: 15 },
+      { header: 'إجمالي المبلغ (بعد الخصم)', key: 'totalAmount', width: 20 },
       { header: 'أكثر صنف مباع', key: 'mostSoldItem', width: 20 },
       { header: 'كمية أكثر صنف مباع', key: 'mostSoldItemQuantity', width: 18 },
     ];
@@ -609,7 +799,7 @@ const SoldItemsByType: React.FC = () => {
       render: (value: number) => value?.toFixed(2) || '0.00'
     },
     {
-      title: 'إجمالي المبلغ',
+      title: 'إجمالي المبلغ (بعد الخصم)',
       dataIndex: 'totalAmount',
       key: 'totalAmount',
       width: 150,
@@ -693,61 +883,60 @@ const SoldItemsByType: React.FC = () => {
         />
 
         {/* خيارات البحث والفلترة */}
-        <motion.div
+        <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="bg-white p-6 rounded-lg shadow-sm border"
+          className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2 space-x-reverse">
-              <SearchOutlined className="h-5 w-5 text-blue-600" />
-              <h3 className="text-lg font-semibold text-gray-800">خيارات البحث والفلترة</h3>
-            </div>
-            <Button
-              type="link"
-              onClick={() => setShowMore(!showMore)}
-              className="text-blue-600 hover:text-blue-800"
-            >
-              {showMore ? 'عرض أقل' : 'عرض المزيد'}
-            </Button>
-          </div>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+          
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+            <SearchOutlined className="text-emerald-600" /> خيارات البحث
+          </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label style={labelStyle}>من تاريخ</label>
-              <DatePicker
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="flex flex-col">
+              <span style={labelStyle}>من تاريخ</span>
+              <DatePicker 
                 value={dateFrom}
                 onChange={setDateFrom}
-                locale={arEG}
                 placeholder="اختر التاريخ"
                 style={largeControlStyle}
-                className="w-full"
+                size="large"
+                format="YYYY-MM-DD"
+                locale={arEG}
               />
             </div>
-
-            <div>
-              <label style={labelStyle}>إلى تاريخ</label>
-              <DatePicker
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>إلى تاريخ</span>
+              <DatePicker 
                 value={dateTo}
                 onChange={setDateTo}
-                locale={arEG}
                 placeholder="اختر التاريخ"
                 style={largeControlStyle}
-                className="w-full"
+                size="large"
+                format="YYYY-MM-DD"
+                locale={arEG}
               />
             </div>
-
-            <div>
-              <label style={labelStyle}>الفرع</label>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>الفرع</span>
               <Select
                 value={branchId}
                 onChange={setBranchId}
                 placeholder="اختر الفرع"
-                style={largeControlStyle}
-                className="w-full"
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                optionFilterProp="label"
                 allowClear
+                showSearch
                 loading={branchesLoading}
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
               >
                 {branches.map(branch => (
                   <Option key={branch.id} value={branch.id}>
@@ -757,16 +946,22 @@ const SoldItemsByType: React.FC = () => {
               </Select>
             </div>
 
-            <div>
-              <label style={labelStyle}>التصنيف</label>
+            <div className="flex flex-col">
+              <span style={labelStyle}>التصنيف</span>
               <Select
                 value={typeId}
                 onChange={setTypeId}
                 placeholder="اختر التصنيف"
-                style={largeControlStyle}
-                className="w-full"
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                optionFilterProp="label"
                 allowClear
+                showSearch
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
               >
+                <Option value="">جميع التصنيفات ({types.length})</Option>
                 {types.map(type => (
                   <Option key={type.id} value={type.id}>
                     {type.name}
@@ -776,20 +971,219 @@ const SoldItemsByType: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-center mt-6">
+          <div className="flex items-center gap-4 mt-4">
             <Button
               type="primary"
-              size="large"
               icon={<SearchOutlined />}
               onClick={fetchTypeSales}
               loading={isLoading}
               className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+              size="large"
             >
-              بحث
+              {isLoading ? "جاري البحث..." : "بحث"}
             </Button>
+            <span className="text-gray-500 text-sm">نتائج البحث: {filteredTypes.length}</span>
           </div>
+          
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="absolute left-4 top-4 flex items-center gap-2 cursor-pointer text-blue-600 select-none"
+            onClick={() => setShowMore((prev) => !prev)}
+          >
+            <span className="text-sm font-medium">{showMore ? "إخفاء الخيارات الإضافية" : "عرض خيارات أكثر"}</span>
+            <motion.svg
+              animate={{ rotate: showMore ? 180 : 0 }}
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2.5}
+              stroke="currentColor"
+              className="w-4 h-4 transition-transform"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </motion.svg>
+          </motion.div>
         </motion.div>
 
+
+        {/* النتائج */}
+        <AnimatePresence>
+          {filteredTypes.length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+              className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm overflow-x-auto relative"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+              
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  نتائج البحث ({filteredTypes.length} تصنيف)
+                </h3>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="primary"
+                    icon={<DownloadOutlined />}
+                    onClick={handleExport}
+                    disabled={filteredTypes.length === 0}
+                    className="bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700"
+                    size="large"
+                  >
+                    تصدير Excel
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<PrinterOutlined />}
+                    onClick={handlePrint}
+                    disabled={filteredTypes.length === 0}
+                    className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+                    size="large"
+                  >
+                    طباعة
+                  </Button>
+                </div>
+              </div>
+
+              <Table  
+                style={{ direction: 'rtl' }}
+                dataSource={filteredTypes}
+                columns={[
+                  {
+                    title: 'رقم التصنيف',
+                    dataIndex: 'typeNumber',
+                    key: 'typeNumber',
+                    minWidth: 120,
+                    sorter: (a: TypeSalesRecord, b: TypeSalesRecord) => (a.typeNumber || '').localeCompare(b.typeNumber || ''),
+                    render: (text: string) => (
+                      <span className="text-blue-700 font-medium">{text || 'غير محدد'}</span>
+                    ),
+                  },
+                  {
+                    title: 'التصنيف',
+                    dataIndex: 'typeName',
+                    key: 'typeName',
+                    minWidth: 200,
+                    sorter: (a: TypeSalesRecord, b: TypeSalesRecord) => (a.typeName || '').localeCompare(b.typeName || ''),
+                    render: (text: string) => (
+                      <span className="text-gray-800 font-medium">{text || 'غير محدد'}</span>
+                    ),
+                  },
+                  {
+                    title: 'إجمالي الكمية المباعة',
+                    dataIndex: 'totalQuantity',
+                    key: 'totalQuantity',
+                    minWidth: 150,
+                    sorter: (a: TypeSalesRecord, b: TypeSalesRecord) => (a.totalQuantity || 0) - (b.totalQuantity || 0),
+                    render: (value: number) => (
+                      <span className="text-blue-700 font-semibold">
+                        {(value || 0).toLocaleString()}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: 'إجمالي المبلغ (بعد الخصم)',
+                    dataIndex: 'totalAmount',
+                    key: 'totalAmount',
+                    minWidth: 150,
+                    sorter: (a: TypeSalesRecord, b: TypeSalesRecord) => (a.totalAmount || 0) - (b.totalAmount || 0),
+                    render: (value: number) => (
+                      <span className="text-emerald-700 font-bold">
+                        {(value || 0).toLocaleString()} ر.س
+                      </span>
+                    ),
+                  },
+                  {
+                    title: 'أكثر صنف مباع',
+                    dataIndex: 'mostSoldItem',
+                    key: 'mostSoldItem',
+                    minWidth: 200,
+                    render: (text: string) => (
+                      <span className="text-gray-600">{text || 'لا يوجد'}</span>
+                    ),
+                  },
+                  {
+                    title: 'كمية أكثر صنف مباع',
+                    dataIndex: 'mostSoldItemQuantity',
+                    key: 'mostSoldItemQuantity',
+                    minWidth: 150,
+                    sorter: (a: TypeSalesRecord, b: TypeSalesRecord) => (a.mostSoldItemQuantity || 0) - (b.mostSoldItemQuantity || 0),
+                    render: (value: number) => (
+                      <span className="text-green-700 font-semibold">
+                        {(value || 0).toLocaleString()}
+                      </span>
+                    ),
+                  },
+                ]}
+                rowKey="key"
+                pagination={false}
+                loading={isLoading}
+                scroll={{ x: 1200 }}
+                size="small"
+                bordered
+                className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+                locale={{
+                  emptyText: isLoading ? (
+                    <div className="flex justify-center items-center py-8">
+                      <div className="animate-pulse flex space-x-4">
+                        <div className="flex-1 space-y-4 py-1">
+                          <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-gray-400">لا توجد بيانات</div>
+                  )
+                }}
+                summary={() => {
+                  if (filteredTypes.length === 0) return null;
+                  
+                  return (
+                    <Table.Summary fixed>
+                      <Table.Summary.Row className=" font-bold">
+                        <Table.Summary.Cell index={0} className=" text-gray-800 font-bold">
+                          الإجماليات
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={1} className=" text-gray-800 font-bold">
+                          {filteredTypes.length} تصنيف
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={2} className=" text-blue-700 font-bold">
+                          {totalQuantity.toLocaleString()}
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={3} className=" text-emerald-700 font-bold">
+                          {totalAmount.toLocaleString()} ر.س
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={4}></Table.Summary.Cell>
+                        <Table.Summary.Cell index={5}></Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    </Table.Summary>
+                  );
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* رسالة عدم وجود بيانات */}
+        {!isLoading && filteredTypes.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white p-12 rounded-lg shadow-sm border text-center"
+          >
+            <FileTextOutlined className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              لا توجد بيانات للعرض
+            </h3>
+            <p className="text-gray-500">
+              قم بتحديد معايير البحث والضغط على زر "بحث" لعرض التقرير
+            </p>
+          </motion.div>
+        )}
         {/* الرسوم البيانية */}
         <AnimatePresence>
           {chartData.length > 0 && (
@@ -856,96 +1250,7 @@ const SoldItemsByType: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* النتائج */}
-        <AnimatePresence>
-          {filteredTypes.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3, delay: 0.2 }}
-              className="bg-white rounded-lg shadow-sm border overflow-hidden"
-            >
-              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <TableOutlined className="h-5 w-5 text-green-600" />
-                  <h3 className="text-lg font-semibold text-gray-800">
-                    تقرير الأصناف المباعة حسب التصنيف ({filteredTypes.length})
-                  </h3>
-                </div>
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <Button
-                    type="default"
-                    icon={<DownloadOutlined />}
-                    onClick={handleExport}
-                    size="small"
-                  >
-                    تصدير Excel
-                  </Button>
-                  <Button
-                    type="default"
-                    icon={<PrinterOutlined />}
-                    onClick={handlePrint}
-                    size="small"
-                  >
-                    طباعة
-                  </Button>
-                </div>
-              </div>
 
-              <Table
-                columns={columns}
-                dataSource={filteredTypes}
-                pagination={{
-                  pageSize: 20,
-                  showSizeChanger: true,
-                  showQuickJumper: true,
-                  showTotal: (total, range) =>
-                    `${range[0]}-${range[1]} من ${total} تصنيف`,
-                }}
-                scroll={{ x: 800 }}
-                size="middle"
-                loading={isLoading}
-                summary={() => (
-                  <Table.Summary fixed>
-                    <Table.Summary.Row>
-                      <Table.Summary.Cell index={0} colSpan={2}>
-                        <strong>الإجمالي</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={2}>
-                        <strong>{totalQuantity.toFixed(2)}</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={3}>
-                        <strong>{totalAmount.toFixed(2)}</strong>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} colSpan={2}>
-                        <strong>{filteredTypes.length} تصنيف</strong>
-                      </Table.Summary.Cell>
-                    </Table.Summary.Row>
-                  </Table.Summary>
-                )}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* رسالة عدم وجود بيانات */}
-        {!isLoading && filteredTypes.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white p-12 rounded-lg shadow-sm border text-center"
-          >
-            <FileTextOutlined className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              لا توجد بيانات للعرض
-            </h3>
-            <p className="text-gray-500">
-              قم بتحديد معايير البحث والضغط على زر "بحث" لعرض التقرير
-            </p>
-          </motion.div>
-        )}
       </div>
     </>
   );
