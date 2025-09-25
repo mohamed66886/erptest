@@ -385,7 +385,7 @@ const SalesRepresentativeSales: React.FC = () => {
       dataIndex: 'totalSales',
       key: 'totalSales',
       width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      render: (value: number) => `${value.toFixed(2)} `,
       sorter: (a: SalesRepSalesRecord, b: SalesRepSalesRecord) => a.totalSales - b.totalSales,
     },
     {
@@ -393,7 +393,7 @@ const SalesRepresentativeSales: React.FC = () => {
       dataIndex: 'totalDiscount',
       key: 'totalDiscount',
       width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      render: (value: number) => `${value.toFixed(2)} `,
       sorter: (a: SalesRepSalesRecord, b: SalesRepSalesRecord) => a.totalDiscount - b.totalDiscount,
     },
     {
@@ -401,7 +401,7 @@ const SalesRepresentativeSales: React.FC = () => {
       dataIndex: 'totalTax',
       key: 'totalTax',
       width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      render: (value: number) => `${value.toFixed(2)} `,
       sorter: (a: SalesRepSalesRecord, b: SalesRepSalesRecord) => a.totalTax - b.totalTax,
     },
     {
@@ -409,7 +409,7 @@ const SalesRepresentativeSales: React.FC = () => {
       dataIndex: 'netTotal',
       key: 'netTotal',
       width: 120,
-      render: (value: number) => `${value.toFixed(2)} ر.س`,
+      render: (value: number) => `${value.toFixed(2)} `,
       sorter: (a: SalesRepSalesRecord, b: SalesRepSalesRecord) => a.netTotal - b.netTotal,
     },
     {
@@ -618,6 +618,7 @@ const SalesRepresentativeSales: React.FC = () => {
             dataSource={filteredSales}
             loading={isLoading}
             size="small"
+            className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-blue-800 [&_.ant-table-thead_>_tr_>_th]:border-blue-200 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
             scroll={{ x: 800 }}
             pagination={{
               total: filteredSales.length,
@@ -669,7 +670,7 @@ const SalesRepresentativeSales: React.FC = () => {
                   />
                   <YAxis />
                   <Tooltip 
-                    formatter={(value: number) => [`${value.toFixed(2)} ر.س`, 'مبيعات المندوب']}
+                    formatter={(value: number) => [`${value.toFixed(2)}`, 'مبيعات المندوب']}
                   />
                   <Bar dataKey="totalSales" fill="#8884d8" name="مبيعات المندوب" />
                 </BarChart>

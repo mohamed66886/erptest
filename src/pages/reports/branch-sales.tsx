@@ -719,10 +719,10 @@ const BranchSales: React.FC = () => {
             ${filteredSales.map(branch => `
               <tr>
                 <td>${branch.branchName || '-'}</td>
-                <td>${(branch.totalSales || 0).toLocaleString()} ر.س</td>
-                <td>${(branch.totalDiscount || 0).toLocaleString()} ر.س</td>
-                <td>${(branch.totalTax || 0).toLocaleString()} ر.س</td>
-                <td>${(branch.netTotal || 0).toLocaleString()} ر.س</td>
+                <td>${(branch.totalSales || 0).toLocaleString()} </td>
+                <td>${(branch.totalDiscount || 0).toLocaleString()}</td>
+                <td>${(branch.totalTax || 0).toLocaleString()} </td>
+                <td>${(branch.netTotal || 0).toLocaleString()} </td>
                 <td>${(branch.invoiceCount || 0).toLocaleString()}</td>
               </tr>
             `).join('')}
@@ -744,15 +744,15 @@ const BranchSales: React.FC = () => {
               </tr>
               <tr>
                 <td class="total-label">إجمالي المبيعات:</td>
-                <td class="total-value">${totalSales.toLocaleString()} ر.س</td>
+                <td class="total-value">${totalSales.toLocaleString()} </td>
               </tr>
               <tr>
                 <td class="total-label">إجمالي الخصم:</td>
-                <td class="total-value">${totalDiscount.toLocaleString()} ر.س</td>
+                <td class="total-value">${totalDiscount.toLocaleString()} </td>
               </tr>
               <tr>
                 <td class="total-label">إجمالي الضريبة:</td>
-                <td class="total-value">${totalTax.toLocaleString()} ر.س</td>
+                <td class="total-value">${totalTax.toLocaleString()} </td>
               </tr>
               <tr>
                 <td class="total-label">إجمالي الفواتير:</td>
@@ -760,11 +760,11 @@ const BranchSales: React.FC = () => {
               </tr>
               <tr>
                 <td class="total-label">متوسط مبيعات الفرع:</td>
-                <td class="total-value">${avgSales.toLocaleString()} ر.س</td>
+                <td class="total-value">${avgSales.toLocaleString()}</td>
               </tr>
               <tr class="final-total">
                 <td class="total-label">إجمالي الصافي:</td>
-                <td class="total-value">${totalNet.toLocaleString()} ر.س</td>
+                <td class="total-value">${totalNet.toLocaleString()} </td>
               </tr>
             </tbody>
           </table>
@@ -873,7 +873,7 @@ const BranchSales: React.FC = () => {
       minWidth: 140,
       render: (value: number) => (
         <span className="font-semibold text-green-600">
-          {value.toLocaleString()} ر.س
+          {value.toLocaleString()}
         </span>
       ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.totalSales - b.totalSales,
@@ -885,7 +885,7 @@ const BranchSales: React.FC = () => {
       minWidth: 140,
       render: (value: number) => (
         <span className="font-semibold text-orange-600">
-          {value.toLocaleString()} ر.س
+          {value.toLocaleString()}
         </span>
       ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.totalDiscount - b.totalDiscount,
@@ -897,7 +897,7 @@ const BranchSales: React.FC = () => {
       minWidth: 140,
       render: (value: number) => (
         <span className="font-semibold text-blue-600">
-          {value.toLocaleString()} ر.س
+          {value.toLocaleString()}
         </span>
       ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.totalTax - b.totalTax,
@@ -909,7 +909,7 @@ const BranchSales: React.FC = () => {
       minWidth: 140,
       render: (value: number) => (
         <span className="font-bold text-purple-600">
-          {value.toLocaleString()} ر.س
+          {value.toLocaleString()}
         </span>
       ),
       sorter: (a: BranchSalesRecord, b: BranchSalesRecord) => a.netTotal - b.netTotal,
@@ -1150,7 +1150,7 @@ const BranchSales: React.FC = () => {
             rowClassName={(record, index) => 
               index % 2 === 0 ? 'bg-gray-50' : 'bg-white'
             }
-            className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+            className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-blue-800 [&_.ant-table-thead_>_tr_>_th]:border-blue-200 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
             pagination={{
               total: filteredSales.length,
               pageSize: 30,
@@ -1176,16 +1176,16 @@ const BranchSales: React.FC = () => {
                       الإجماليات
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={1} className=" font-bold text-green-600">
-                      {totalSales.toLocaleString()} ر.س
+                      {totalSales.toLocaleString()}
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={2} className=" font-bold text-orange-600">
-                      {totalDiscount.toLocaleString()} ر.س
+                      {totalDiscount.toLocaleString()}
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={3} className=" font-bold text-blue-600">
-                      {totalTax.toLocaleString()} ر.س
+                      {totalTax.toLocaleString()}
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={4} className=" font-bold text-purple-600">
-                      {totalNet.toLocaleString()} ر.س
+                      {totalNet.toLocaleString()}
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={5} className=" font-bold text-gray-700">
                       {totalInvoices.toLocaleString()}
@@ -1237,7 +1237,7 @@ const BranchSales: React.FC = () => {
                   />
                   <YAxis />
                   <Tooltip 
-                    formatter={(value: number) => [`${value.toFixed(2)} ر.س`, 'مبيعات الفرع']}
+                    formatter={(value: number) => [`${value.toFixed(2)} `, 'مبيعات الفرع']}
                   />
                   <Bar dataKey="totalSales" fill="#8884d8" name="مبيعات الفرع" />
                 </BarChart>

@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Helmet } from "react-helmet";
 import { Link } from 'react-router-dom';
-import { getDocs, query, collection } from "firebase/firestore";
+import { getDocs, query, collection, where, WhereFilterOp, Query, CollectionReference } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePicker, Input, Select, Button, Table, Pagination } from "antd";
 import { SearchOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
@@ -12,7 +11,7 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import dayjs from 'dayjs';
 import styles from './ReceiptVoucher.module.css';
-
+import { Select as AntdSelect } from 'antd';
 const { Option } = Select;
 
 
@@ -30,6 +29,37 @@ interface GroupedInvoice extends InvoiceRecord {
 interface PaymentMethodOption {
   id: string;
   name: string;
+}
+
+interface FirestoreTimestamp {
+  seconds: number;
+  nanoseconds?: number;
+}
+
+interface InvoiceItemData {
+  itemNumber?: string;
+  itemName?: string;
+  price?: number;
+  quantity?: number;
+  discountValue?: number;
+  discountPercent?: number;
+  taxValue?: number;
+  taxPercent?: number;
+  extraDiscount?: number;
+  customerPhone?: string;
+  customerMobile?: string;
+  customerNumber?: string;
+  phone?: string;
+  mobile?: string;
+  phoneNumber?: string;
+  warehouseId?: string;
+  returnedQty?: number;
+  cost?: number;
+  mainCategory?: string;
+  unit?: string;
+  items?: InvoiceItemData[];
+  net?: number;
+  createdAt?: FirestoreTimestamp;
 }
 
 interface InvoiceRecord {
@@ -61,8 +91,8 @@ interface InvoiceRecord {
   invoiceType: string;
   isReturn: boolean;
   extraDiscount?: number;
-  itemData?: any;
-  createdAt?: any;
+  itemData?: InvoiceItemData;
+  createdAt?: FirestoreTimestamp;
   unit?: string;
 }
 
@@ -81,6 +111,27 @@ const Invoice: React.FC = () => {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
   const [seller, setSeller] = useState<string>("");
   const [salesRepAccounts, setSalesRepAccounts] = useState<{ id: string; name: string; number: string; mobile?: string }[]>([]);
+
+  // السنة المالية من السياق العام
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
+  const navigate = useNavigate();
+  const { setCurrentSection } = useSidebar();
+  const controls = useAnimation();
 
   // ستايل موحد لعناصر الإدخال والدروب داون مثل صفحة أمر البيع
   const largeControlStyle = {
@@ -128,6 +179,7 @@ const Invoice: React.FC = () => {
     fetchWarehouses();
   }, []);
   
+  
   useEffect(() => {
     const fetchSalesReps = async () => {
       try {
@@ -167,8 +219,8 @@ const Invoice: React.FC = () => {
     };
     fetchSalesReps();
   }, []);
-  const [dateFrom, setDateFrom] = useState<any>(null);
-  const [dateTo, setDateTo] = useState<any>(null);
+  const [dateFrom, setDateFrom] = useState<dayjs.Dayjs | null>(null);
+  const [dateTo, setDateTo] = useState<dayjs.Dayjs | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState<string>("");
   const [customerName, setCustomerName] = useState<string>("");
   const [customerPhoneFilter, setCustomerPhoneFilter] = useState<string>("");
@@ -220,8 +272,8 @@ const Invoice: React.FC = () => {
   const fetchInvoices = async (filtersParams?: {
     branchId?: string;
     invoiceNumber?: string;
-    dateFrom?: any;
-    dateTo?: any;
+    dateFrom?: dayjs.Dayjs | null;
+    dateTo?: dayjs.Dayjs | null;
     warehouseId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -233,28 +285,36 @@ const Invoice: React.FC = () => {
       const { getDocs, collection, query, where } = await import('firebase/firestore');
       const { db } = await import('@/lib/firebase');
       // جلب جميع الأصناف
-      let inventoryItems: any[] = [];
+      interface InventoryItem {
+        id: string;
+        name?: string;
+        parentId?: string;
+        [key: string]: unknown;
+      }
+      const inventoryItems: InventoryItem[] = [];
       try {
         const itemsSnap = await getDocs(collection(db, 'inventory_items'));
-        inventoryItems = itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        inventoryItems.push(...itemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (e) {
         // Error fetching inventory items
       }
-      let q = collection(db, 'sales_invoices');
-      let filters: any[] = [];
+      let q: Query<any, any> | CollectionReference<any, any> = collection(db, 'sales_invoices');
+      const filters: [string, WhereFilterOp, unknown][] = [];
       const params = filtersParams || {};
-      if (params.branchId) filters.push(where('branch', '==', params.branchId));
+      if (params.branchId) filters.push(['branch', '==', params.branchId]);
       // لا نستخدم where('==') للبحث الجزئي، نجلب كل الفواتير ثم نفلتر
-      if (params.dateFrom) filters.push(where('date', '>=', dayjs(params.dateFrom).format('YYYY-MM-DD')));
-      if (params.dateTo) filters.push(where('date', '<=', dayjs(params.dateTo).format('YYYY-MM-DD')));
-      if (params.warehouseId) filters.push(where('warehouse', '==', params.warehouseId));
+      if (params.dateFrom) filters.push(['date', '>=', dayjs(params.dateFrom).format('YYYY-MM-DD')]);
+      if (params.dateTo) filters.push(['date', '<=', dayjs(params.dateTo).format('YYYY-MM-DD')]);
+      if (params.warehouseId) filters.push(['warehouse', '==', params.warehouseId]);
+      
       if (filters.length > 0) {
         const { query: qFn } = await import('firebase/firestore');
-        q = qFn(q, ...filters);
+        const whereConditions = filters.map(f => where(...f));
+        q = qFn(q, ...whereConditions) as Query<any, any>;
       }
       // لا يمكن عمل تصفية مباشرة على الحقول غير المفهرسة أو الفرعية، سنستخدم الفلاتر بعد الجلب
       const snapshot = await getDocs(q);
-      let salesRecords: InvoiceRecord[] = [];
+      const salesRecords: InvoiceRecord[] = [];
       snapshot.forEach(doc => {
         const data = doc.data();
         const invoiceId = doc.id; // معرف الفاتورة من Firestore
@@ -271,7 +331,7 @@ const Invoice: React.FC = () => {
         const paymentMethod = data.paymentMethod || '';
         const invoiceType = data.type || '';
         const items = Array.isArray(data.items) ? data.items : [];
-        items.forEach((item: any, idx: number) => {
+        items.forEach((item: InvoiceItemData, idx: number) => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.quantity) || 0;
@@ -341,24 +401,33 @@ const Invoice: React.FC = () => {
         });
       });
       let qReturn = collection(db, 'sales_returns');
-      let filtersReturn: any[] = [];
-      if (params.branchId) filtersReturn.push(where('branch', '==', params.branchId));
-      if (params.invoiceNumber) filtersReturn.push(where('invoiceNumber', '==', params.invoiceNumber));
-      if (params.dateFrom) filtersReturn.push(where('date', '>=', dayjs(params.dateFrom).format('YYYY-MM-DD')));
-      if (params.dateTo) filtersReturn.push(where('date', '<=', dayjs(params.dateTo).format('YYYY-MM-DD')));
-      if (params.warehouseId) filtersReturn.push(where('warehouse', '==', params.warehouseId));
+      const filtersReturn: [string, WhereFilterOp, unknown][] = [];
+      if (params.branchId) filtersReturn.push(['branch', '==', params.branchId]);
+      if (params.dateFrom) filtersReturn.push(['date', '>=', dayjs(params.dateFrom).format('YYYY-MM-DD')]);
+      if (params.dateTo) filtersReturn.push(['date', '<=', dayjs(params.dateTo).format('YYYY-MM-DD')]);
+      if (params.warehouseId) filtersReturn.push(['warehouse', '==', params.warehouseId]);
+      if (params.invoiceNumber) filtersReturn.push(['invoiceNumber', '==', params.invoiceNumber]);
       if (filtersReturn.length > 0) {
         const { query: qFn } = await import('firebase/firestore');
-        qReturn = qFn(qReturn, ...filtersReturn);
+        const whereConditions = filtersReturn.map(f => where(...f));
+        qReturn = qFn(qReturn, ...whereConditions) as any;
       }
       const snapshotReturn = await getDocs(qReturn);
-      let returnRecords: InvoiceRecord[] = [];
+      const returnRecords: InvoiceRecord[] = [];
       snapshotReturn.forEach(doc => {
-      const data = doc.data();
-        const returnId = doc.id; // معرف المرتجع من Firestore
-        // استخدم رقم المرتجع بدلاً من رقم الفاتورة في المرتجع
+        const data = doc.data();
         const referenceNumber = data.referenceNumber || '';
         const invoiceNumber = referenceNumber || data.invoiceNumber || '';
+        // أضف هذا الشرط للبحث الجزئي في المرتجعات
+        if (
+          params.invoiceNumber &&
+          !(
+            invoiceNumber.toLowerCase().includes(params.invoiceNumber.toLowerCase()) ||
+            referenceNumber.toLowerCase().includes(params.invoiceNumber.toLowerCase())
+          )
+        ) {
+          return;
+        }
         const entryNumber = data.entryNumber || '';
         const date = data.date || '';
         const branch = typeof doc.data().branch === 'string' ? doc.data().branch : '';
@@ -368,7 +437,7 @@ const Invoice: React.FC = () => {
         const paymentMethod = data.paymentMethod || '';
         const invoiceType = 'مرتجع';
         const items = Array.isArray(data.items) ? data.items : [];
-        items.forEach((item: any, idx: number) => {
+        items.forEach((item: InvoiceItemData, idx: number) => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.returnedQty) || 0;
@@ -476,16 +545,15 @@ const Invoice: React.FC = () => {
   // جلب كل البيانات عند تحميل الصفحة فقط (بدون فلاتر)
   useEffect(() => {
     fetchInvoices();
-    // eslint-disable-next-line
   }, []);
 
   // عند تغيير invoices (بعد الجلب)، اعرض كل البيانات مباشرة في الجدول
   useEffect(() => {
     // لكل فاتورة، إذا كان فيها أصناف (itemData.items)، أنشئ صف لكل صنف
-    let allRows: InvoiceItemRow[] = [];
+    const allRows: InvoiceItemRow[] = [];
     invoices.forEach(inv => {
       if (inv.itemData && Array.isArray(inv.itemData.items)) {
-        inv.itemData.items.forEach((item: any) => {
+        inv.itemData.items.forEach((item: InvoiceItemData) => {
           const price = Number(item.price) || 0;
           const quantity = Number(item.quantity) || Number(item.returnedQty) || 0;
           const discountValue = Number(item.discountValue) || 0;
@@ -1123,7 +1191,7 @@ const handlePrintTable = () => {
             const totalDiscount = invoiceRows.reduce((sum, row) => sum + (Number(row.discountValue) || 0), 0);
             const afterDiscount = totalAmount - totalDiscount;
             const totalTax = invoiceRows.reduce((sum, row) => sum + (Number(row.taxValue) || 0), 0);
-            const net = Number((invoice as any)?.net) || 0;
+            const net = Number((invoice as any)?.net) || totalAmount - totalDiscount + totalTax;
             const sign = (invoice as any)?.invoiceType === 'مرتجع' ? -1 : 1;
             
             // حساب الأسماء مسبقاً مع معالجة safe
@@ -1150,11 +1218,11 @@ const handlePrintTable = () => {
               '<td>' + ((invoice as any)?.customerPhone && (invoice as any).customerPhone.trim() !== '' ? (invoice as any).customerPhone : 'غير متوفر') + '</td>' +
               '<td>' + ((invoice as any)?.customer || '') + '</td>' +
               '<td>' + branchName + '</td>' +
-              '<td>' + (sign * totalAmount).toLocaleString() + ' ر.س</td>' +
-              '<td>' + (sign * totalDiscount).toLocaleString() + ' ر.س</td>' +
-              '<td>' + (sign * afterDiscount).toLocaleString() + ' ر.س</td>' +
-              '<td>' + (sign * totalTax).toLocaleString() + ' ر.س</td>' +
-              '<td>' + (sign * net).toLocaleString() + ' ر.س</td>' +
+              '<td>' + (sign * totalAmount).toLocaleString() + '</td>' +
+              '<td>' + (sign * totalDiscount).toLocaleString() + '</td>' +
+              '<td>' + (sign * afterDiscount).toLocaleString() + '</td>' +
+              '<td>' + (sign * totalTax).toLocaleString() + '</td>' +
+              '<td>' + (sign * net).toLocaleString() + '</td>' +
               '<td class="' + ((invoice as any)?.invoiceType === 'مرتجع' ? 'return-invoice' : 'normal-invoice') + '">' + ((invoice as any)?.invoiceType || '-') + '</td>' +
               '<td>' + warehouseName + '</td>' +
               '<td>' + ((invoice as any)?.paymentMethod || '-') + '</td>' +
@@ -1176,23 +1244,23 @@ const handlePrintTable = () => {
           <tbody>
             <tr>
               <td class="total-label">إجمالي المبلغ:</td>
-              <td class="total-value">${totalAmount.toLocaleString()} ر.س</td>
+              <td class="total-value">${totalAmount.toLocaleString()}</td>
             </tr>
             <tr>
               <td class="total-label">إجمالي الخصم:</td>
-              <td class="total-value">${totalDiscount.toLocaleString()} ر.س</td>
+              <td class="total-value">${totalDiscount.toLocaleString()}</td>
             </tr>
             <tr>
               <td class="total-label">المبلغ بعد الخصم:</td>
-              <td class="total-value">${totalAfterDiscount.toLocaleString()} ر.س</td>
+              <td class="total-value">${afterDiscount.toLocaleString()}</td>
             </tr>
             <tr>
               <td class="total-label">إجمالي الضرائب:</td>
-              <td class="total-value">${totalTax.toLocaleString()} ر.س</td>
+              <td class="total-value">${totalTax.toLocaleString()}</td>
             </tr>
             <tr class="final-total">
               <td class="total-label">الإجمالي النهائي:</td>
-              <td class="total-value">${totalNet.toLocaleString()} ر.س</td>
+              <td class="total-value">${totalNet.toLocaleString()}</td>
             </tr>
           </tbody>
         </table>
@@ -1523,14 +1591,6 @@ const handlePrintTable = () => {
               <div>الجوال: ${companyData.mobile || ''}</div>
             </div>
             <div class="header-section center">
-              <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
-            </div>
-            <div class="header-section company-info-en">
-              <div>${companyData.englishName || ''}</div>
-              <div>${companyData.companyType || ''}</div>
-              <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
-              <div>Tax File: ${companyData.taxFile || ''}</div>
-              <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
               <div>Postal Code: ${companyData.postalCode || ''}</div>
               <div>Phone: ${companyData.phone || ''}</div>
               <div>Mobile: ${companyData.mobile || ''}</div>
@@ -1765,15 +1825,60 @@ const handlePrintTable = () => {
       </Helmet>
       <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50" dir="rtl">
  
-        {/* العنوان الرئيسي */}
-        <div className="p-3 sm:p-4 font-['Tajawal'] bg-white mb-4 rounded-lg shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden">
-          <div className="flex items-center">
-            <FileTextOutlined className="h-5 w-5 sm:h-8 sm:w-8 text-emerald-600 ml-1 sm:ml-3" />
-            <h1 className="text-lg sm:text-2xl font-bold text-gray-800">تقرير فواتير المبيعات</h1>
-          </div>
-          <p className="text-xs sm:text-base text-gray-600 mt-2">إدارة وعرض تقارير فواتير المبيعات</p>
-          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-green-500"></div>
+
+                <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={controls}
+          className="mb-6 md:mb-8"
+          data-aos="fade-up"
+        >
+      <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center gap-6">
+        <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+          <FileTextOutlined className="h-8 w-8 text-blue-600 dark:text-blue-300" />
         </div>
+        <div className="flex flex-col ">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">تقرير فواتير المبيعات</h1>
+          <p className="text-gray-600 dark:text-gray-400">إدارة وعرض تقارير فواتير المبيعات</p>
+        </div>
+      </div>
+          
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+            <span className="flex items-center gap-2">
+            <Calendar className="text-purple-600 dark:text-purple-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
+            </span>
+            <div className="min-w-[160px]">
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
+                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                size="middle"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
+            </div>
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+      </div>
+ 
+        </motion.div>
 
       <Breadcrumb
         items={[
@@ -1788,7 +1893,7 @@ const handlePrintTable = () => {
         transition={{ duration: 0.3 }}
         className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-200"></div>
         
         <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
           <SearchOutlined className="text-emerald-600" /> خيارات البحث
@@ -2052,7 +2157,7 @@ const handlePrintTable = () => {
             icon={<SearchOutlined />}
             onClick={handleSearch}
             loading={isLoading}
-            className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+            className="bg-blue-400 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
             size="large"
           >
             {isLoading ? "جاري البحث..." : "بحث"}
@@ -2097,7 +2202,7 @@ const handlePrintTable = () => {
         transition={{ duration: 0.3, delay: 0.2 }}
         className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm overflow-x-auto relative"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-green-500"></div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-200"></div>
         
         <div className="flex items-center justify-between flex-wrap gap-4">
           <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
@@ -2118,14 +2223,14 @@ const handlePrintTable = () => {
               icon={<DownloadOutlined />}
               onClick={handleExport}
               disabled={filteredInvoices.length === 0}
-              className="bg-green-600 hover:bg-green-700 border-green-600 hover:border-green-700"
+              className="bg-blue-400 hover:bg-green-700"
               size="large"
             >
               تصدير إكسل
             </Button>
             <Button
               type="primary"
-              className="bg-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
+              className="bg-blue-100 text-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
               size="large"
                 onClick={handlePrintTable}
             >
@@ -2218,7 +2323,7 @@ const handlePrintTable = () => {
                   return sum + lineTotal;
                 }, 0);
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * totalAmount).toLocaleString()} ر.س`;
+                return `${(sign * totalAmount).toLocaleString()}`;
               },
               sorter: (a: any, b: any) => {
                 // حساب الإجمالي للمقارنة في الترتيب
@@ -2247,7 +2352,7 @@ const handlePrintTable = () => {
                   return sum + (Number(row.discountValue) || 0);
                 }, 0);
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * totalDiscount).toLocaleString()} ر.س`;
+                return `${(sign * totalDiscount).toLocaleString()}`;
               },
               sorter: (a: any, b: any) => {
                 const getTotalDiscount = (record: any) => {
@@ -2277,7 +2382,7 @@ const handlePrintTable = () => {
                 }, 0);
                 const afterDiscount = totalAmount - totalDiscount;
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * afterDiscount).toLocaleString()} ر.س`;
+                return `${(sign * afterDiscount).toLocaleString()}`;
               },
               sorter: (a: any, b: any) => {
                 const getAfterDiscount = (record: any) => {
@@ -2308,7 +2413,7 @@ const handlePrintTable = () => {
                   return sum + (Number(row.taxValue) || 0);
                 }, 0);
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * totalTax).toLocaleString()} ر.س`;
+                return `${(sign * totalTax).toLocaleString()}`;
               },
               sorter: (a: any, b: any) => {
                 const getTotalTax = (record: any) => {
@@ -2343,7 +2448,7 @@ const handlePrintTable = () => {
                 }, 0);
                 const net = totalAmount - totalDiscount + totalTax;
                 const sign = record.invoiceType === 'مرتجع' ? -1 : 1;
-                return `${(sign * net).toLocaleString()} ر.س`;
+                return `${(sign * net).toLocaleString()}`;
               },
               sorter: (a: any, b: any) => {
                 const getNetTotal = (record: any) => {
@@ -2449,7 +2554,7 @@ const handlePrintTable = () => {
           scroll={{ x: 1200 }}
           size="small"
           bordered
-          className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+          className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-blue-900 [&_.ant-table-thead_>_tr_>_th]:border-blue-300 [&_.ant-table-thead_>_tr_>_th]:font-semibold [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
           locale={{
             emptyText: isLoading ? (
               <div className="flex justify-center items-center py-8">
@@ -2529,19 +2634,19 @@ const handlePrintTable = () => {
                   <Table.Summary.Cell index={4}></Table.Summary.Cell>
                   <Table.Summary.Cell index={5}></Table.Summary.Cell>
                   <Table.Summary.Cell index={6} className="">
-                    {totalAmount.toLocaleString()} ر.س
+                    {totalAmount.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={7} className="">
-                    {totalDiscount.toLocaleString()} ر.س
+                    {totalDiscount.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={8} className="">
-                    {totalAfterDiscount.toLocaleString()} ر.س
+                    {totalAfterDiscount.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={9} className="">
-                    {totalTax.toLocaleString()} ر.س
+                    {totalTax.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={10} className="">
-                    {totalNet.toLocaleString()} ر.س
+                    {totalNet.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={11}></Table.Summary.Cell>
                   <Table.Summary.Cell index={13}></Table.Summary.Cell>

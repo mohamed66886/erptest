@@ -783,9 +783,9 @@ const SoldItemsByCategory: React.FC = () => {
       text-align: center !important;
       font-weight: 600 !important;
       font-size: 14px !important;
-      color: white !important;
-      background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
-      border: 1px solid rgba(255,255,255,0.2) !important;
+      color: #1e40af !important;
+      background: #dbeafe !important;
+      border: 1px solid #bfdbfe !important;
     }
     .ant-table-tbody > tr > td {
       text-align: center !important;
@@ -1009,6 +1009,7 @@ const SoldItemsByCategory: React.FC = () => {
                     dataIndex: 'categoryNumber',
                     key: 'categoryNumber',
                     minWidth: 120,
+                    
                     sorter: (a: CategorySalesRecord, b: CategorySalesRecord) => (a.categoryNumber || '').localeCompare(b.categoryNumber || ''),
                     render: (text: string) => (
                       <span className="text-blue-700 font-medium">{text || 'غير محدد'}</span>
@@ -1076,7 +1077,7 @@ const SoldItemsByCategory: React.FC = () => {
                 scroll={{ x: 1200 }}
                 size="small"
                 bordered
-                className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+                className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-blue-800 [&_.ant-table-thead_>_tr_>_th]:border-blue-200 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
                 locale={{
                   emptyText: isLoading ? (
                     <div className="flex justify-center items-center py-8">

@@ -1555,7 +1555,7 @@ const SoldItems: React.FC = () => {
               sorter: (a: SoldItemRecord, b: SoldItemRecord) => (a.salePrice || 0) - (b.salePrice || 0),
               render: (value: number) => (
                 <span className="text-green-700 font-semibold">
-                  {(value || 0).toLocaleString()} ر.س
+                  {(value || 0).toLocaleString()}
                 </span>
               ),
             },
@@ -1579,7 +1579,7 @@ const SoldItems: React.FC = () => {
               sorter: (a: SoldItemRecord, b: SoldItemRecord) => (a.totalAmount || 0) - (b.totalAmount || 0),
               render: (value: number) => (
                 <span className="text-emerald-700 font-bold">
-                  {(value || 0).toLocaleString()} ر.س
+                  {(value || 0).toLocaleString()}
                 </span>
               ),
             },
@@ -1590,7 +1590,7 @@ const SoldItems: React.FC = () => {
           scroll={{ x: 1200 }}
           size="small"
           bordered
-          className="[&_.ant-table-thead_>_tr_>_th]:bg-gray-400 [&_.ant-table-thead_>_tr_>_th]:text-white [&_.ant-table-thead_>_tr_>_th]:border-gray-400 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
+          className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-blue-800 [&_.ant-table-thead_>_tr_>_th]:border-blue-200 [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
           locale={{
             emptyText: isLoading ? (
               <div className="flex justify-center items-center py-8">
@@ -1623,13 +1623,13 @@ const SoldItems: React.FC = () => {
                   <Table.Summary.Cell index={2}></Table.Summary.Cell>
                   <Table.Summary.Cell index={3}></Table.Summary.Cell>
                   <Table.Summary.Cell index={4} className=" text-green-700 font-bold">
-                    {avgPrice.toLocaleString()} ر.س
+                    {avgPrice.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={5} className=" text-blue-700 font-bold">
                     {totalQuantity.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={6} className=" text-emerald-700 font-bold">
-                    {totalAmount.toLocaleString()} ر.س
+                    {totalAmount.toLocaleString()}
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={7}></Table.Summary.Cell>
                 </Table.Summary.Row>

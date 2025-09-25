@@ -829,9 +829,9 @@ const SoldItemsByType: React.FC = () => {
       text-align: center !important;
       font-weight: 600 !important;
       font-size: 14px !important;
-      color: white !important;
-      background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
-      border: 1px solid rgba(255,255,255,0.2) !important;
+    color: #1e40af !important;
+      background: #dbeafe !important;
+      border: 1px solid #bfdbfe !important;
     }
     .ant-table-tbody > tr > td {
       text-align: center !important;
