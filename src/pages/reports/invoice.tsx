@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Helmet } from "react-helmet";
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getDocs, query, collection, where, WhereFilterOp, Query, CollectionReference } from "firebase/firestore";
-import { motion, AnimatePresence } from "framer-motion";
-import { DatePicker, Input, Select, Button, Table, Pagination } from "antd";
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import { DatePicker, Input, Select, Button, Table, Pagination, Calendar } from "antd";
 import { SearchOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch } from "@/lib/branches";
@@ -12,6 +12,7 @@ import { useFinancialYear } from "@/hooks/useFinancialYear";
 import dayjs from 'dayjs';
 import styles from './ReceiptVoucher.module.css';
 import { Select as AntdSelect } from 'antd';
+import { useSidebar } from "@/hooks/useSidebar";
 const { Option } = Select;
 
 
@@ -113,7 +114,7 @@ const Invoice: React.FC = () => {
   const [salesRepAccounts, setSalesRepAccounts] = useState<{ id: string; name: string; number: string; mobile?: string }[]>([]);
 
   // السنة المالية من السياق العام
-  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const { currentFinancialYear, setCurrentFinancialYear, activeYears } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
 
   useEffect(() => {
@@ -124,9 +125,11 @@ const Invoice: React.FC = () => {
 
   const handleFiscalYearChange = (value: string) => {
     setFiscalYear(value);
-    const selectedYear = activeYears.find(y => y.year.toString() === value);
-    if (selectedYear) {
-      setCurrentFinancialYear(selectedYear);
+    if (activeYears && setCurrentFinancialYear) {
+      const selectedYear = activeYears.find(y => y.year.toString() === value);
+      if (selectedYear) {
+        setCurrentFinancialYear(selectedYear);
+      }
     }
   };
   const navigate = useNavigate();
@@ -238,9 +241,6 @@ const Invoice: React.FC = () => {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(30); // عدد الصفوف في كل صفحة
-
-  // السنة المالية من السياق
-  const { currentFinancialYear } = useFinancialYear();
 
   // دالة لفلترة التواريخ المسموحة في DatePicker حسب السنة المالية
   const disabledDate = (current: dayjs.Dayjs) => {
@@ -403,10 +403,10 @@ const Invoice: React.FC = () => {
       let qReturn = collection(db, 'sales_returns');
       const filtersReturn: [string, WhereFilterOp, unknown][] = [];
       if (params.branchId) filtersReturn.push(['branch', '==', params.branchId]);
+      if (params.invoiceNumber) filtersReturn.push(['invoiceNumber', '==', params.invoiceNumber]);
       if (params.dateFrom) filtersReturn.push(['date', '>=', dayjs(params.dateFrom).format('YYYY-MM-DD')]);
       if (params.dateTo) filtersReturn.push(['date', '<=', dayjs(params.dateTo).format('YYYY-MM-DD')]);
       if (params.warehouseId) filtersReturn.push(['warehouse', '==', params.warehouseId]);
-      if (params.invoiceNumber) filtersReturn.push(['invoiceNumber', '==', params.invoiceNumber]);
       if (filtersReturn.length > 0) {
         const { query: qFn } = await import('firebase/firestore');
         const whereConditions = filtersReturn.map(f => where(...f));
@@ -415,19 +415,11 @@ const Invoice: React.FC = () => {
       const snapshotReturn = await getDocs(qReturn);
       const returnRecords: InvoiceRecord[] = [];
       snapshotReturn.forEach(doc => {
-        const data = doc.data();
+      const data = doc.data();
+        const returnId = doc.id; // معرف المرتجع من Firestore
+        // استخدم رقم المرتجع بدلاً من رقم الفاتورة في المرتجع
         const referenceNumber = data.referenceNumber || '';
         const invoiceNumber = referenceNumber || data.invoiceNumber || '';
-        // أضف هذا الشرط للبحث الجزئي في المرتجعات
-        if (
-          params.invoiceNumber &&
-          !(
-            invoiceNumber.toLowerCase().includes(params.invoiceNumber.toLowerCase()) ||
-            referenceNumber.toLowerCase().includes(params.invoiceNumber.toLowerCase())
-          )
-        ) {
-          return;
-        }
         const entryNumber = data.entryNumber || '';
         const date = data.date || '';
         const branch = typeof doc.data().branch === 'string' ? doc.data().branch : '';
@@ -586,7 +578,7 @@ const Invoice: React.FC = () => {
   // دالة تعرض البيانات المفلترة للعرض فقط حسب الفلاتر الإضافية - محسنة بـ useMemo
   const filteredRows = useMemo(() => {
     // إذا لم يتم اختيار أي فلتر، أرجع كل البيانات
-    if (!invoiceTypeFilter && !paymentMethod && !seller) {
+    if (!invoiceTypeFilter && !paymentMethod && !seller && !invoiceNumber) {
       return filteredInvoices;
     }
     let filtered = filteredInvoices;
@@ -605,8 +597,14 @@ const Invoice: React.FC = () => {
     if (seller) {
       filtered = filtered.filter(inv => inv.seller === seller);
     }
+    // تفعيل فلتر رقم الفاتورة
+    if (invoiceNumber && invoiceNumber.trim() !== "") {
+      filtered = filtered.filter(inv =>
+        inv.invoiceNumber && inv.invoiceNumber.toString().toLowerCase().includes(invoiceNumber.toLowerCase())
+      );
+    }
     return filtered;
-  }, [filteredInvoices, invoiceTypeFilter, paymentMethod, seller]);
+  }, [filteredInvoices, invoiceTypeFilter, paymentMethod, seller, invoiceNumber]);
 
   // دالة للحصول على البيانات المقسمة على صفحات - محسنة بـ useMemo
   const paginatedRows = useMemo(() => {
@@ -1454,11 +1452,6 @@ const handlePrintTable = () => {
               align-items: center;
               justify-content: center;
               flex: 0 0 120px;
-              max-width: 120px;
-              min-width: 100px;
-            }
-            .logo {
-              width: 150px;
               height: auto;
               margin-bottom: 8px;
             }
@@ -1591,6 +1584,14 @@ const handlePrintTable = () => {
               <div>الجوال: ${companyData.mobile || ''}</div>
             </div>
             <div class="header-section center">
+              <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+            </div>
+            <div class="header-section company-info-en">
+              <div>${companyData.englishName || ''}</div>
+              <div>${companyData.companyType || ''}</div>
+              <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+              <div>Tax File: ${companyData.taxFile || ''}</div>
+              <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
               <div>Postal Code: ${companyData.postalCode || ''}</div>
               <div>Phone: ${companyData.phone || ''}</div>
               <div>Mobile: ${companyData.mobile || ''}</div>
@@ -1826,12 +1827,7 @@ const handlePrintTable = () => {
       <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50" dir="rtl">
  
 
-                <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={controls}
-          className="mb-6 md:mb-8"
-          data-aos="fade-up"
-        >
+
       <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div className="flex items-center gap-6">
@@ -1847,7 +1843,6 @@ const handlePrintTable = () => {
           {/* السنة المالية Dropdown */}
           <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
             <span className="flex items-center gap-2">
-            <Calendar className="text-purple-600 dark:text-purple-300 w-6 h-6" />
               <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
             </span>
             <div className="min-w-[160px]">
@@ -1875,10 +1870,11 @@ const handlePrintTable = () => {
             </div>
           </div>
         </div>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-purple-500"></div>
+       <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-200"></div>
+
       </div>
  
-        </motion.div>
+
 
       <Breadcrumb
         items={[
