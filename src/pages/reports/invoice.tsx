@@ -416,8 +416,7 @@ const Invoice: React.FC = () => {
       const returnRecords: InvoiceRecord[] = [];
       snapshotReturn.forEach(doc => {
       const data = doc.data();
-        const returnId = doc.id; // معرف المرتجع من Firestore
-        // استخدم رقم المرتجع بدلاً من رقم الفاتورة في المرتجع
+        const returnId = doc.id;
         const referenceNumber = data.referenceNumber || '';
         const invoiceNumber = referenceNumber || data.invoiceNumber || '';
         const entryNumber = data.entryNumber || '';
@@ -433,17 +432,14 @@ const Invoice: React.FC = () => {
           const price = Number(item.price) || 0;
           const cost = Number(item.cost) || 0;
           const quantity = Number(item.returnedQty) || 0;
-          // حساب الإجمالي الصحيح للمرتجع
           const subtotal = price * quantity;
           const discountValue = Number(item.discountValue) || 0;
           const discountPercent = Number(item.discountPercent) || 0;
           const taxValue = Number(item.taxValue) || 0;
           const taxPercent = Number(item.taxPercent) || 0;
-          // حساب الصافي بعد الخصم والضريبة (مع إشارة سالبة للمرتجع)
           const afterDiscount = subtotal - discountValue;
           const net = afterDiscount + taxValue;
-          const profit = (price - cost) * quantity * -1; // ربح سالب للمرتجع
-          // استخراج رقم العميل من جميع الحقول المحتملة مع التأكد من أنها سترينج
+          const profit = (price - cost) * quantity * -1; 
           const customerPhone =
             (typeof item.customerPhone === 'string' && item.customerPhone.trim() !== '' && item.customerPhone) ||
             (typeof item.customerMobile === 'string' && item.customerMobile.trim() !== '' && item.customerMobile) ||
@@ -2170,25 +2166,41 @@ const handlePrintTable = () => {
             } - عرض الصفحة {currentPage} من {getTotalPages()}
           </span>
         </div>
-        
-        <motion.div
-          whileHover={{ scale: 1.05 }}
-          className="absolute left-4 top-4 flex items-center gap-2 cursor-pointer text-blue-600 select-none"
-          onClick={() => setShowMore((prev) => !prev)}
-        >
-          <span className="text-sm font-medium">{showMore ? "إخفاء الخيارات الإضافية" : "عرض خيارات أكثر"}</span>
-          <motion.svg
-            animate={{ rotate: showMore ? 180 : 0 }}
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2.5}
-            stroke="currentColor"
-            className="w-4 h-4 transition-transform"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </motion.svg>
-        </motion.div>
+<motion.div
+  whileHover={{ scale: 1.05 }}
+  className="absolute left-4 top-4 flex items-center gap-2 cursor-pointer text-blue-600 select-none"
+  onClick={() => setShowMore((prev) => !prev)}
+>
+  <span className="text-sm font-medium">{showMore ? "إخفاء الخيارات الإضافية" : "عرض خيارات أكثر"}</span>
+  <motion.svg
+    animate={{ rotate: showMore ? 180 : 0 }}
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={2.5}
+    stroke="currentColor"
+    className="w-4 h-4 transition-transform"
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+  </motion.svg>
+  {/* زر إضافة فاتورة جديدة */}
+  <Button
+    type="primary"
+    className="bg-green-500 text-white hover:bg-green-700 ml-2"
+    size="middle"
+    icon={
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+      </svg>
+    }
+    onClick={() => navigate('/management/sale')
+    
+
+    }
+  >
+    إضافة فاتورة جديدة
+  </Button>
+</motion.div>
       </motion.div>
 
       {/* نتائج البحث */}

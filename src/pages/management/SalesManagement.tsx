@@ -245,16 +245,26 @@ const SalesManagement: React.FC = () => {
   ];
 
   const operationsCards = [
-    {
-      title: "فاتورة مبيعات",
-      description: "إنشاء فواتير المبيعات الجديدة",
+        {
+      title: "فواتير المبيعات",
+      description: "عرض جميع فواتير المبيعات المسجلة",
       icon: <FileText className="h-5 w-5 sm:h-6 sm:w-6" />,
-      color: "bg-blue-600",
+      color: "bg-blue-700",
       onClick: () => {
-        navigate('/management/sale');
+        navigate('/reports/invoice');
         window.scrollTo(0, 0);
       }
     },
+    // {
+    //   title: "فاتورة مبيعات",
+    //   description: "إنشاء فواتير المبيعات الجديدة",
+    //   icon: <FileText className="h-5 w-5 sm:h-6 sm:w-6" />,
+    //   color: "bg-blue-600",
+    //   onClick: () => {
+    //     navigate('/management/sale');
+    //     window.scrollTo(0, 0);
+    //   }
+    // },
     {
       title: "عرض أسعار",
       description: "إعداد عروض الأسعار للعملاء",
@@ -322,6 +332,7 @@ const SalesManagement: React.FC = () => {
         window.scrollTo(0, 0);
       }
     },
+
     // {
     //   title: "طلب شراء",
     //   description: "طلبات الشراء من العملاء",
