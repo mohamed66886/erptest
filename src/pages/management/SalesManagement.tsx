@@ -251,7 +251,7 @@ const SalesManagement: React.FC = () => {
       icon: <FileText className="h-5 w-5 sm:h-6 sm:w-6" />,
       color: "bg-blue-700",
       onClick: () => {
-        navigate('/reports/invoice');
+        navigate('/reports/allsales');
         window.scrollTo(0, 0);
       }
     },

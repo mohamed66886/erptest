@@ -173,6 +173,9 @@ interface SavedInvoiceData {
   warehouse: string;
   movementType: string;
   accountType: string;
+  invoiceType?: string; // نوع الفاتورة: ضريبية أو ضريبة مبسطة
+  warehouseType?: string; // نوع المخزن: مخزن واحد أو مخازن متعددة
+  salesMethod?: string; // طريقة البيع: طبيعي أو آخر سعر للعميل
   paymentMethod: string;
   paymentStatus: string;
   delegate: string;
@@ -231,6 +234,11 @@ const AddSalesInvoicePage: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<string>("نقدي");
   const [paymentStatus, setPaymentStatus] = useState<string>("مدفوع");
   
+  // المتغيرات الجديدة المطلوبة
+  const [invoiceType, setInvoiceType] = useState<string>("ضريبية"); // ضريبية أو ضريبة مبسطة
+  const [warehouseType, setWarehouseType] = useState<string>("مخزن واحد"); // مخزن واحد أو مخازن متعددة
+  const [salesMethod, setSalesMethod] = useState<string>("طبيعي"); // طبيعي أو آخر سعر للعميل
+  
   // حالة الدفع المتعدد
   const [multiplePaymentMode, setMultiplePaymentMode] = useState<boolean>(false);
   const [multiplePayment, setMultiplePayment] = useState<MultiplePayment>({});
@@ -240,7 +248,7 @@ const AddSalesInvoicePage: React.FC = () => {
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<{id: string; name: string; value: string}[]>([]);
 
-  // إضافة CSS للصف المعدل
+  // إضافة CSS للصف المعدل ولون رأس الجدول
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -255,6 +263,17 @@ const AddSalesInvoicePage: React.FC = () => {
       
       .edited-row td {
         background-color: inherit !important;
+      }
+      
+      /* تخصيص لون رأس جدول الأصناف */
+      .ant-table-thead > tr > th {
+        background-color: #dbeafe !important;
+        color: #1e40af !important;
+        font-weight: bold !important;
+      }
+      
+      .ant-table-thead > tr > th:hover {
+        background-color: #bfdbfe !important;
       }
     `;
     document.head.appendChild(style);
@@ -726,6 +745,9 @@ const AddSalesInvoicePage: React.FC = () => {
         warehouse: invoiceData.warehouse,
         movementType: movementType || "فاتورة مبيعات",
         accountType: accountType || "عميل",
+        invoiceType: invoiceType, // نوع الفاتورة: ضريبية أو ضريبة مبسطة
+        warehouseType: warehouseType, // نوع المخزن: مخزن واحد أو مخازن متعددة
+        salesMethod: salesMethod, // طريقة البيع: طبيعي أو آخر سعر للعميل
         paymentMethod,
         paymentStatus,
         delegate: delegate,
@@ -814,6 +836,11 @@ const AddSalesInvoicePage: React.FC = () => {
         setMultiplePayment({}); // إعادة تعيين بيانات الدفع المتعدد
         setPaymentMethod('نقدي'); // إعادة تعيين طريقة الدفع إلى القيمة الافتراضية
         
+        // إعادة تعيين القيم الجديدة إلى القيم الافتراضية
+        setInvoiceType('ضريبية');
+        setWarehouseType('مخزن واحد');
+        setSalesMethod('طبيعي');
+        
         // إعادة تعيين المندوب إلى المستخدم الحالي
         if (delegates.length && user?.uid) {
           const currentUserDelegate = delegates.find(delegateItem => 
@@ -860,6 +887,9 @@ const AddSalesInvoicePage: React.FC = () => {
       delegate?: string;
       paymentMethod?: string;
       paymentStatus?: string;
+      invoiceType?: string;
+      warehouseType?: string;
+      salesMethod?: string;
       multiplePayment?: MultiplePayment;
       customer: { 
         name: string;
@@ -1197,6 +1227,9 @@ const AddSalesInvoicePage: React.FC = () => {
               <tr><td class="label">تاريخ الفاتورة</td><td class="value">${savedData.date || ''}</td></tr>
               <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${savedData.dueDate || ''}</td></tr>
               <tr><td class="label">نوع الحركة</td><td class="value">${movementType || ''}</td></tr>
+              <tr><td class="label">نوع الفاتورة</td><td class="value">${savedData.invoiceType || ''}</td></tr>
+              <tr><td class="label">نوع المخزن</td><td class="value">${savedData.warehouseType || ''}</td></tr>
+              <tr><td class="label">طريقة البيع</td><td class="value">${savedData.salesMethod || ''}</td></tr>
               <tr><td class="label">طريقة الدفع</td><td class="value">${savedData.paymentMethod || ''}</td></tr>
               <tr><td class="label">حالة الدفع</td><td class="value">${savedData.paymentStatus || ''}</td></tr>
             </table>
@@ -1447,7 +1480,7 @@ const AddSalesInvoicePage: React.FC = () => {
     if (isSaved) {
       setIsSaved(false);
     }
-  }, [addedItems, invoiceData.customerNumber, invoiceData.customerName, statement, paymentMethod, multiplePayment, isSaved]);
+  }, [addedItems, invoiceData.customerNumber, invoiceData.customerName, statement, paymentMethod, multiplePayment, invoiceType, warehouseType, salesMethod, isSaved]);
 
   // رقم الفاتورة تلقائي
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -2062,7 +2095,7 @@ const AddSalesInvoicePage: React.FC = () => {
         items={[
           { label: "الرئيسية", to: "/" },
           { label: "إدارة المبيعات", to: "/management/sales" },
-          { label: "فواتير المبيعات", to: "/stores/sales" },
+          { label: "فواتير المبيعات", to: "/reports/allsales" },
           { label: "إضافة فاتورة مبيعات" }
         ]}
       />
@@ -2096,6 +2129,48 @@ const AddSalesInvoicePage: React.FC = () => {
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>تاريخ الاستحقاق</label>
             <DatePicker value={refDate} onChange={setRefDate} format="YYYY-MM-DD" placeholder="تاريخ الاستحقاق" style={largeControlStyle} size="large" />
+          </div>
+                    <div className="flex flex-col gap-2">
+            <label style={labelStyle}>نوع الفاتورة</label>
+            <Select 
+              value={invoiceType} 
+              onChange={setInvoiceType} 
+              placeholder="اختر نوع الفاتورة" 
+              style={largeControlStyle} 
+              size="large"
+              className={styles.noAntBorder}
+            >
+              <Select.Option value="ضريبية">ضريبية</Select.Option>
+              <Select.Option value="ضريبة مبسطة">ضريبة مبسطة</Select.Option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>نوع المخزن</label>
+            <Select 
+              value={warehouseType} 
+              onChange={setWarehouseType} 
+              placeholder="اختر نوع المخزن" 
+              style={largeControlStyle} 
+              size="large"
+              className={styles.noAntBorder}
+            >
+              <Select.Option value="مخزن واحد">مخزن واحد</Select.Option>
+              <Select.Option value="مخازن متعددة">مخازن متعددة</Select.Option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label style={labelStyle}>طريقة البيع للعميل</label>
+            <Select 
+              value={salesMethod} 
+              onChange={setSalesMethod} 
+              placeholder="اختر طريقة البيع" 
+              style={largeControlStyle} 
+              size="large"
+              className={styles.noAntBorder}
+            >
+              <Select.Option value="طبيعي">طبيعي</Select.Option>
+              <Select.Option value="آخر سعر للعميل">آخر سعر للعميل</Select.Option>
+            </Select>
           </div>
         </div>
 

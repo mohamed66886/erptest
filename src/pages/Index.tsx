@@ -92,7 +92,8 @@ import SoldItems from "./reports/sold-items";
 import BranchSales from "./reports/branch-sales";
 import SalesRepresentativeSales from "./reports/sales-representative-sales";
 import SoldItemsByCategory from "./reports/sold-items-by-category";
-import SoldItemsByType from "./reports/sold-items-by-type";
+import SoldItemsByType from "./reports/sold-items-by-type"; 
+import AllSales from "./reports/allsales";
 import DiscountsOffers from "./management/discounts-offers";
 import AddDiscountOffer from "./management/discounts-offers/add";
 import EditDiscountOffer from "./management/discounts-offers/edit";
@@ -229,6 +230,7 @@ const Index = () => {
               <Route path="/stores/stock" element={<Stockpage />} />
               <Route path="/stores/purchases" element={<PurchasesPage />} />
               <Route path="/reports/invoice-profits" element={<InvoiceProfitsReport />} />
+              <Route path="/reports/allsales" element={<AllSales />} />
               <Route path="/stores/sales-order" element={<SalesOrder />} />
               <Route path="/reports/invoice-preferred" element={<InvoicePreferred />} />
               <Route path="/stores/purchases-return" element={<PurchasesReturnPage />} />
