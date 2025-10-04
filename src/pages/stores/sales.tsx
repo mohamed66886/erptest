@@ -235,9 +235,9 @@ const AddSalesInvoicePage: React.FC = () => {
   const [paymentStatus, setPaymentStatus] = useState<string>("مدفوع");
   
   // المتغيرات الجديدة المطلوبة
-  const [invoiceType, setInvoiceType] = useState<string>("ضريبية"); // ضريبية أو ضريبة مبسطة
+  const [invoiceType, setInvoiceType] = useState<string>("ضريبية مبسطة"); // ضريبية أو ضريبة مبسطة
   const [warehouseType, setWarehouseType] = useState<string>("مخزن واحد"); // مخزن واحد أو مخازن متعددة
-  const [salesMethod, setSalesMethod] = useState<string>("طبيعي"); // طبيعي أو آخر سعر للعميل
+  const [salesMethod, setSalesMethod] = useState<string>("سعر البيع"); // طبيعي أو آخر سعر للعميل
   
   // حالة الدفع المتعدد
   const [multiplePaymentMode, setMultiplePaymentMode] = useState<boolean>(false);
@@ -292,6 +292,7 @@ const AddSalesInvoicePage: React.FC = () => {
   const [price, setPrice] = useState("");
   const [discountPercent, setDiscountPercent] = useState(0);
   const [taxPercent, setTaxPercent] = useState(0);
+  const [itemWarehouse, setItemWarehouse] = useState<string>(""); // المخزن الخاص بالصنف الحالي
   const [showItemModal, setShowItemModal] = useState(false);
   const [addedItems, setAddedItems] = useState<Array<{
     itemCode: string;
@@ -301,6 +302,7 @@ const AddSalesInvoicePage: React.FC = () => {
     price: string;
     discountPercent: number;
     taxPercent: number;
+    warehouse?: string; // المخزن الخاص بكل صنف
   }>>([]);
 
   // متغيرات مودال البحث عن العميل
@@ -407,6 +409,7 @@ const AddSalesInvoicePage: React.FC = () => {
     setUnit('قطعة');
     setPrice('');
     setDiscountPercent(0);
+    setItemWarehouse(''); // إعادة تعيين المخزن الخاص بالصنف
     // استخدام نسبة الضريبة من بيانات الشركة أو القيمة الافتراضية
     const defaultTaxRate = companyData.taxRate ? parseFloat(companyData.taxRate) : 15;
     setTaxPercent(defaultTaxRate);
@@ -435,6 +438,12 @@ const AddSalesInvoicePage: React.FC = () => {
       return;
     }
 
+    // التحقق من المخزن في حالة المخازن المتعددة
+    if (warehouseType === 'مخازن متعددة' && !itemWarehouse) {
+      message.error('يرجى اختيار المخزن للصنف - هذا الحقل مطلوب في حالة المخازن المتعددة');
+      return;
+    }
+
     const finalUnit = unit && unit.trim() ? unit : "قطعة";
 
     // إضافة الصنف
@@ -445,7 +454,8 @@ const AddSalesInvoicePage: React.FC = () => {
       unit: finalUnit,
       price: price,
       discountPercent: discountPercent || 0,
-      taxPercent: taxPercent || 0
+      taxPercent: taxPercent || 0,
+      warehouse: warehouseType === 'مخازن متعددة' ? itemWarehouse : invoiceData.warehouse
     };
 
     setAddedItems(items => {
@@ -1872,6 +1882,7 @@ const AddSalesInvoicePage: React.FC = () => {
     price: string;
     discountPercent: number;
     taxPercent: number;
+    warehouse?: string; // المخزن الخاص بالصنف
   }
 
   // أعمدة الجدول مع تحسين الأداء
@@ -1885,9 +1896,16 @@ const AddSalesInvoicePage: React.FC = () => {
       dataIndex: 'warehouse', 
       key: 'warehouse', 
       width: 120, 
-      render: () => {
-        if (!invoiceData.warehouse) return '-';
-        const warehouse = warehouses.find(w => w.id === invoiceData.warehouse);
+      render: (warehouseId: string) => {
+        if (!warehouseId) {
+          // في حالة المخزن الواحد، استخدام المخزن العام
+          if (warehouseType === 'مخزن واحد' && invoiceData.warehouse) {
+            const warehouse = warehouses.find(w => w.id === invoiceData.warehouse);
+            return warehouse ? (warehouse.nameAr || warehouse.name || '-') : '-';
+          }
+          return '-';
+        }
+        const warehouse = warehouses.find(w => w.id === warehouseId);
         return warehouse ? (warehouse.nameAr || warehouse.name || '-') : '-';
       }
     },
@@ -1959,6 +1977,7 @@ const AddSalesInvoicePage: React.FC = () => {
               setPrice(record.price);
               setDiscountPercent(record.discountPercent);
               setTaxPercent(record.taxPercent);
+              setItemWarehouse(record.warehouse || ''); // تعيين المخزن الخاص بالصنف
               setActiveTab('new');
               setEditingItemIndex(idx);
             }}
@@ -1989,7 +2008,7 @@ const AddSalesInvoicePage: React.FC = () => {
         </div>
       ) 
     }
-  ], [invoiceData.warehouse, warehouses]);
+  ], [invoiceData.warehouse, warehouses, warehouseType]);
 
   // ستايل مشابه لسند القبض
   const largeControlStyle = {
@@ -2159,7 +2178,7 @@ const AddSalesInvoicePage: React.FC = () => {
             </Select>
           </div>
           <div className="flex flex-col gap-2">
-            <label style={labelStyle}>طريقة البيع للعميل</label>
+            <label style={labelStyle}>طريقة التسعير</label>
             <Select 
               value={salesMethod} 
               onChange={setSalesMethod} 
@@ -2168,7 +2187,7 @@ const AddSalesInvoicePage: React.FC = () => {
               size="large"
               className={styles.noAntBorder}
             >
-              <Select.Option value="طبيعي">طبيعي</Select.Option>
+              <Select.Option value="سعر البيع">سعر البيع</Select.Option>
               <Select.Option value="آخر سعر للعميل">آخر سعر للعميل</Select.Option>
             </Select>
           </div>
@@ -2203,11 +2222,18 @@ const AddSalesInvoicePage: React.FC = () => {
               onChange={(value) => setInvoiceData(prev => ({ ...prev, warehouse: value }))}
               placeholder="اختر المخزن"
               allowClear
-              style={largeControlStyle}
+              style={{
+                ...largeControlStyle,
+                ...(warehouseType === 'مخازن متعددة' ? {
+                  backgroundColor: '#fef3c7',
+                  borderColor: '#f59e0b',
+                  cursor: 'not-allowed'
+                } : {})
+              }}
               size="large"
               showSearch
               className={styles.noAntBorder}
-              
+              disabled={warehouseType === 'مخازن متعددة'}
               optionFilterProp="children"
             >
               {warehouses.map(w => (
@@ -2216,6 +2242,11 @@ const AddSalesInvoicePage: React.FC = () => {
                 </Select.Option>
               ))}
             </Select>
+            {warehouseType === 'مخازن متعددة' && (
+              <div style={{ fontSize: '12px', color: '#f59e0b', marginTop: '4px', fontWeight: 500 }}>
+                ⚠️ في وضع المخازن المتعددة - اختر المخزن لكل صنف عند الإضافة
+              </div>
+            )}
           </div>
                     <div className="flex flex-col gap-2">
             <label style={labelStyle}>نوع الحركة</label>
@@ -2258,12 +2289,12 @@ const AddSalesInvoicePage: React.FC = () => {
         <div className="grid grid-cols-4 gap-6 mb-4">
 
           <div className="flex flex-col gap-2">
-            <label style={labelStyle}>رقم الحساب</label>
+            <label style={labelStyle}>رقم العميل</label>
             <div style={{ display: "flex", gap: 8 }}>
               <Input 
                 value={invoiceData.customerNumber} 
                 onChange={e => setInvoiceData(prev => ({ ...prev, customerNumber: e.target.value }))} 
-                placeholder="رقم الحساب" 
+                placeholder="رقم العميل" 
                 style={largeControlStyle} 
                 size="large"
                 suffix={
@@ -2294,11 +2325,11 @@ const AddSalesInvoicePage: React.FC = () => {
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            <label style={labelStyle}>اسم الحساب</label>
+            <label style={labelStyle}>اسم العميل</label>
             <Input 
               value={invoiceData.customerName} 
               onChange={e => setInvoiceData(prev => ({ ...prev, customerName: e.target.value }))} 
-              placeholder="اسم الحساب" 
+              placeholder="اسم العميل" 
               style={largeControlStyle} 
               size="large"
               suffix={
@@ -2327,15 +2358,27 @@ const AddSalesInvoicePage: React.FC = () => {
             />
           </div>
           <div className="flex flex-col gap-2">
-            <label style={labelStyle}>رقم الموبايل</label>
+            <label style={labelStyle}>رقم الهاتف </label>
             <Input
               value={customers.find(c => c.id === invoiceData.customerNumber)?.mobile || ''}
-              placeholder="رقم الموبايل"
+              placeholder="رقم الهاتف"
               style={largeControlStyle}
               size="large"
               disabled
             />
           </div>
+          {invoiceType === 'ضريبية' && (
+            <div className="flex flex-col gap-2">
+              <label style={labelStyle}>الرقم الضريبي</label>
+              <Input
+                value={customers.find(c => c.id === invoiceData.customerNumber)?.taxFileNumber || customers.find(c => c.id === invoiceData.customerNumber)?.taxFile || ''}
+                placeholder="الرقم الضريبي"
+                style={largeControlStyle}
+                size="large"
+                disabled
+              />
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             <label style={labelStyle}>البائع</label>
             <Select
@@ -2664,6 +2707,28 @@ const AddSalesInvoicePage: React.FC = () => {
                   title={`نسبة الضريبة الافتراضية من إعدادات الشركة: ${companyData.taxRate || '15'}%`}
                 />
               </div>
+              {warehouseType === 'مخازن متعددة' && (
+                <div className="flex-1 min-w-[120px] flex flex-col gap-1">
+                  <label style={labelStyle}>المخزن</label>
+                  <Select
+                    value={itemWarehouse}
+                    onChange={(value) => setItemWarehouse(value)}
+                    placeholder="اختر المخزن"
+                    allowClear
+                    style={{...largeControlStyle, width: '100%'}}
+                    size="large"
+                    showSearch
+                    className={styles.noAntBorder}
+                    optionFilterProp="children"
+                  >
+                    {warehouses.map(w => (
+                      <Select.Option key={w.id} value={w.id}>
+                        {w.name || w.nameAr || w.nameEn}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </div>
+              )}
               <div className="flex-1 min-w-[120px] flex flex-col gap-1 justify-end">
                 <label style={{ visibility: 'hidden', height: 0 }}>إضافة الصنف</label>
                 <div style={{ display: 'flex', gap: 8, width: '100%' }}>
