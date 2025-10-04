@@ -2551,7 +2551,7 @@ const AddSalesInvoicePage: React.FC = () => {
                   }
                 />
               </div>
-              <div className="flex-1 min-w-[400px] flex flex-col gap-1">
+              <div className="flex-1 min-w-[300px] flex flex-col gap-1">
                 <label style={labelStyle}>اسم الصنف</label>
                 <Select
                   showSearch
@@ -2624,7 +2624,7 @@ const AddSalesInvoicePage: React.FC = () => {
                   }}
                 />
               </div>
-              <div className="flex-1 min-w-[80px] flex flex-col gap-1">
+              <div className="flex-1 min-w-[50px] flex flex-col gap-1">
                 <label style={labelStyle}>الكمية</label>
                 <Input 
                   type="number" 
@@ -2656,7 +2656,7 @@ const AddSalesInvoicePage: React.FC = () => {
                   options={units.map(unit => ({ label: unit, value: unit }))}
                 />
               </div>
-              <div className="flex-1 min-w-[90px] flex flex-col gap-1">
+              <div className="flex-1 min-w-[60px] flex flex-col gap-1">
                 <label style={labelStyle}>السعر</label>
                 <Input 
                   type="number" 
