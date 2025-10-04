@@ -283,6 +283,16 @@ const AddSalesInvoicePage: React.FC = () => {
     };
   }, []);
 
+  // تحديث حالة الدفع تلقائياً بناءً على طريقة الدفع
+  useEffect(() => {
+    if (paymentMethod === 'نقدي') {
+      setPaymentStatus('مدفوع');
+    } else if (paymentMethod === 'اجل') {
+      setPaymentStatus('غير مدفوع');
+    }
+    // للطرق الأخرى، يمكن تركها كما هي أو تعيين قيمة افتراضية
+  }, [paymentMethod]);
+
   // متغيرات الأصناف
   const [activeTab, setActiveTab] = useState("new");
   const [itemCode, setItemCode] = useState("");
@@ -1612,11 +1622,12 @@ const AddSalesInvoicePage: React.FC = () => {
   useEffect(() => {
     const fetchBanks = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'banks'));
+        const snapshot = await getDocs(collection(db, 'bankAccounts'));
         const banksData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })) as Bank[];
+        console.log('Banks Data:', banksData); // للتحقق من البيانات
         setBanks(banksData);
       } catch (error) {
         console.error('Error fetching banks:', error);
@@ -1630,11 +1641,12 @@ const AddSalesInvoicePage: React.FC = () => {
   useEffect(() => {
     const fetchCashBoxes = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'cash_boxes'));
+        const snapshot = await getDocs(collection(db, 'cashBoxes'));
         const cashBoxesData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })) as CashBox[];
+        console.log('Cash Boxes Data:', cashBoxesData); // للتحقق من البيانات
         setCashBoxes(cashBoxesData);
       } catch (error) {
         console.error('Error fetching cash boxes:', error);
@@ -1656,12 +1668,7 @@ const AddSalesInvoicePage: React.FC = () => {
         }));
         
 
-        // إضافة طريقة الدفع المتعدد
-        paymentMethodsData.push({
-          id: 'multiple',
-          name: 'دفع متعدد',
-          value: 'متعدد'
-        });
+
         
         setPaymentMethods(paymentMethodsData);
       } catch (error) {
@@ -1673,7 +1680,6 @@ const AddSalesInvoicePage: React.FC = () => {
           { id: 'bank_transfer', name: 'حوالة بنكية', value: 'حوالة بنكية' },
           { id: 'credit_card', name: 'بطاقة ائتمان', value: 'بطاقة ائتمان' },
           { id: 'credit', name: 'آجل', value: 'آجل' },
-          { id: 'multiple', name: 'دفع متعدد', value: 'متعدد' }
         ]);
       }
     };
@@ -2917,28 +2923,28 @@ const AddSalesInvoicePage: React.FC = () => {
 
         {/* قسم طريقة الدفع */}
         {addedItems.length > 0 && (
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden mb-6">
-            {/* Header Section */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-blue-100 overflow-hidden mb-6">
+            {/* Header Section - Official Style */}
+            <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 px-8 py-6 border-b-4 border-blue-800">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-white/20 rounded-lg p-2">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                <div className="flex items-center gap-4">
+                  <div className="bg-white rounded-xl p-3 shadow-lg">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-blue-600">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-white font-bold text-lg font-['Cairo']">
+                    <h3 className="text-white font-bold text-2xl font-['Cairo'] tracking-wide">
                       معلومات الدفع
                     </h3>
-                    <p className="text-blue-100 text-sm font-['Cairo']">
+                    <p className="text-blue-50 text-sm font-['Cairo'] mt-1 font-medium">
                       اختر طريقة الدفع والحسابات المرتبطة
                     </p>
                   </div>
                 </div>
-                <div className="bg-white/15 rounded-lg px-4 py-2">
-                  <div className="text-blue-100 text-xs font-medium font-['Cairo']">الإجمالي المطلوب</div>
-                  <div className="text-white text-lg font-bold font-['Cairo']">
+                <div className="bg-white/95 backdrop-blur rounded-xl px-6 py-4 shadow-lg border-2 border-blue-200">
+                  <div className="text-blue-600 text-xs font-bold font-['Cairo'] uppercase tracking-wider mb-1">الإجمالي المطلوب</div>
+                  <div className="text-blue-900 text-2xl font-black font-['Cairo'] tracking-tight">
                     {totals.finalTotal.toFixed(2)} ر.س
                   </div>
                 </div>
@@ -2946,16 +2952,17 @@ const AddSalesInvoicePage: React.FC = () => {
             </div>
             
             {/* Content Section */}
-            <div className="p-6">
+            <div className="p-8 bg-gradient-to-br from-gray-50 to-blue-50">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* طريقة الدفع */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700 font-['Cairo'] mb-2">
-                    <span className="flex items-center gap-2">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                <div className="space-y-3">
+                  <label className="block text-base font-bold text-gray-800 font-['Cairo'] mb-3">
+                    <span className="flex items-center gap-3 bg-white px-4 py-2 rounded-lg border-r-4 border-blue-600 shadow-sm">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
                         <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
                       </svg>
-                      طريقة الدفع *
+                      <span className="text-gray-800">طريقة الدفع</span>
+                      <span className="text-red-500 font-black text-lg">*</span>
                     </span>
                   </label>
                   <Select 
@@ -2969,7 +2976,7 @@ const AddSalesInvoicePage: React.FC = () => {
                       }
                     }} 
                     placeholder="اختر طريقة الدفع" 
-                    className="w-full font-['Cairo']"
+                    className="w-full font-['Cairo'] shadow-md"
                     size="large"
                     showSearch
                     filterOption={(input, option) =>
@@ -2991,8 +2998,13 @@ const AddSalesInvoicePage: React.FC = () => {
                               <path d="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v4H3v-4z"/>
                             </svg>
                           )}
-                          {method.value !== 'نقدي' && method.value !== 'متعدد' && (
+                          {(method.value === 'بنك' || method.value === 'بنك الشبكة') && (
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                              <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
+                            </svg>
+                          )}
+                          {method.value !== 'نقدي' && method.value !== 'متعدد' && method.value !== 'بنك' && method.value !== 'بنك الشبكة' && (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-gray-600">
                               <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
                             </svg>
                           )}
@@ -3005,22 +3017,37 @@ const AddSalesInvoicePage: React.FC = () => {
 
                 {/* عرض الصندوق النقدي للدفع النقدي العادي */}
                 {paymentMethod === 'نقدي' && !multiplePaymentMode && (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-gray-700 font-['Cairo'] mb-2">
-                      <span className="flex items-center gap-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-green-600">
-                          <path d="M10 16V8a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1zm4-6v8a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1zm-8-4v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z"/>
+                  <div className="space-y-3">
+                    <label className="block text-base font-bold text-gray-800 font-['Cairo'] mb-3">
+                      <span className="flex items-center gap-3 bg-white px-4 py-2 rounded-lg border-r-4 border-green-600 shadow-sm">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-green-600">
+                          <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
                         </svg>
-                        الصندوق النقدي *
+                        <span className="text-gray-800">الصندوق النقدي</span>
+                        <span className="text-red-500 font-black text-lg">*</span>
                       </span>
                     </label>
+                    {/* رسالة تصحيح أخطاء مؤقتة */}
+                    {cashBoxes.length === 0 && (
+                      <div style={{padding: '8px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', marginBottom: '8px', fontSize: '14px', color: '#856404'}}>
+                        ⚠️ لم يتم العثور على صناديق نقد. تحقق من Firebase Collection: cashBoxes
+                      </div>
+                    )}
+                    {cashBoxes.length > 0 && cashBoxes.filter(cb => cb.branch === invoiceData.branch).length === 0 && (
+                      <div style={{padding: '8px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', marginBottom: '8px', fontSize: '14px', color: '#856404'}}>
+                        ⚠️ لا توجد صناديق للفرع المحدد. الفرع الحالي: {invoiceData.branch || 'غير محدد'}
+                        <br/>
+                        الصناديق المتاحة: {cashBoxes.map(cb => `${cb.nameAr} (الفرع: ${cb.branch})`).join(', ')}
+                      </div>
+                    )}
                     <Select
                       value={invoiceData.cashBox || ''}
                       onChange={(value) => {
+                        console.log('Selected cash box:', value);
                         setInvoiceData(prev => ({ ...prev, cashBox: value }));
                       }}
                       placeholder="اختر الصندوق النقدي"
-                      className="w-full font-['Cairo']"
+                      className="w-full font-['Cairo'] shadow-md"
                       size="large"
                       allowClear
                       showSearch
@@ -3028,6 +3055,11 @@ const AddSalesInvoicePage: React.FC = () => {
                         String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                       }
                       disabled={cashBoxes.filter(cb => cb.branch === invoiceData.branch).length === 0}
+                      notFoundContent={
+                        cashBoxes.length === 0 
+                          ? "لا توجد صناديق نقد في النظام" 
+                          : "لا توجد صناديق للفرع المحدد"
+                      }
                     >
                       {cashBoxes
                         .filter(cashBox => cashBox.branch === invoiceData.branch)
@@ -3047,21 +3079,28 @@ const AddSalesInvoicePage: React.FC = () => {
 
                 {/* حالة الدفع */}
                 {paymentMethod && paymentMethod !== 'متعدد' && (
-                  <div className="space-y-2">
-                    <label className="block text-sm font-semibold text-gray-700 font-['Cairo'] mb-2">
-                      <span className="flex items-center gap-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-purple-600">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                  <div className="space-y-3">
+                    <label className="block text-base font-bold text-gray-800 font-['Cairo'] mb-3">
+                      <span className="flex items-center gap-3 bg-white px-4 py-2 rounded-lg border-r-4 border-purple-600 shadow-sm">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-purple-600">
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
                         </svg>
-                        حالة الدفع
+                        <span className="text-gray-800">حالة الدفع</span>
+                        {(paymentMethod === 'نقدي' || paymentMethod === 'اجل') && (
+                          <span className="text-xs text-gray-500 font-normal mr-2">(تلقائي)</span>
+                        )}
                       </span>
                     </label>
                     <Select
                       value={paymentStatus}
                       onChange={setPaymentStatus}
                       placeholder="اختر حالة الدفع"
-                      className="w-full font-['Cairo']"
+                      className="w-full font-['Cairo'] shadow-md"
                       size="large"
+                      disabled={paymentMethod === 'نقدي' || paymentMethod === 'اجل'}
+                      style={{
+                        backgroundColor: (paymentMethod === 'نقدي' || paymentMethod === 'آجل') ? '#f5f5f5' : undefined
+                      }}
                     >
                       <Select.Option value="مدفوع">
                         <div className="flex items-center gap-2 font-['Cairo']">
@@ -3082,49 +3121,59 @@ const AddSalesInvoicePage: React.FC = () => {
                         </div>
                       </Select.Option>
                     </Select>
+                    {(paymentMethod === 'نقدي' || paymentMethod === 'اجل') && (
+                      <div style={{
+                        padding: '8px 12px',
+                        background: '#e6f7ff',
+                        border: '1px solid #91d5ff',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        color: '#0958d9',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                        </svg>
+                        <span className="font-['Cairo']">
+                          {paymentMethod === 'نقدي' 
+                            ? 'الدفع النقدي يُعتبر مدفوع تلقائياً' 
+                            : 'الدفع الآجل يُعتبر غير مدفوع تلقائياً'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
               {/* عرض ملخص المبلغ للطرق العادية */}
               {paymentMethod && paymentMethod !== 'متعدد' && (
-                <div className="mt-6 bg-gradient-to-r from-gray-50 to-blue-50 border border-gray-200 rounded-xl p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <div className="text-sm text-gray-600 font-medium font-['Cairo'] mb-1">
-                        طريقة الدفع المختارة
-                      </div>
-                      <div className="text-lg font-bold text-blue-700 font-['Cairo'] flex items-center justify-center gap-2">
-                        {paymentMethod === 'نقدي' && (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-green-600">
-                            <path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/>
-                          </svg>
-                        )}
-                        {paymentMethod}
-                      </div>
+                <div className="mt-8 bg-white border-2 border-blue-200 rounded-2xl p-8 shadow-xl">
+                  <div className="text-center mb-6">
+                    <h4 className="text-xl font-bold text-gray-800 font-['Cairo'] flex items-center justify-center gap-3">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14h-2v-4H8v-2h4V7h2v4h4v2h-4v4z"/>
+                      </svg>
+                      ملخص المبالغ
+                    </h4>
+                    <div className="w-24 h-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full mx-auto mt-2"></div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-xl p-6 text-center transform hover:scale-105 transition-all duration-200 shadow-lg">
+                      <div className="text-blue-600 text-sm font-bold font-['Cairo'] uppercase tracking-wider mb-2">المبلغ المطلوب</div>
+                      <div className="text-blue-900 text-3xl font-black font-['Cairo']">{totals.finalTotal.toFixed(2)}</div>
+                      <div className="text-blue-700 text-xs font-semibold font-['Cairo'] mt-1">ر.س</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-sm text-gray-600 font-medium font-['Cairo'] mb-1">
-                        حالة الدفع
-                      </div>
-                      <div className="flex items-center justify-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          paymentStatus === 'مدفوع' ? 'bg-green-500' :
-                          paymentStatus === 'غير مدفوع' ? 'bg-red-500' : 
-                          'bg-yellow-500'
-                        }`}></div>
-                        <span className="text-lg font-bold text-gray-700 font-['Cairo']">
-                          {paymentStatus}
-                        </span>
-                      </div>
+                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 rounded-xl p-6 text-center transform hover:scale-105 transition-all duration-200 shadow-lg">
+                      <div className="text-purple-600 text-sm font-bold font-['Cairo'] uppercase tracking-wider mb-2">المبلغ المدفوع</div>
+                      <div className="text-purple-900 text-3xl font-black font-['Cairo']">{totals.finalTotal.toFixed(2)}</div>
+                      <div className="text-purple-700 text-xs font-semibold font-['Cairo'] mt-1">ر.س</div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-sm text-gray-600 font-medium font-['Cairo'] mb-1">
-                        إجمالي المبلغ
-                      </div>
-                      <div className="text-2xl font-bold text-green-700 font-['Cairo']">
-                        {totals.finalTotal.toFixed(2)} ر.س
-                      </div>
+                    <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-300 rounded-xl p-6 text-center transform hover:scale-105 transition-all duration-200 shadow-lg">
+                      <div className="text-green-600 text-sm font-bold font-['Cairo'] uppercase tracking-wider mb-2">المتبقي</div>
+                      <div className="text-green-900 text-3xl font-black font-['Cairo']">0.00</div>
+                      <div className="text-green-700 text-xs font-semibold font-['Cairo'] mt-1">ر.س</div>
                     </div>
                   </div>
                 </div>
@@ -3135,28 +3184,28 @@ const AddSalesInvoicePage: React.FC = () => {
 
         {/* قسم الدفع المتعدد */}
         {multiplePaymentMode && (
-          <div className="bg-white rounded-xl shadow-lg border-2 border-orange-300 overflow-hidden mb-6">
-            {/* Header Section */}
-            <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4">
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-orange-200 overflow-hidden mb-6">
+            {/* Header Section - Official Style */}
+            <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-orange-600 px-8 py-6 border-b-4 border-orange-700">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-white/20 rounded-lg p-2">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                <div className="flex items-center gap-4">
+                  <div className="bg-white rounded-xl p-3 shadow-lg">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" className="text-orange-600">
                       <path d="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v4H3v-4z"/>
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-white font-bold text-lg font-['Cairo']">
+                    <h3 className="text-white font-bold text-2xl font-['Cairo'] tracking-wide">
                       الدفع المتعدد
                     </h3>
-                    <p className="text-orange-100 text-sm font-['Cairo']">
+                    <p className="text-orange-50 text-sm font-['Cairo'] mt-1 font-medium">
                       توزيع المبلغ على عدة طرق دفع
                     </p>
                   </div>
                 </div>
-                <div className="bg-white/15 rounded-lg px-4 py-2">
-                  <div className="text-orange-100 text-xs font-medium font-['Cairo']">المبلغ الإجمالي</div>
-                  <div className="text-white text-lg font-bold font-['Cairo']">
+                <div className="bg-white/95 backdrop-blur rounded-xl px-6 py-4 shadow-lg border-2 border-orange-200">
+                  <div className="text-orange-600 text-xs font-bold font-['Cairo'] uppercase tracking-wider mb-1">المبلغ الإجمالي</div>
+                  <div className="text-orange-900 text-2xl font-black font-['Cairo'] tracking-tight">
                     {totals.finalTotal.toFixed(2)} ر.س
                   </div>
                 </div>
@@ -3164,46 +3213,68 @@ const AddSalesInvoicePage: React.FC = () => {
             </div>
 
             {/* Content Section */}
-            <div className="p-6">
+            <div className="p-8 bg-gradient-to-br from-orange-50 to-amber-50">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* النقدي */}
-                <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl overflow-hidden">
-                  <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-3">
+                <div className="bg-white border-2 border-green-300 rounded-2xl overflow-hidden shadow-xl transform hover:scale-105 transition-all duration-200">
+                  <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-5 py-4 border-b-2 border-green-700">
                     <div className="flex items-center gap-3">
-                      <div className="bg-white/20 rounded-lg p-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                      <div className="bg-white/90 rounded-lg p-2 shadow-md">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-green-600">
                           <path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/>
                         </svg>
                       </div>
-                      <span className="text-white font-bold text-sm font-['Cairo']">
+                      <span className="text-white font-bold text-base font-['Cairo']">
                         الدفع النقدي
                       </span>
                     </div>
                   </div>
                   
-                  <div className="p-4 space-y-4">
+                  <div className="p-5 space-y-4 bg-gradient-to-br from-green-50 to-emerald-50">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-600 font-['Cairo'] mb-2">
+                      <label className="text-sm font-bold text-gray-800 font-['Cairo'] mb-2 flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-green-600">
+                          <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+                        </svg>
                         الصندوق النقدي
                       </label>
+                      {/* رسالة تصحيح أخطاء مؤقتة */}
+                      {cashBoxes.length === 0 && (
+                        <div style={{padding: '8px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', marginBottom: '8px', fontSize: '12px', color: '#856404'}}>
+                          ⚠️ لم يتم العثور على صناديق نقد
+                        </div>
+                      )}
+                      {cashBoxes.length > 0 && cashBoxes.filter(cb => !invoiceData.branch || cb.branch === invoiceData.branch).length === 0 && (
+                        <div style={{padding: '8px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', marginBottom: '8px', fontSize: '12px', color: '#856404'}}>
+                          ⚠️ لا توجد صناديق للفرع: {invoiceData.branch || 'غير محدد'}
+                        </div>
+                      )}
                       <Select
                         value={multiplePayment.cash?.cashBoxId || ''}
-                        onChange={(value) => setMultiplePayment({
-                          ...multiplePayment,
-                          cash: {
-                            ...multiplePayment.cash,
-                            cashBoxId: value,
-                            amount: multiplePayment.cash?.amount || ''
-                          }
-                        })}
-                        disabled={cashBoxes.length === 0}
+                        onChange={(value) => {
+                          console.log('Selected cash box (multiple):', value);
+                          setMultiplePayment({
+                            ...multiplePayment,
+                            cash: {
+                              ...multiplePayment.cash,
+                              cashBoxId: value,
+                              amount: multiplePayment.cash?.amount || ''
+                            }
+                          });
+                        }}
+                        disabled={cashBoxes.filter(cb => !invoiceData.branch || cb.branch === invoiceData.branch).length === 0}
                         placeholder="اختر الصندوق"
-                        className="w-full font-['Cairo']"
+                        className="w-full font-['Cairo'] shadow-md"
                         size="large"
                         allowClear
                         showSearch
                         filterOption={(input, option) =>
                           String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                        }
+                        notFoundContent={
+                          cashBoxes.length === 0 
+                            ? "لا توجد صناديق نقد في النظام" 
+                            : "لا توجد صناديق للفرع المحدد"
                         }
                       >
                         {cashBoxes
@@ -3222,7 +3293,10 @@ const AddSalesInvoicePage: React.FC = () => {
                     </div>
                     
                     <div>
-                      <label className="block text-xs font-semibold text-gray-600 font-['Cairo'] mb-2">
+                      <label className="text-sm font-bold text-gray-800 font-['Cairo'] mb-2 flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-green-600">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1.85.74 1.57 2.31 1.57 1.44 0 2.03-.69 2.03-1.39 0-.87-.53-1.39-2.12-1.82-2.07-.56-3.35-1.45-3.35-3.3 0-1.54 1.2-2.75 3.04-3.11V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.9c-.05-.68-.42-1.42-1.91-1.42-1.34 0-1.81.53-1.81 1.18 0 .77.58 1.07 2.18 1.52 2.37.63 3.29 1.59 3.29 3.36 0 1.7-1.25 2.77-3.24 3.11z"/>
+                        </svg>
                         المبلغ النقدي (ر.س)
                       </label>
                       <Input
@@ -3257,51 +3331,64 @@ const AddSalesInvoicePage: React.FC = () => {
                         min={0}
                         step={0.01}
                         size="large"
-                        className="text-center font-bold font-['Cairo']"
+                        className="text-center font-bold font-['Cairo'] shadow-md"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* التحويل البنكي */}
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl overflow-hidden">
-                  <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-3">
+                <div className="bg-white border-2 border-blue-300 rounded-2xl overflow-hidden shadow-xl transform hover:scale-105 transition-all duration-200">
+                  <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-4 border-b-2 border-blue-700">
                     <div className="flex items-center gap-3">
-                      <div className="bg-white/20 rounded-lg p-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                          <path d="M5 7h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1zM6 10h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1s.45 1 1 1zM3 13h18c.55 0 1-.45 1-1s-.45-1-1-1H3c-.55 0-1 .45-1 1s.45 1 1 1zM4 16h16c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zM5 19h14c.55 0 1-.45 1-1s-.45-1-1-1H5c-.55 0-1 .45-1 1s.45 1 1 1z"/>
+                      <div className="bg-white/90 rounded-lg p-2 shadow-md">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                          <path d="M12 2L2 7v3h20V7L12 2zm-8 6l8-4 8 4H4zm0 3v7h3v-7H4zm5 0v7h3v-7H9zm5 0v7h3v-7h-3zm5 0v7h3v-7h-3zM2 20h20v2H2v-2z"/>
                         </svg>
                       </div>
-                      <span className="text-white font-bold text-sm font-['Cairo']">
+                      <span className="text-white font-bold text-base font-['Cairo']">
                         التحويل البنكي
                       </span>
                     </div>
                   </div>
                   
-                  <div className="p-4 space-y-4">
+                  <div className="p-5 space-y-4 bg-gradient-to-br from-blue-50 to-indigo-50">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-600 font-['Cairo'] mb-2">
+                      <label className="block text-sm font-bold text-gray-800 font-['Cairo'] mb-2 items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                          <path d="M12 2L2 7v3h20V7L12 2zm-8 6l8-4 8 4H4z"/>
+                        </svg>
                         البنك
                       </label>
+                      {/* رسالة تصحيح أخطاء مؤقتة */}
+                      {banks.length === 0 && (
+                        <div style={{padding: '8px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', marginBottom: '8px', fontSize: '12px', color: '#856404'}}>
+                          ⚠️ لم يتم العثور على بنوك. تحقق من Firebase Collection: bankAccounts
+                        </div>
+                      )}
                       <Select
                         value={multiplePayment.bank?.bankId || ''}
-                        onChange={(value) => setMultiplePayment({
-                          ...multiplePayment,
-                          bank: {
-                            ...multiplePayment.bank,
-                            bankId: value,
-                            amount: multiplePayment.bank?.amount || ''
-                          }
-                        })}
+                        onChange={(value) => {
+                          console.log('Selected bank (transfer):', value);
+                          setMultiplePayment({
+                            ...multiplePayment,
+                            bank: {
+                              ...multiplePayment.bank,
+                              bankId: value,
+                              amount: multiplePayment.bank?.amount || ''
+                            }
+                          });
+                        }}
                         disabled={banks.length === 0}
                         placeholder="اختر البنك"
-                        className="w-full font-['Cairo']"
+                        className="w-full font-['Cairo'] shadow-md"
                         size="large"
                         allowClear
                         showSearch
                         filterOption={(input, option) =>
                           String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                         }
+                        notFoundContent="لا توجد بنوك في النظام"
                       >
                         {banks.map(bank => (
                           <Select.Option key={bank.id} value={bank.id || bank.arabicName}>
@@ -3317,7 +3404,10 @@ const AddSalesInvoicePage: React.FC = () => {
                     </div>
                     
                     <div>
-                      <label className="block text-xs font-semibold text-gray-600 font-['Cairo'] mb-2">
+                      <label className="text-sm font-bold text-gray-800 font-['Cairo'] mb-2 flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-blue-600">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1.85.74 1.57 2.31 1.57 1.44 0 2.03-.69 2.03-1.39 0-.87-.53-1.39-2.12-1.82-2.07-.56-3.35-1.45-3.35-3.3 0-1.54 1.2-2.75 3.04-3.11V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.9c-.05-.68-.42-1.42-1.91-1.42-1.34 0-1.81.53-1.81 1.18 0 .77.58 1.07 2.18 1.52 2.37.63 3.29 1.59 3.29 3.36 0 1.7-1.25 2.77-3.24 3.11z"/>
+                        </svg>
                         المبلغ البنكي (ر.س)
                       </label>
                       <Input
@@ -3352,51 +3442,64 @@ const AddSalesInvoicePage: React.FC = () => {
                         min={0}
                         step={0.01}
                         size="large"
-                        className="text-center font-bold font-['Cairo']"
+                        className="text-center font-bold font-['Cairo'] shadow-md"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* بطاقة الشبكة */}
-                <div className="bg-gradient-to-br from-red-50 to-pink-50 border-2 border-red-200 rounded-xl overflow-hidden">
-                  <div className="bg-gradient-to-r from-red-500 to-pink-600 px-4 py-3">
+                <div className="bg-white border-2 border-pink-300 rounded-2xl overflow-hidden shadow-xl transform hover:scale-105 transition-all duration-200">
+                  <div className="bg-gradient-to-r from-pink-600 to-rose-600 px-5 py-4 border-b-2 border-pink-700">
                     <div className="flex items-center gap-3">
-                      <div className="bg-white/20 rounded-lg p-2">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                      <div className="bg-white/90 rounded-lg p-2 shadow-md">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-pink-600">
                           <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
                         </svg>
                       </div>
-                      <span className="text-white font-bold text-sm font-['Cairo']">
+                      <span className="text-white font-bold text-base font-['Cairo']">
                         بطاقة الشبكة
                       </span>
                     </div>
                   </div>
                   
-                  <div className="p-4 space-y-4">
+                  <div className="p-5 space-y-4 bg-gradient-to-br from-pink-50 to-rose-50">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-600 font-['Cairo'] mb-2">
+                      <label className="text-sm font-bold text-gray-800 font-['Cairo'] mb-2 flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-pink-600">
+                          <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
+                        </svg>
                         بنك الشبكة
                       </label>
+                      {/* رسالة تصحيح أخطاء مؤقتة */}
+                      {banks.length === 0 && (
+                        <div style={{padding: '8px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', marginBottom: '8px', fontSize: '12px', color: '#856404'}}>
+                          ⚠️ لم يتم العثور على بنوك
+                        </div>
+                      )}
                       <Select
                         value={multiplePayment.card?.bankId || ''}
-                        onChange={(value) => setMultiplePayment({
-                          ...multiplePayment,
-                          card: {
-                            ...multiplePayment.card,
-                            bankId: value,
-                            amount: multiplePayment.card?.amount || ''
-                          }
-                        })}
+                        onChange={(value) => {
+                          console.log('Selected bank (card):', value);
+                          setMultiplePayment({
+                            ...multiplePayment,
+                            card: {
+                              ...multiplePayment.card,
+                              bankId: value,
+                              amount: multiplePayment.card?.amount || ''
+                            }
+                          });
+                        }}
                         disabled={banks.length === 0}
                         placeholder="اختر البنك"
-                        className="w-full font-['Cairo']"
+                        className="w-full font-['Cairo'] shadow-md"
                         size="large"
                         allowClear
                         showSearch
                         filterOption={(input, option) =>
                           String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
                         }
+                        notFoundContent="لا توجد بنوك في النظام"
                       >
                         {banks.map(bank => (
                           <Select.Option key={bank.id} value={bank.id || bank.arabicName}>
@@ -3412,7 +3515,10 @@ const AddSalesInvoicePage: React.FC = () => {
                     </div>
                     
                     <div>
-                      <label className="block text-xs font-semibold text-gray-600 font-['Cairo'] mb-2">
+                      <label className="text-sm font-bold text-gray-800 font-['Cairo'] mb-2 flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-pink-600">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1.85.74 1.57 2.31 1.57 1.44 0 2.03-.69 2.03-1.39 0-.87-.53-1.39-2.12-1.82-2.07-.56-3.35-1.45-3.35-3.3 0-1.54 1.2-2.75 3.04-3.11V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.9c-.05-.68-.42-1.42-1.91-1.42-1.34 0-1.81.53-1.81 1.18 0 .77.58 1.07 2.18 1.52 2.37.63 3.29 1.59 3.29 3.36 0 1.7-1.25 2.77-3.24 3.11z"/>
+                        </svg>
                         مبلغ الشبكة (ر.س)
                       </label>
                       <Input
@@ -3447,7 +3553,7 @@ const AddSalesInvoicePage: React.FC = () => {
                         min={0}
                         step={0.01}
                         size="large"
-                        className="text-center font-bold font-['Cairo']"
+                        className="text-center font-bold font-['Cairo'] shadow-md"
                       />
                     </div>
                   </div>
@@ -3455,60 +3561,85 @@ const AddSalesInvoicePage: React.FC = () => {
               </div>
 
               {/* ملخص الدفع المتعدد */}
-              <div className="mt-8 bg-gradient-to-r from-gray-50 to-blue-50 border-2 border-gray-200 rounded-xl p-6">
+              <div className="mt-8 bg-white border-2 border-orange-200 rounded-2xl p-8 shadow-xl">
+                <div className="text-center mb-6">
+                  <h4 className="text-xl font-bold text-gray-800 font-['Cairo'] flex items-center justify-center gap-3">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="text-orange-600">
+                      <path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/>
+                    </svg>
+                    ملخص توزيع الدفع
+                  </h4>
+                  <div className="w-24 h-1 bg-gradient-to-r from-orange-600 to-amber-600 rounded-full mx-auto mt-2"></div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-gray-600 font-['Cairo']">
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl p-6 shadow-lg transform hover:scale-105 transition-all duration-200">
+                    <div className="text-blue-600 text-sm font-bold font-['Cairo'] uppercase tracking-wider mb-2">
                       إجمالي المدفوع
                     </div>
-                    <div className="text-2xl font-bold text-blue-700 font-['Cairo']">
+                    <div className="text-blue-900 text-3xl font-black font-['Cairo']">
                       {(
                         parseFloat(multiplePayment.cash?.amount || '0') +
                         parseFloat(multiplePayment.bank?.amount || '0') +
                         parseFloat(multiplePayment.card?.amount || '0')
-                      ).toFixed(2)} ر.س
+                      ).toFixed(2)}
                     </div>
+                    <div className="text-blue-700 text-xs font-semibold font-['Cairo'] mt-1">ر.س</div>
                   </div>
                   
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-gray-600 font-['Cairo']">
+                  <div className="bg-gradient-to-br from-red-50 to-pink-50 border-2 border-red-300 rounded-xl p-6 shadow-lg transform hover:scale-105 transition-all duration-200">
+                    <div className="text-red-600 text-sm font-bold font-['Cairo'] uppercase tracking-wider mb-2">
                       المبلغ المتبقي
                     </div>
-                    <div className={`text-2xl font-bold font-['Cairo'] ${
+                    <div className={`text-3xl font-black font-['Cairo'] ${
                       (totals.finalTotal - (
                         parseFloat(multiplePayment.cash?.amount || '0') +
                         parseFloat(multiplePayment.bank?.amount || '0') +
                         parseFloat(multiplePayment.card?.amount || '0')
-                      )) > 0.01 ? 'text-red-600' : 'text-green-600'
+                      )) > 0.01 ? 'text-red-900' : 'text-green-900'
                     }`}>
                       {(totals.finalTotal - (
                         parseFloat(multiplePayment.cash?.amount || '0') +
                         parseFloat(multiplePayment.bank?.amount || '0') +
                         parseFloat(multiplePayment.card?.amount || '0')
-                      )).toFixed(2)} ر.س
+                      )).toFixed(2)}
                     </div>
+                    <div className={`text-xs font-semibold font-['Cairo'] mt-1 ${
+                      (totals.finalTotal - (
+                        parseFloat(multiplePayment.cash?.amount || '0') +
+                        parseFloat(multiplePayment.bank?.amount || '0') +
+                        parseFloat(multiplePayment.card?.amount || '0')
+                      )) > 0.01 ? 'text-red-700' : 'text-green-700'
+                    }`}>ر.س</div>
                   </div>
                   
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-gray-600 font-['Cairo']">
+                  <div className="bg-gradient-to-br from-purple-50 to-violet-50 border-2 border-purple-300 rounded-xl p-6 shadow-lg transform hover:scale-105 transition-all duration-200">
+                    <div className="text-purple-600 text-sm font-bold font-['Cairo'] uppercase tracking-wider mb-2">
                       المبلغ المطلوب
                     </div>
-                    <div className="text-2xl font-bold text-purple-700 font-['Cairo']">
-                      {totals.finalTotal.toFixed(2)} ر.س
+                    <div className="text-purple-900 text-3xl font-black font-['Cairo']">
+                      {totals.finalTotal.toFixed(2)}
                     </div>
+                    <div className="text-purple-700 text-xs font-semibold font-['Cairo'] mt-1">ر.س</div>
                   </div>
 
-                  <div className={`p-4 rounded-xl ${Math.abs(
+                  <div className={`rounded-2xl p-6 shadow-lg transform hover:scale-105 transition-all duration-200 ${Math.abs(
                     (parseFloat(multiplePayment.cash?.amount || '0') +
                      parseFloat(multiplePayment.bank?.amount || '0') +
                      parseFloat(multiplePayment.card?.amount || '0')) - totals.finalTotal
-                  ) <= 0.01 ? 'bg-green-100 border-2 border-green-300' : 'bg-red-100 border-2 border-red-300'}`}>
-                    <div className={`text-sm font-bold font-['Cairo'] flex items-center justify-center gap-2 ${Math.abs(
+                  ) <= 0.01 ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-300' : 'bg-gradient-to-br from-red-50 to-rose-50 border-2 border-red-300'}`}>
+                    <div className={`text-sm font-bold font-['Cairo'] uppercase tracking-wider mb-3 ${Math.abs(
                       (parseFloat(multiplePayment.cash?.amount || '0') +
                        parseFloat(multiplePayment.bank?.amount || '0') +
                        parseFloat(multiplePayment.card?.amount || '0')) - totals.finalTotal
-                    ) <= 0.01 ? 'text-green-700' : 'text-red-700'}`}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    ) <= 0.01 ? 'text-green-600' : 'text-red-600'}`}>
+                      حالة الدفع
+                    </div>
+                    <div className={`text-base font-black font-['Cairo'] flex items-center justify-center gap-3 ${Math.abs(
+                      (parseFloat(multiplePayment.cash?.amount || '0') +
+                       parseFloat(multiplePayment.bank?.amount || '0') +
+                       parseFloat(multiplePayment.card?.amount || '0')) - totals.finalTotal
+                    ) <= 0.01 ? 'text-green-800' : 'text-red-800'}`}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                         {Math.abs(
                           (parseFloat(multiplePayment.cash?.amount || '0') +
                            parseFloat(multiplePayment.bank?.amount || '0') +
@@ -3523,7 +3654,7 @@ const AddSalesInvoicePage: React.FC = () => {
                         (parseFloat(multiplePayment.cash?.amount || '0') +
                          parseFloat(multiplePayment.bank?.amount || '0') +
                          parseFloat(multiplePayment.card?.amount || '0')) - totals.finalTotal
-                      ) <= 0.01 ? 'الدفع مكتمل' : 'الدفع غير مكتمل'}
+                      ) <= 0.01 ? 'الدفع مكتمل ✓' : 'الدفع غير مكتمل ⚠'}
                     </div>
                   </div>
                 </div>
