@@ -295,6 +295,7 @@ const DeliveryOrders: React.FC = () => {
   const [searchDeliveryDate, setSearchDeliveryDate] = useState<dayjs.Dayjs | null>(null);
   const [searchInstallation, setSearchInstallation] = useState<string>("");
   const [searchBranchStatus, setSearchBranchStatus] = useState<string>("");
+  const [searchDeliveryStatus, setSearchDeliveryStatus] = useState<string>("قيد الانتظار"); // الفلتر الافتراضي
   
   // حالة وضع تعيين السائق
   const [assignDriverMode, setAssignDriverMode] = useState(false);
@@ -781,6 +782,13 @@ const DeliveryOrders: React.FC = () => {
       filtered = filtered.filter(order => order.requiresInstallation === requiresInstallation);
     }
 
+    if (searchDeliveryStatus) {
+      filtered = filtered.filter(order => {
+        const status = order.status || 'قيد الانتظار';
+        return status === searchDeliveryStatus;
+      });
+    }
+
     setFilteredDeliveryOrders(filtered);
     setCurrentPage(1);
   }, [
@@ -795,7 +803,8 @@ const DeliveryOrders: React.FC = () => {
     searchDistrictId,
     searchBranchId,
     searchDeliveryDate,
-    searchInstallation
+    searchInstallation,
+    searchDeliveryStatus
   ]);
 
   // عند تغيير invoices (بعد الجلب)، اعرض كل البيانات مباشرة في الجدول
@@ -2524,6 +2533,24 @@ const handlePrintTable = () => {
                     <Option value="مدفوع جزئياً">مدفوع جزئياً</Option>
                   </Select>
                 </div>
+                
+                <div className="flex flex-col">
+                  <span style={labelStyle}>حالة التوصيل</span>
+                  <Select
+                    value={searchDeliveryStatus || undefined}
+                    onChange={setSearchDeliveryStatus}
+                    placeholder="اختر حالة التوصيل"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    className={styles.noAntBorder}
+                    allowClear
+                  >
+                    <Option value="قيد الانتظار">قيد الانتظار</Option>
+                    <Option value="قيد التوصيل">قيد التوصيل</Option>
+                    <Option value="تم التوصيل">تم التوصيل</Option>
+                    <Option value="ملغي">ملغي</Option>
+                  </Select>
+                </div>
               </div>
             </motion.div>
           )}
@@ -2700,62 +2727,7 @@ const handlePrintTable = () => {
                 </svg>
               }
               onClick={() => {
-                // فتح صفحة جديدة لتأكيد الطلبات
-                const confirmWindow = window.open('', 'تأكيد الطلبات', 'width=900,height=700');
-                if (confirmWindow) {
-                  confirmWindow.document.write(`
-                    <html dir="rtl">
-                    <head>
-                      <title>تأكيد طلبات التوصيل</title>
-                      <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap" rel="stylesheet">
-                      <style>
-                        body { font-family: 'Tajawal', sans-serif; padding: 20px; background: #f5f5f5; }
-                        .header { background: #10b981; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-                        .header h1 { margin: 0; font-size: 24px; }
-                        .orders-list { background: white; padding: 20px; border-radius: 8px; }
-                        .order-item { padding: 15px; border-bottom: 1px solid #e5e5e5; display: flex; justify-content: space-between; align-items: center; }
-                        .order-item:hover { background: #f9fafb; }
-                        .order-number { font-weight: bold; color: #10b981; font-size: 16px; }
-                        .order-details { color: #666; font-size: 14px; margin-top: 5px; }
-                        .confirm-btn { background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 20px; width: 100%; }
-                        .confirm-btn:hover { background: #059669; }
-                        .summary { background: #e0f2fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 18px; font-weight: 600; }
-                      </style>
-                    </head>
-                    <body>
-                      <div class="header">
-                        <h1>🎯 تأكيد طلبات التوصيل</h1>
-                      </div>
-                      <div class="summary">
-                        إجمالي الطلبات: ${filteredDeliveryOrders.length} طلب
-                      </div>
-                      <div class="orders-list">
-                        ${filteredDeliveryOrders.map(order => `
-                          <div class="order-item">
-                            <div>
-                              <div class="order-number">📋 ${order.fullInvoiceNumber}</div>
-                              <div class="order-details">
-                                👤 ${order.customerName} | 📱 ${order.customerPhone} | 📍 ${order.districtName}
-                                ${order.driverName ? ` | 🚗 ${order.driverName}` : ''}
-                              </div>
-                            </div>
-                          </div>
-                        `).join('')}
-                      </div>
-                      <button class="confirm-btn" onclick="confirmAll()">✅ تأكيد جميع الطلبات</button>
-                      <script>
-                        function confirmAll() {
-                          if (confirm('هل أنت متأكد من تأكيد جميع الطلبات؟')) {
-                            alert('تم تأكيد ${filteredDeliveryOrders.length} طلب بنجاح ✅');
-                            window.close();
-                          }
-                        }
-                      </script>
-                    </body>
-                    </html>
-                  `);
-                  confirmWindow.document.close();
-                }
+                navigate('/management/confirm-orders');
               }}
               disabled={filteredDeliveryOrders.length === 0}
               className="bg-green-500 hover:bg-green-600 border-green-600"
@@ -2771,75 +2743,7 @@ const handlePrintTable = () => {
                 </svg>
               }
               onClick={() => {
-                // فتح صفحة جديدة لإشعار المخزن
-                const warehouseWindow = window.open('', 'إشعار المخزن', 'width=900,height=700');
-                if (warehouseWindow) {
-                  // تجميع الطلبات حسب المخزن
-                  const ordersByWarehouse = filteredDeliveryOrders.reduce((acc, order) => {
-                    const warehouseId = order.warehouseId || 'غير محدد';
-                    if (!acc[warehouseId]) {
-                      acc[warehouseId] = {
-                        name: order.warehouseName || 'غير محدد',
-                        orders: []
-                      };
-                    }
-                    acc[warehouseId].orders.push(order);
-                    return acc;
-                  }, {} as Record<string, {name: string, orders: DeliveryOrder[]}>);
-                  
-                  warehouseWindow.document.write(`
-                    <html dir="rtl">
-                    <head>
-                      <title>إشعار المخزن</title>
-                      <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap" rel="stylesheet">
-                      <style>
-                        body { font-family: 'Tajawal', sans-serif; padding: 20px; background: #f5f5f5; }
-                        .header { background: #8b5cf6; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-                        .header h1 { margin: 0; font-size: 24px; }
-                        .warehouse-section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-                        .warehouse-title { font-size: 20px; font-weight: bold; color: #8b5cf6; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #8b5cf6; }
-                        .order-item { padding: 12px; border-bottom: 1px solid #e5e5e5; font-size: 14px; }
-                        .order-item:hover { background: #f9fafb; }
-                        .send-btn { background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 20px; width: 100%; }
-                        .send-btn:hover { background: #7c3aed; }
-                        .summary { background: #ede9fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 18px; font-weight: 600; }
-                      </style>
-                    </head>
-                    <body>
-                      <div class="header">
-                        <h1>📦 إشعار المخازن بطلبات التوصيل</h1>
-                      </div>
-                      <div class="summary">
-                        عدد المخازن: ${Object.keys(ordersByWarehouse).length} | إجمالي الطلبات: ${filteredDeliveryOrders.length}
-                      </div>
-                      ${Object.entries(ordersByWarehouse).map(([warehouseId, data]) => `
-                        <div class="warehouse-section">
-                          <div class="warehouse-title">🏢 ${data.name} (${data.orders.length} طلب)</div>
-                          ${data.orders.map(order => `
-                            <div class="order-item">
-                              📋 <strong>${order.fullInvoiceNumber}</strong> - 
-                              👤 ${order.customerName} - 
-                              📱 ${order.customerPhone} - 
-                              📍 ${order.districtName}
-                              ${order.requiresInstallation ? ' - 🔧 يتطلب تركيب' : ''}
-                            </div>
-                          `).join('')}
-                        </div>
-                      `).join('')}
-                      <button class="send-btn" onclick="sendNotification()">📧 إرسال الإشعارات للمخازن</button>
-                      <script>
-                        function sendNotification() {
-                          if (confirm('هل تريد إرسال الإشعارات لجميع المخازن؟')) {
-                            alert('تم إرسال الإشعارات بنجاح ✅');
-                            window.close();
-                          }
-                        }
-                      </script>
-                    </body>
-                    </html>
-                  `);
-                  warehouseWindow.document.close();
-                }
+                navigate('/management/warehouse-notifications');
               }}
               disabled={filteredDeliveryOrders.length === 0}
               className="bg-purple-500 hover:bg-purple-600 border-purple-600"
@@ -2855,31 +2759,7 @@ const handlePrintTable = () => {
                 </svg>
               }
               onClick={() => {
-                const ordersWithDrivers = filteredDeliveryOrders.filter(o => o.driverId && o.driverId.trim() !== '');
-                const ordersWithoutDrivers = filteredDeliveryOrders.filter(o => !o.driverId || o.driverId.trim() === '');
-                
-                if (ordersWithoutDrivers.length > 0) {
-                  Modal.warning({
-                    title: 'تحذير',
-                    content: (
-                      <div>
-                        <p>يوجد {ordersWithoutDrivers.length} طلب بدون سائق.</p>
-                        <p>سيتم إرسال الإشعار لـ {ordersWithDrivers.length} طلب فقط.</p>
-                      </div>
-                    ),
-                    okText: 'متابعة',
-                    onOk: () => {
-                      if (ordersWithDrivers.length > 0) {
-                        // فتح صفحة إشعار السائقين
-                        openDriverNotificationPage(ordersWithDrivers);
-                      } else {
-                        message.warning('لا توجد طلبات مع سائقين لإرسال الإشعار');
-                      }
-                    }
-                  });
-                } else {
-                  openDriverNotificationPage(ordersWithDrivers);
-                }
+                navigate('/management/driver-notifications');
               }}
               disabled={filteredDeliveryOrders.length === 0}
               className="bg-orange-500 hover:bg-orange-600 border-orange-600"
@@ -2900,6 +2780,11 @@ const handlePrintTable = () => {
               dataIndex: 'invoiceNumber',
               key: 'invoiceNumber',
               minWidth: 130,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const numA = a.fullInvoiceNumber || '';
+                const numB = b.fullInvoiceNumber || '';
+                return numA.localeCompare(numB, 'ar');
+              },
               render: (text: string) => (
                 <span className="text-blue-700 font-medium">{text}</span>
               ),
@@ -2909,6 +2794,11 @@ const handlePrintTable = () => {
               dataIndex: 'customerPhone',
               key: 'customerPhone',
               minWidth: 120,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const phoneA = a.customerPhone || '';
+                const phoneB = b.customerPhone || '';
+                return phoneA.localeCompare(phoneB);
+              },
               render: (phone: string) => phone || 'غير متوفر',
             },
             {
@@ -2916,6 +2806,11 @@ const handlePrintTable = () => {
               dataIndex: 'driver',
               key: 'driver',
               minWidth: assignDriverMode ? 200 : 120,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const nameA = a.driverName || '';
+                const nameB = b.driverName || '';
+                return nameA.localeCompare(nameB, 'ar');
+              },
               render: (text: string, record: DeliveryOrder) => {
                 if (assignDriverMode) {
                   return (
@@ -2955,13 +2850,23 @@ const handlePrintTable = () => {
               dataIndex: 'district',
               key: 'district',
               minWidth: 120,
-              render: (text: string, record: any) => record.districtName || '-',
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const districtA = a.districtName || '';
+                const districtB = b.districtName || '';
+                return districtA.localeCompare(districtB, 'ar');
+              },
+              render: (text: string, record: DeliveryOrder) => record.districtName || '-',
             },
             {
               title: 'الملاحظات',
               dataIndex: 'notes',
               key: 'notes',
               minWidth: 150,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const notesA = a.notes || '';
+                const notesB = b.notes || '';
+                return notesA.localeCompare(notesB, 'ar');
+              },
               render: (text: string) => text || '-',
             },
             {
@@ -2969,7 +2874,12 @@ const handlePrintTable = () => {
               dataIndex: 'installation',
               key: 'installation',
               minWidth: 100,
-              render: (text: string, record: any) => {
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const installA = a.requiresInstallation ? 1 : 0;
+                const installB = b.requiresInstallation ? 1 : 0;
+                return installA - installB;
+              },
+              render: (text: string, record: DeliveryOrder) => {
                 const requires = record.requiresInstallation;
                 return (
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -2985,7 +2895,12 @@ const handlePrintTable = () => {
               dataIndex: 'amount',
               key: 'amount',
               minWidth: 100,
-              render: (text: string, record: any) => {
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const amountA = a.branchBalance || 0;
+                const amountB = b.branchBalance || 0;
+                return amountA - amountB;
+              },
+              render: (text: string, record: DeliveryOrder) => {
                 return record.branchBalance ? record.branchBalance.toLocaleString() : '0.00';
               },
             },
@@ -2994,6 +2909,11 @@ const handlePrintTable = () => {
               dataIndex: 'deliveryStatus',
               key: 'deliveryStatus',
               minWidth: 120,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const statusA = a.status || 'قيد الانتظار';
+                const statusB = b.status || 'قيد الانتظار';
+                return statusA.localeCompare(statusB, 'ar');
+              },
               render: (status: string) => {
                 let colorClass = 'bg-yellow-100 text-yellow-800';
                 if (status === 'تم التوصيل') colorClass = 'bg-green-100 text-green-800';
@@ -3012,13 +2932,61 @@ const handlePrintTable = () => {
               dataIndex: 'deliveryDate',
               key: 'deliveryDate',
               minWidth: 120,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const dateA = a.deliveryDate || '';
+                const dateB = b.deliveryDate || '';
+                return dateA.localeCompare(dateB);
+              },
               render: (date: string) => date ? new Date(date).toLocaleDateString('en-GB') : '-',
+            },
+            {
+              title: 'وقت الإنشاء',
+              dataIndex: 'createdAt',
+              key: 'createdAt',
+              minWidth: 150,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const getTime = (createdAt: string | FirestoreTimestamp) => {
+                  if (!createdAt) return 0;
+                  if (typeof createdAt === 'object' && 'seconds' in createdAt) {
+                    return createdAt.seconds * 1000;
+                  }
+                  if (typeof createdAt === 'string') {
+                    return new Date(createdAt).getTime();
+                  }
+                  return 0;
+                };
+                return getTime(a.createdAt) - getTime(b.createdAt);
+              },
+              render: (createdAt: string | FirestoreTimestamp) => {
+                if (!createdAt) return '-';
+                
+                // التعامل مع Firestore Timestamp
+                if (typeof createdAt === 'object' && 'seconds' in createdAt) {
+                  const date = new Date(createdAt.seconds * 1000);
+                  return `${date.toLocaleDateString('en-GB')} ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+                }
+                
+                // التعامل مع String
+                if (typeof createdAt === 'string') {
+                  const date = new Date(createdAt);
+                  if (!isNaN(date.getTime())) {
+                    return `${date.toLocaleDateString('en-GB')} ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+                  }
+                }
+                
+                return '-';
+              },
             },
             {
               title: 'اسم العميل',
               dataIndex: 'customerName',
               key: 'customerName',
               minWidth: 150,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const nameA = a.customerName || '';
+                const nameB = b.customerName || '';
+                return nameA.localeCompare(nameB, 'ar');
+              },
               render: (text: string) => text || '-',
             },
             {

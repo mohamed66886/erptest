@@ -114,6 +114,8 @@ import ConfirmOrders from "./management/confirm-orders";
 import CompletedOrders from "./management/CompletedOrders";
 import ArchivedOrders from "./management/ArchivedOrders";
 import LinkBranches from "./management/link-branches";
+import WarehouseNotifications from "./management/warehouse-notifications";
+import DriverNotifications from "./management/driver-notifications";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -295,6 +297,8 @@ const Index = () => {
               <Route path="/management/delivery-warehouses" element={<DeliveryWarehouses />} />
               <Route path="/management/link-branches" element={<LinkBranches />} />
               <Route path="/management/confirm-orders" element={<ConfirmOrders />} />
+              <Route path="/management/warehouse-notifications" element={<WarehouseNotifications />} />
+              <Route path="/management/driver-notifications" element={<DriverNotifications />} />
               <Route path="/management/completed-orders" element={<CompletedOrders />} />
               <Route path="/management/archived-orders" element={<ArchivedOrders />} />
               
