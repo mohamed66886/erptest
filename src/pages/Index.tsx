@@ -110,6 +110,9 @@ import DeliveryOrders from "./management/orders";
 import AddDeliveryOrder from "./management/add-delivery-order";
 import BranchStatus from "./management/branch-status";
 import DeliveryWarehouses from "./management/delivery-warehouses";
+import ConfirmOrders from "./management/confirm-orders";
+import CompletedOrders from "./management/CompletedOrders";
+import ArchivedOrders from "./management/ArchivedOrders";
 import LinkBranches from "./management/link-branches";
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -291,6 +294,9 @@ const Index = () => {
               <Route path="/management/branch-status" element={<BranchStatus />} />
               <Route path="/management/delivery-warehouses" element={<DeliveryWarehouses />} />
               <Route path="/management/link-branches" element={<LinkBranches />} />
+              <Route path="/management/confirm-orders" element={<ConfirmOrders />} />
+              <Route path="/management/completed-orders" element={<CompletedOrders />} />
+              <Route path="/management/archived-orders" element={<ArchivedOrders />} />
               
               {/* Financial Management Sub-Routes */}
               <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
@@ -303,6 +309,7 @@ const Index = () => {
               <Route path="/accounting/cost-centers" element={<CostCentersPage />} />
               <Route path="/accounting/cost-center-classification" element={<CostCenterClassificationPage />} />
               <Route path="/accounting/add-cost-center" element={<AddCostCenterPage />} />
+
               <Route path="/accounting/edit-cost-center/:id" element={<EditCostCenterPage />} />
               
               {/* Customer Management Routes */}

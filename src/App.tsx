@@ -11,6 +11,8 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import FirebaseTestPage from "./pages/accounting/FirebaseTestPage";
 import FirebaseDirectTest from "./pages/accounting/FirebaseDirectTest";
+import ViewOrder from "./pages/orders/ViewOrder";
+import CompleteOrder from "./pages/orders/CompleteOrder";
 
 
 const queryClient = new QueryClient();
@@ -29,6 +31,9 @@ const App = () => (
                 <Route path="/firebase-test" element={<FirebaseTestPage />} />
                 <Route path="/firebase-direct" element={<FirebaseDirectTest />} />
                 
+                {/* صفحات الطلبات المنفصلة للسائقين */}
+                <Route path="/orders/view" element={<ViewOrder />} />
+                <Route path="/orders/complete" element={<CompleteOrder />} />
      
                 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

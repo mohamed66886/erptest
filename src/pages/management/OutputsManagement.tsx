@@ -177,36 +177,36 @@ const OutputsManagement: React.FC = () => {
         window.scrollTo(0, 0);
       }
     },
-    // {
-    //   title: "تأكيد الطلبات",
-    //   description: "تأكيد ومراجعة الطلبات",
-    //   icon: <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />,
-    //   color: "bg-emerald-600",
-    //   onClick: () => {
-    //     navigate('/management/confirm-orders');
-    //     window.scrollTo(0, 0);
-    //   }
-    // },
-    // {
-    //   title: "الطلبات المكتملة",
-    //   description: "عرض الطلبات المكتملة",
-    //   icon: <PackageCheck className="h-5 w-5 sm:h-6 sm:w-6" />,
-    //   color: "bg-teal-600",
-    //   onClick: () => {
-    //     navigate('/management/completed-orders');
-    //     window.scrollTo(0, 0);
-    //   }
-    // },
-    // {
-    //   title: "الطلبات المؤرشفة",
-    //   description: "أرشيف الطلبات القديمة",
-    //   icon: <Archive className="h-5 w-5 sm:h-6 sm:w-6" />,
-    //   color: "bg-gray-600",
-    //   onClick: () => {
-    //     navigate('/management/archived-orders');
-    //     window.scrollTo(0, 0);
-    //   }
-    // },
+    {
+      title: "تأكيد الطلبات",
+      description: "تأكيد ومراجعة الطلبات",
+      icon: <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-emerald-600",
+      onClick: () => {
+        navigate('/management/confirm-orders');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "الطلبات المكتملة",
+      description: "عرض الطلبات المكتملة",
+      icon: <PackageCheck className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-teal-600",
+      onClick: () => {
+        navigate('/management/completed-orders');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "الطلبات المؤرشفة",
+      description: "أرشيف الطلبات القديمة",
+      icon: <Archive className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-gray-600",
+      onClick: () => {
+        navigate('/management/archived-orders');
+        window.scrollTo(0, 0);
+      }
+    },
     // {
     //   title: "إدارة التوصيل",
     //   description: "إدارة عمليات التوصيل والشحن",
