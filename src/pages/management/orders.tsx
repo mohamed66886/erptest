@@ -2528,9 +2528,9 @@ const handlePrintTable = () => {
                     className={styles.noAntBorder}
                     allowClear
                   >
-                    <Option value="مدفوع">مدفوع</Option>
-                    <Option value="غير مدفوع">غير مدفوع</Option>
-                    <Option value="مدفوع جزئياً">مدفوع جزئياً</Option>
+                    <Option value="الكل">الكل</Option>
+                    <Option value="محدد">محدد</Option>
+                    <Option value="غير محدد">غير محدد</Option>
                   </Select>
                 </div>
                 

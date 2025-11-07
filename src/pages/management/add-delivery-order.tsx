@@ -6,7 +6,7 @@ import { db, storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion } from "framer-motion";
 import { DatePicker, Input, Select, Button, Upload, Checkbox, message, UploadFile } from "antd";
-import { UploadOutlined, SaveOutlined, PrinterOutlined } from '@ant-design/icons';
+import { UploadOutlined, SaveOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch as BranchType } from "@/lib/branches";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -568,15 +568,7 @@ const AddDeliveryOrder: React.FC = () => {
     }
   };
 
-  // دالة الطباعة
-  const handlePrint = () => {
-    if (!fullInvoiceNumber) {
-      message.warning('يجب حفظ الطلب أولاً قبل الطباعة');
-      return;
-    }
-    
-    window.print();
-  };
+
 
   return (
     <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
@@ -986,16 +978,6 @@ const AddDeliveryOrder: React.FC = () => {
             style={{ height: 48, fontSize: 18, minWidth: 120 }}
           >
             إلغاء
-          </Button>
-          <Button
-            type="primary"
-            icon={<PrinterOutlined />}
-            size="large"
-            onClick={handlePrint}
-            disabled={!fullInvoiceNumber}
-            style={{ height: 48, fontSize: 18, minWidth: 120 }}
-          >
-            طباعة
           </Button>
           <Button
             type="primary"

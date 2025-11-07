@@ -52,8 +52,9 @@ const ConfirmOrders: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [filterDriver, setFilterDriver] = useState<string>("");
-  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("قيد الانتظار");
   const [searchText, setSearchText] = useState<string>("");
+  const [filterDeliveryDate, setFilterDeliveryDate] = useState<string>("");
   const [sending, setSending] = useState(false);
 
   // السنة المالية
@@ -149,6 +150,11 @@ const ConfirmOrders: React.FC = () => {
     
     if (filterStatus && order.status !== filterStatus) {
       matches = false;
+    }
+    
+    if (filterDeliveryDate) {
+      const orderDate = dayjs(order.deliveryDate).format('YYYY-MM-DD');
+      matches = matches && orderDate === filterDeliveryDate;
     }
     
     if (searchText) {
@@ -386,7 +392,7 @@ const ConfirmOrders: React.FC = () => {
         transition={{ duration: 0.3 }}
         className="w-full bg-white p-6 rounded-lg border border-gray-200 shadow-sm"
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">تصفية حسب السائق</label>
             <Select
@@ -408,18 +414,30 @@ const ConfirmOrders: React.FC = () => {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">تصفية حسب الحالة</label>
             <Select
-              value={filterStatus || undefined}
+              value={filterStatus}
               onChange={setFilterStatus}
-              placeholder="جميع الحالات"
-              allowClear
-              style={{ width: '100%' }}
+              placeholder="قيد الانتظار"
+              disabled
+              style={{ width: '100%', cursor: 'not-allowed' }}
               size="large"
             >
-              <Option value="">جميع الحالات</Option>
               <Option value="قيد الانتظار">قيد الانتظار</Option>
               <Option value="مكتمل">مكتمل</Option>
               <Option value="ملغي">ملغي</Option>
             </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">تصفية حسب تاريخ التسليم</label>
+            <Input
+              type="date"
+              value={filterDeliveryDate}
+              onChange={(e) => setFilterDeliveryDate(e.target.value)}
+              placeholder="اختر تاريخ التسليم"
+              size="large"
+              allowClear
+              style={{ width: '100%' }}
+            />
           </div>
 
           <div>
