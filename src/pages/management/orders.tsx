@@ -2785,8 +2785,15 @@ const handlePrintTable = () => {
                 const numB = b.fullInvoiceNumber || '';
                 return numA.localeCompare(numB, 'ar');
               },
-              render: (text: string) => (
-                <span className="text-blue-700 font-medium">{text}</span>
+              render: (text: string, record: DeliveryOrder) => (
+                <span className="text-blue-700 font-medium flex items-center gap-2">
+                  {(!record.driverId || record.driverId.trim() === '') && (
+                    <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  {text}
+                </span>
               ),
             },
             {
@@ -3046,12 +3053,18 @@ const handlePrintTable = () => {
               deliveryDate: order.deliveryDate,
               ...order
             }))
-          }rowKey="key"
+          }
+          rowKey="key"
           pagination={false}
           loading={isLoading}
           scroll={{ x: 1500 }}
           size="small"
           bordered
+          rowClassName={(record: DeliveryOrder) => 
+            (!record.driverId || record.driverId.trim() === '') 
+              ? '[&>td]:!bg-red-50 [&>td]:!text-red-800 [&>td]:!font-bold' 
+              : ''
+          }
           className="[&_.ant-table-thead_>_tr_>_th]:bg-blue-200 [&_.ant-table-thead_>_tr_>_th]:text-blue-900 [&_.ant-table-thead_>_tr_>_th]:border-blue-300 [&_.ant-table-thead_>_tr_>_th]:font-semibold [&_.ant-table-tbody_>_tr:hover_>_td]:bg-emerald-50"
           locale={{
             emptyText: (
