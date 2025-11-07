@@ -5,7 +5,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion } from "framer-motion";
-import { Button, Card, message, Spin, Upload, UploadFile, Descriptions, Tag } from "antd";
+import { Button, Card, message, Spin, Upload, UploadFile, Tag } from "antd";
 import { UploadOutlined, CheckCircleOutlined, FileTextOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ar';
@@ -130,11 +130,6 @@ const CompleteOrder: React.FC = () => {
       message.success('تم إتمام الطلب بنجاح! شكراً لك');
       setCompleted(true);
       
-      // إعادة التوجيه بعد 3 ثواني
-      setTimeout(() => {
-        navigate('/');
-      }, 3000);
-      
     } catch (error) {
       console.error('خطأ في إتمام الطلب:', error);
       message.error('حدث خطأ أثناء إتمام الطلب. يرجى المحاولة مرة أخرى');
@@ -146,17 +141,17 @@ const CompleteOrder: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center">
-        <Spin size="large" tip="جاري تحميل بيانات الطلب..." />
+        <Spin size="large" />
       </div>
     );
   }
 
   if (!order) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-3 sm:p-4">
         <Card className="max-w-md w-full shadow-lg">
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-800">الطلب غير موجود</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800">الطلب غير موجود</h2>
           </div>
         </Card>
       </div>
@@ -165,7 +160,7 @@ const CompleteOrder: React.FC = () => {
 
   if (completed) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4 font-['Tajawal']">
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-3 sm:p-4 font-['Tajawal']">
         <Helmet>
           <title>تم إتمام الطلب بنجاح</title>
         </Helmet>
@@ -177,31 +172,27 @@ const CompleteOrder: React.FC = () => {
           className="max-w-md w-full"
         >
           <Card className="shadow-2xl border-2 border-green-200">
-            <div className="text-center space-y-6 py-8">
+            <div className="text-center space-y-4 sm:space-y-6 py-6 sm:py-8">
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
               >
-                <CheckCircleOutlined className="text-8xl text-green-600" />
+                <CheckCircleOutlined className="text-6xl sm:text-8xl text-green-600" />
               </motion.div>
               
-              <h2 className="text-3xl font-bold text-gray-800">
+              <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">
                 تم إتمام الطلب بنجاح!
               </h2>
               
-              <div className="bg-green-50 p-4 rounded-lg">
-                <p className="text-xl text-gray-700">
+              <div className="bg-green-50 p-3 sm:p-4 rounded-lg">
+                <p className="text-base sm:text-xl text-gray-700">
                   رقم الفاتورة: <span className="font-bold text-green-600">{order.fullInvoiceNumber}</span>
                 </p>
               </div>
               
-              <p className="text-lg text-gray-600">
+              <p className="text-base sm:text-lg text-gray-600">
                 شكراً لك على إتمام التوصيل
-              </p>
-              
-              <p className="text-sm text-gray-500">
-                سيتم إعادة توجيهك تلقائياً...
               </p>
             </div>
           </Card>
@@ -211,13 +202,13 @@ const CompleteOrder: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-4 font-['Tajawal']">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-3 sm:p-6 font-['Tajawal']">
       <Helmet>
         <title>إتمام طلب التوصيل - {order.fullInvoiceNumber}</title>
         <meta name="description" content={`إتمام طلب التوصيل رقم ${order.fullInvoiceNumber}`} />
       </Helmet>
 
-      <div className="max-w-3xl mx-auto space-y-6 py-6">
+      <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 py-4 sm:py-6">
         {/* العنوان */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -225,10 +216,10 @@ const CompleteOrder: React.FC = () => {
           transition={{ duration: 0.4 }}
           className="text-center"
         >
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">
+          <h1 className="text-2xl sm:text-4xl font-bold text-gray-800 mb-2">
             إتمام طلب التوصيل
           </h1>
-          <p className="text-xl text-gray-600">
+          <p className="text-base sm:text-xl text-gray-600">
             رقم الفاتورة: <span className="font-bold text-green-600">{order.fullInvoiceNumber}</span>
           </p>
         </motion.div>
@@ -242,7 +233,7 @@ const CompleteOrder: React.FC = () => {
         >
           <Tag 
             color={order.status === 'قيد الانتظار' ? 'orange' : 'green'}
-            className="text-xl px-6 py-3 rounded-full"
+            className="text-base sm:text-xl px-4 sm:px-6 py-2 sm:py-3 rounded-full"
           >
             {order.status}
           </Tag>
@@ -255,23 +246,29 @@ const CompleteOrder: React.FC = () => {
           transition={{ duration: 0.4, delay: 0.2 }}
         >
           <Card 
-            title={<span className="text-2xl">ملخص الطلب</span>}
+            title={<span className="text-lg sm:text-2xl">ملخص الطلب</span>}
             className="shadow-lg border-2 border-green-100"
           >
-            <Descriptions bordered column={1} size="middle">
-              <Descriptions.Item label={<span className="text-lg font-semibold">اسم العميل</span>}>
-                <span className="text-lg">{order.customerName || 'غير محدد'}</span>
-              </Descriptions.Item>
-              <Descriptions.Item label={<span className="text-lg font-semibold">رقم الهاتف</span>}>
-                <span className="text-lg font-mono">{order.customerPhone}</span>
-              </Descriptions.Item>
-              <Descriptions.Item label={<span className="text-lg font-semibold">العنوان</span>}>
-                <span className="text-lg">{order.governorateName} - {order.regionName} - {order.districtName}</span>
-              </Descriptions.Item>
-              <Descriptions.Item label={<span className="text-lg font-semibold">تاريخ التسليم</span>}>
-                <span className="text-lg">{dayjs(order.deliveryDate).format('DD/MM/YYYY')}</span>
-              </Descriptions.Item>
-            </Descriptions>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b pb-2">
+                <span className="text-sm sm:text-base font-semibold text-gray-600">اسم العميل</span>
+                <span className="text-base sm:text-lg font-medium">{order.customerName || 'غير محدد'}</span>
+              </div>
+              <div className="flex items-center justify-between border-b pb-2">
+                <span className="text-sm sm:text-base font-semibold text-gray-600">رقم الهاتف</span>
+                <span className="text-base sm:text-lg font-mono">{order.customerPhone}</span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-2">
+                <span className="text-sm sm:text-base font-semibold text-gray-600 mb-1 sm:mb-0">العنوان</span>
+                <span className="text-sm sm:text-base text-gray-700 text-right">
+                  {order.governorateName} - {order.regionName} - {order.districtName}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm sm:text-base font-semibold text-gray-600">تاريخ التسليم</span>
+                <span className="text-base sm:text-lg font-medium">{dayjs(order.deliveryDate).format('DD/MM/YYYY')}</span>
+              </div>
+            </div>
           </Card>
         </motion.div>
 
@@ -283,45 +280,53 @@ const CompleteOrder: React.FC = () => {
         >
           <Card 
             title={
-              <div className="flex items-center gap-3">
-                <FileTextOutlined className="text-2xl text-blue-600" />
-                <span className="text-2xl">رفع الملف الموقع</span>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <FileTextOutlined className="text-lg sm:text-2xl text-blue-600" />
+                <span className="text-lg sm:text-2xl">رفع الملف الموقع</span>
               </div>
             }
             className="shadow-lg border-2 border-blue-100"
           >
-            <div className="space-y-6">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <p className="text-lg text-gray-700">
-                  ✓ تأكد من استلام توقيع العميل على الفاتورة
+            <div className="space-y-4 sm:space-y-6">
+              <div className="bg-blue-50 p-3 sm:p-4 rounded-lg space-y-2">
+                <p className="text-sm sm:text-lg text-gray-700 flex items-start gap-2">
+                  <span className="text-green-600 font-bold">✓</span>
+                  <span>تأكد من استلام توقيع العميل على الفاتورة</span>
                 </p>
-                <p className="text-lg text-gray-700">
-                  ✓ قم برفع نسخة من الفاتورة الموقعة (صورة أو PDF)
+                <p className="text-sm sm:text-lg text-gray-700 flex items-start gap-2">
+                  <span className="text-green-600 font-bold">✓</span>
+                  <span>قم برفع نسخة من الفاتورة الموقعة (صورة أو PDF)</span>
                 </p>
               </div>
 
-              <Upload
-                fileList={fileList}
-                onChange={handleFileUpload}
-                beforeUpload={() => false}
-                accept=".pdf,.jpg,.jpeg,.png"
-                maxCount={1}
-                listType="picture-card"
-              >
-                {fileList.length === 0 && (
-                  <div className="text-center p-4">
-                    <UploadOutlined className="text-4xl text-gray-400 mb-2" />
-                    <div className="text-base">اضغط لرفع الملف</div>
-                    <div className="text-sm text-gray-500 mt-2">
-                      PDF أو صورة (الحد الأقصى: 5MB)
+              <div className="flex justify-center">
+                <Upload
+                  fileList={fileList}
+                  onChange={handleFileUpload}
+                  beforeUpload={() => false}
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  maxCount={1}
+                  listType="picture-card"
+                  className="upload-list-inline"
+                >
+                  {fileList.length === 0 && (
+                    <div className="text-center p-4 sm:p-6 min-w-[200px]">
+                      <UploadOutlined className="text-4xl sm:text-5xl text-gray-400 mb-3" />
+                      <div className="text-base sm:text-lg font-semibold text-gray-700 mb-2">اضغط لرفع الملف</div>
+                      <div className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">
+                        PDF أو صورة
+                      </div>
+                      <div className="text-xs sm:text-sm text-gray-500">
+                        (الحد الأقصى: 5MB)
+                      </div>
                     </div>
-                  </div>
-                )}
-              </Upload>
+                  )}
+                </Upload>
+              </div>
 
               {fileList.length > 0 && (
-                <div className="text-center">
-                  <p className="text-green-600 font-semibold">
+                <div className="text-center bg-green-50 p-3 rounded-lg">
+                  <p className="text-sm sm:text-base text-green-600 font-semibold break-all">
                     ✓ تم اختيار الملف: {fileList[0].name}
                   </p>
                 </div>
@@ -335,7 +340,7 @@ const CompleteOrder: React.FC = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.4 }}
-          className="flex justify-center pt-4"
+          className="flex justify-center pt-2 sm:pt-4"
         >
           <Button
             type="primary"
@@ -344,7 +349,7 @@ const CompleteOrder: React.FC = () => {
             onClick={handleComplete}
             loading={uploading}
             disabled={fileList.length === 0}
-            className="bg-green-600 hover:bg-green-700 h-16 px-12 text-xl font-bold"
+            className="bg-green-600 hover:bg-green-700 w-full sm:w-auto h-14 sm:h-16 px-8 sm:px-12 text-lg sm:text-xl font-bold"
           >
             {uploading ? 'جاري الإتمام...' : 'تأكيد إتمام الطلب'}
           </Button>
@@ -358,7 +363,7 @@ const CompleteOrder: React.FC = () => {
         >
           <Card className="shadow-lg border-2 border-amber-200 bg-amber-50">
             <div className="text-center">
-              <p className="text-base text-gray-700">
+              <p className="text-xs sm:text-base text-gray-700 leading-relaxed">
                 ⚠️ بعد الضغط على "تأكيد إتمام الطلب" سيتم تحديث حالة الطلب إلى "مكتمل" ولن يمكن التراجع
               </p>
             </div>
