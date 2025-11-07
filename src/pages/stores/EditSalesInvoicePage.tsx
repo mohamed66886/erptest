@@ -3913,7 +3913,7 @@ const handlePrint = () => {
                           <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 10.95 5.16-1.21 9-5.4 9-10.95V7L12 2z"/>
                           <path d="M10 14l-3-3 1.41-1.41L10 11.17l5.59-5.58L17 7l-7 7z" fill="white"/>
                         </svg>
-                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - يرجى اختيار طريقة الدفع
+                        تم إضافة {items.length} صنف | الإجمالي: {totals.afterTax.toFixed(2)} ر.س - يرجى .
                       </span>
                     )}
                     {items.length > 0 && invoiceData.paymentMethod && (

@@ -340,6 +340,8 @@ const AddSalesInvoicePage: React.FC = () => {
   const [delegate, setDelegate] = useState<string>("");
   const [units, setUnits] = useState<string[]>(['قطعة', 'كيلو', 'لتر', 'متر', 'صندوق', 'عبوة']);
   const [companyData, setCompanyData] = useState<CompanyData>({});
+  const [itemStocks, setItemStocks] = useState<{[key: string]: number}>({});
+  const [loadingStocks, setLoadingStocks] = useState(false);
 
   // بيانات فاتورة المبيعات
   const [invoiceData, setInvoiceData] = useState<SalesInvoiceData>({
@@ -1753,6 +1755,121 @@ const AddSalesInvoicePage: React.FC = () => {
   // حالة تتبع الصف المعدل
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
 
+  // دالة لحساب المخزون المتاح لصنف في مخزن محدد
+  const calculateItemStock = useCallback(async (itemName: string, warehouseId: string): Promise<number> => {
+    if (!itemName || !warehouseId) return 0;
+    
+    try {
+      // جلب فواتير المشتريات (وارد)
+      const purchasesSnap = await getDocs(collection(db, "purchases_invoices"));
+      const allPurchases = purchasesSnap.docs.map(doc => doc.data());
+      
+      // جلب فواتير المبيعات (منصرف)
+      const salesSnap = await getDocs(collection(db, "sales_invoices"));
+      const allSales = salesSnap.docs.map(doc => doc.data());
+      
+      // جلب مرتجعات المبيعات (وارد)
+      const salesReturnsSnap = await getDocs(collection(db, "sales_returns"));
+      const allSalesReturns = salesReturnsSnap.docs.map(doc => doc.data());
+      
+      let totalIncoming = 0;
+      let totalOutgoing = 0;
+      
+      // حساب الوارد من المشتريات
+      allPurchases.forEach((purchase) => {
+        if (Array.isArray(purchase.items)) {
+          purchase.items.forEach((item) => {
+            if ((item.itemName === itemName) && 
+                ((purchase.warehouse === warehouseId) || (item.warehouseId === warehouseId))) {
+              totalIncoming += Number(item.quantity) || 0;
+            }
+          });
+        }
+      });
+      
+      // حساب الوارد من مرتجعات المبيعات
+      allSalesReturns.forEach((returnDoc) => {
+        if (Array.isArray(returnDoc.items)) {
+          returnDoc.items.forEach((item) => {
+            const returnWarehouse = item.warehouseId || item.warehouse || returnDoc.warehouse;
+            if ((item.itemName === itemName) && (returnWarehouse === warehouseId)) {
+              const returnedQty = typeof item.returnedQty !== 'undefined' ? Number(item.returnedQty) : 0;
+              totalIncoming += returnedQty;
+            }
+          });
+        }
+      });
+      
+      // حساب المنصرف من المبيعات
+      allSales.forEach((sale) => {
+        if (Array.isArray(sale.items)) {
+          sale.items.forEach((item) => {
+            if ((item.itemName === itemName) && 
+                ((sale.warehouse === warehouseId) || (item.warehouseId === warehouseId))) {
+              totalOutgoing += Number(item.quantity) || 0;
+            }
+          });
+        }
+      });
+      
+      return totalIncoming - totalOutgoing;
+    } catch (error) {
+      console.error('خطأ في حساب المخزون:', error);
+      return 0;
+    }
+  }, []);
+
+  // جلب أرصدة جميع الأصناف عند تغيير المخزن
+  useEffect(() => {
+    const fetchAllItemStocks = async () => {
+      if (!invoiceData.warehouse || items.length === 0) return;
+      
+      setLoadingStocks(true);
+      const stocks: {[key: string]: number} = {};
+      const secondLevelItems = items.filter(item => item.type === 'مستوى ثاني' && item.name?.trim());
+      
+      try {
+        // جلب الأرصدة لجميع الأصناف بشكل متوازي
+        await Promise.all(
+          secondLevelItems.map(async (item) => {
+            const stock = await calculateItemStock(item.name, invoiceData.warehouse);
+            stocks[item.name] = stock;
+          })
+        );
+        
+        setItemStocks(stocks);
+      } catch (error) {
+        console.error('خطأ في جلب الأرصدة:', error);
+      } finally {
+        setLoadingStocks(false);
+      }
+    };
+    
+    // تأخير قصير لتجنب التحميل المفرط
+    const timeoutId = setTimeout(() => {
+      fetchAllItemStocks();
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [invoiceData.warehouse, items, calculateItemStock]);
+
+  // تحديث الرصيد للصنف المحدد عند تغيير المخزن في وضع المخازن المتعددة
+  useEffect(() => {
+    const updateSingleItemStock = async () => {
+      if (warehouseType === 'مخازن متعددة' && itemWarehouse && itemName) {
+        const stock = await calculateItemStock(itemName, itemWarehouse);
+        setItemStocks(prev => ({
+          ...prev,
+          [itemName]: stock
+        }));
+      }
+    };
+    
+    updateSingleItemStock();
+  }, [itemWarehouse, itemName, warehouseType, calculateItemStock]);
+
+  // حالة تتبع الصف المعدل
+
   // جلب بيانات الأصناف
   useEffect(() => {
     const fetchItems = async () => {
@@ -2563,7 +2680,8 @@ const AddSalesInvoicePage: React.FC = () => {
                   showSearch
                   value={itemName}
                   onChange={handleItemSelect}
-                  placeholder="اختر الصنف"
+                  placeholder={loadingStocks ? "جاري تحميل الأرصدة..." : "اختر الصنف"}
+                  loading={loadingStocks}
              className={styles.noAntBorder}
                   style={{ ...largeControlStyle, width: '100%' }}
                   size="large"
@@ -2577,43 +2695,107 @@ const AddSalesInvoicePage: React.FC = () => {
                     const searchTerm = input.toLowerCase();
                     return itemName.includes(searchTerm) || itemCode.includes(searchTerm);
                   }}
-                  options={items
-                    .filter(item => item.type === 'مستوى ثاني' && item.name?.trim())
-                    .map(item => ({
-                      label: item.name,
-                      value: item.name,
-                      disabled: !!item.tempCodes
-                    }))}
+                  options={
+                    // إزالة التكرارات - عرض كل صنف مرة واحدة فقط
+                    items
+                      .filter(item => item.type === 'مستوى ثاني' && item.name?.trim())
+                      .reduce((uniqueItems: InventoryItem[], item) => {
+                        // التحقق من عدم وجود الصنف بالفعل في القائمة
+                        if (!uniqueItems.find(ui => ui.name === item.name)) {
+                          uniqueItems.push(item);
+                        }
+                        return uniqueItems;
+                      }, [])
+                      .map(item => ({
+                        label: item.name,
+                        value: item.name,
+                        disabled: !!item.tempCodes
+                      }))
+                  }
                   optionRender={(option) => {
                     const item = items
                       .filter(i => i.type === 'مستوى ثاني')
                       .find(i => i.name === option.value);
+                    
+                    // حساب الرصيد المتاح في المخزن المحدد
+                    const currentWarehouse = warehouseType === 'مخازن متعددة' ? itemWarehouse : invoiceData.warehouse;
+                    const stockKey = item?.name || '';
+                    const availableStock = currentWarehouse && stockKey ? (itemStocks[stockKey] ?? null) : null;
+                    
+                    // تحديد حالة الصنف
+                    let statusText = '';
+                    let statusColor = '';
+                    
+                    if (item?.tempCodes) {
+                      statusText = 'موقوف مؤقتاً';
+                      statusColor = '#ff4d4f';
+                    } else if (availableStock !== null) {
+                      if (availableStock > 10) {
+                        statusText = 'متوفر';
+                        statusColor = '#52c41a';
+                      } else if (availableStock > 0) {
+                        statusText = 'كمية قليلة';
+                        statusColor = '#faad14';
+                      } else if (availableStock === 0) {
+                        statusText = 'نفذ من المخزون';
+                        statusColor = '#ff4d4f';
+                      } else {
+                        statusText = 'رصيد سالب';
+                        statusColor = '#cf1322';
+                      }
+                    } else if (!currentWarehouse) {
+                      statusText = 'اختر المخزن أولاً';
+                      statusColor = '#999';
+                    }
+                    
                     return (
                       <div style={{ 
                         display: 'flex', 
                         justifyContent: 'space-between', 
                         alignItems: 'center',
-                        opacity: item?.tempCodes ? 0.5 : 1
+                        opacity: item?.tempCodes ? 0.5 : 1,
+                        padding: '4px 0'
                       }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                          <span style={{ fontWeight: 600 }}>
-                            {item?.name}
-                            {item?.tempCodes && (
-                              <span style={{ color: '#ff4d4f', fontSize: '12px', marginRight: 8 }}>
-                                (إيقاف مؤقت)
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                            <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                              {item?.name}
+                            </span>
+                            {statusText && (
+                              <span style={{ 
+                                fontSize: '11px', 
+                                color: statusColor,
+                                fontWeight: 600,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                backgroundColor: `${statusColor}15`,
+                                border: `1px solid ${statusColor}40`
+                              }}>
+                                {statusText}
                               </span>
                             )}
-                          </span>
-                          {item?.itemCode && (
-                            <span style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
-                              كود: {item.itemCode}
-                            </span>
-                          )}
-                          {item?.salePrice && (
-                            <span style={{ fontSize: '12px', color: '#52c41a' }}>
-                              السعر: {item.salePrice} ر.س
-                            </span>
-                          )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                            {item?.itemCode && (
+                              <span style={{ fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                                كود: {item.itemCode}
+                              </span>
+                            )}
+                            {item?.salePrice && (
+                              <span style={{ fontSize: '12px', color: '#1890ff', fontWeight: 500 }}>
+                                السعر: {item.salePrice} ر.س
+                              </span>
+                            )}
+                            {availableStock !== null && currentWarehouse && (
+                              <span style={{ 
+                                fontSize: '12px', 
+                                color: availableStock > 0 ? '#52c41a' : '#ff4d4f',
+                                fontWeight: 600
+                              }}>
+                                الرصيد: {availableStock.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

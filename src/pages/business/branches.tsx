@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Edit, Trash2, Plus, Building2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Edit, Trash2, Plus, Building2, ChevronDown, ChevronUp, Upload, Download } from 'lucide-react';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Breadcrumb from '@/components/Breadcrumb';
+import * as XLSX from 'xlsx';
+import { message } from 'antd';
 
 interface Branch {
   id?: string;
@@ -36,6 +38,8 @@ const Branches: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
   const [expandedBranch, setExpandedBranch] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchBranches();
@@ -112,6 +116,197 @@ const Branches: React.FC = () => {
     setExpandedBranch(expandedBranch === id ? null : id);
   };
 
+  // دالة تصدير الفروع إلى Excel
+  const handleExportToExcel = () => {
+    try {
+      setExporting(true);
+      
+      // تحضير البيانات للتصدير (رقم الفرع واسم الفرع فقط)
+      const exportData = branches.map(branch => ({
+        'رقم الفرع': branch.code,
+        'اسم الفرع': branch.name
+      }));
+
+      // إنشاء ورقة عمل
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      
+      // تعيين عرض الأعمدة
+      const columnWidths = [
+        { wch: 15 }, // رقم الفرع
+        { wch: 30 }  // اسم الفرع
+      ];
+      worksheet['!cols'] = columnWidths;
+
+      // إنشاء كتاب عمل
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'الفروع');
+
+      // تنزيل الملف
+      XLSX.writeFile(workbook, `الفروع_${new Date().toISOString().split('T')[0]}.xlsx`);
+      
+      message.success('تم تصدير الفروع بنجاح');
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      message.error('حدث خطأ أثناء تصدير الملف');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // دالة استيراد الفروع من Excel
+  const handleImportFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // التحقق من نوع الملف
+    const validTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ];
+    
+    if (!validTypes.includes(file.type)) {
+      message.error('يرجى اختيار ملف Excel صحيح (.xlsx أو .xls)');
+      e.target.value = '';
+      return;
+    }
+
+    setImporting(true);
+    const reader = new FileReader();
+
+    reader.onload = async (event) => {
+      try {
+        const data = event.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[];
+
+        if (jsonData.length === 0) {
+          message.warning('الملف فارغ، لا توجد بيانات للاستيراد');
+          setImporting(false);
+          e.target.value = '';
+          return;
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+        const errors: string[] = [];
+
+        // معالجة كل صف
+        for (let i = 0; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          
+          // استخراج البيانات من الأعمدة (رقم الفرع واسم الفرع فقط)
+          const branchCode = row['رقم الفرع'] || row['code'] || row['Code'];
+          const branchName = row['اسم الفرع'] || row['name'] || row['Name'];
+
+          // التحقق من البيانات الأساسية
+          if (!branchCode || !branchName) {
+            errors.push(`الصف ${i + 2}: رقم الفرع واسم الفرع مطلوبان`);
+            errorCount++;
+            continue;
+          }
+
+          // التحقق من عدم تكرار رقم الفرع أو اسم الفرع
+          const existingBranch = branches.find(b => 
+            b.code === String(branchCode) || b.name.toLowerCase() === String(branchName).toLowerCase()
+          );
+
+          if (existingBranch) {
+            errors.push(`الصف ${i + 2}: الفرع "${branchName}" أو الرقم "${branchCode}" موجود بالفعل`);
+            errorCount++;
+            continue;
+          }
+
+          try {
+            // إضافة الفرع إلى قاعدة البيانات (رقم الفرع واسم الفرع فقط)
+            await addDoc(collection(db, 'branches'), {
+              code: String(branchCode),
+              name: String(branchName),
+              address: '',
+              taxFile: '',
+              commercialReg: '',
+              postalCode: '',
+              poBox: '',
+              manager: ''
+            });
+            
+            successCount++;
+          } catch (error) {
+            console.error(`Error importing branch at row ${i + 2}:`, error);
+            errors.push(`الصف ${i + 2}: حدث خطأ أثناء الحفظ`);
+            errorCount++;
+          }
+        }
+
+        // عرض النتائج
+        if (successCount > 0) {
+          message.success(`تم استيراد ${successCount} فرع بنجاح`);
+          fetchBranches(); // إعادة تحميل الفروع
+        }
+        
+        if (errorCount > 0) {
+          message.warning(`فشل استيراد ${errorCount} فرع. ${errors.slice(0, 3).join(', ')}`);
+          console.log('Import errors:', errors);
+        }
+
+      } catch (error) {
+        console.error('Error processing Excel file:', error);
+        message.error('حدث خطأ أثناء قراءة الملف');
+      } finally {
+        setImporting(false);
+        e.target.value = ''; // إعادة تعيين input
+      }
+    };
+
+    reader.onerror = () => {
+      message.error('حدث خطأ أثناء قراءة الملف');
+      setImporting(false);
+      e.target.value = '';
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  // دالة تنزيل نموذج Excel
+  const handleDownloadTemplate = () => {
+    try {
+      // إنشاء نموذج بصف واحد كمثال (رقم الفرع واسم الفرع فقط)
+      const templateData = [
+        {
+          'رقم الفرع': '1',
+          'اسم الفرع': 'الفرع الرئيسي'
+        },
+        {
+          'رقم الفرع': '2',
+          'اسم الفرع': 'فرع القاهرة'
+        },
+        {
+          'رقم الفرع': '3',
+          'اسم الفرع': 'فرع الإسكندرية'
+        }
+      ];
+
+      const worksheet = XLSX.utils.json_to_sheet(templateData);
+      
+      // تعيين عرض الأعمدة
+      const columnWidths = [
+        { wch: 15 }, // رقم الفرع
+        { wch: 30 }  // اسم الفرع
+      ];
+      worksheet['!cols'] = columnWidths;
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'نموذج الفروع');
+
+      XLSX.writeFile(workbook, 'نموذج_استيراد_الفروع.xlsx');
+      message.success('تم تنزيل النموذج بنجاح');
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      message.error('حدث خطأ أثناء تنزيل النموذج');
+    }
+  };
+
   return (
     <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
       {/* Header Section */}
@@ -131,7 +326,48 @@ const Branches: React.FC = () => {
       />
 
       {/* Add Branch Button - Mobile & Desktop */}
-      <div className="flex justify-end">
+      <div className="flex justify-between items-center gap-2 flex-wrap">
+        {/* Import/Export Buttons */}
+        <div className="flex gap-2">
+          {/* استيراد من Excel */}
+          <label className="cursor-pointer">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleImportFromExcel}
+              className="hidden"
+              disabled={importing}
+            />
+            <div className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 px-4 py-2 rounded-md shadow-md transition-all duration-300 hover:shadow-lg">
+              <Upload className="w-4 h-4" />
+              <span className="hidden md:inline">{importing ? 'جاري الاستيراد...' : 'استيراد من Excel'}</span>
+              <span className="md:hidden">{importing ? '...' : 'استيراد'}</span>
+            </div>
+          </label>
+
+          {/* تنزيل نموذج */}
+          <Button
+            onClick={handleDownloadTemplate}
+            className="bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-2 px-4 py-2 rounded-md shadow-md transition-all duration-300 hover:shadow-lg"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden md:inline">تنزيل نموذج</span>
+            <span className="md:hidden">نموذج</span>
+          </Button>
+
+          {/* تصدير إلى Excel */}
+          <Button
+            onClick={handleExportToExcel}
+            disabled={exporting || branches.length === 0}
+            className="bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-2 px-4 py-2 rounded-md shadow-md transition-all duration-300 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden md:inline">{exporting ? 'جاري التصدير...' : 'تصدير إلى Excel'}</span>
+            <span className="md:hidden">{exporting ? '...' : 'تصدير'}</span>
+          </Button>
+        </div>
+
+        {/* Add Branch Button */}
         <Button
           onClick={() => {
             const maxCode = branches.length > 0 ? Math.max(...branches.map(b => parseInt(b.code, 10) || 0)) : 0;
@@ -153,6 +389,7 @@ const Branches: React.FC = () => {
         >
           <Plus className="w-4 h-4" />
           <span className="hidden md:inline">إضافة فرع</span>
+          <span className="md:inline">إضافة</span>
         </Button>
       </div>
 

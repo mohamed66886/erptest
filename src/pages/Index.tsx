@@ -58,6 +58,8 @@ import {
   WarehouseManagement,
 } from "../pages/management";
 
+import OutputsManagement from "./management/OutputsManagement";
+
 import { Player } from '@lottiefiles/react-lottie-player';
 import IssueWarehousePage from "./warehouses/issue-warehouse";
 import ListWarehouse from "./warehouses/ListWarehouse";
@@ -100,6 +102,15 @@ import EditDiscountOffer from "./management/discounts-offers/edit";
 import AddSalesAccounts from "./management/AddSalesAccounts";
 import TaxSettings from "./management/TaxSettings";
 import AddTaxSetting from "./management/AddTaxSetting";
+import Governorates from "./management/Governorates";
+import Regions from "./management/regions";
+import Districts from "./management/districts";
+import Drivers from "./management/drivers";
+import DeliveryOrders from "./management/orders";
+import AddDeliveryOrder from "./management/add-delivery-order";
+import BranchStatus from "./management/branch-status";
+import DeliveryWarehouses from "./management/delivery-warehouses";
+import LinkBranches from "./management/link-branches";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -257,6 +268,7 @@ const Index = () => {
               <Route path="/management/warehouse" element={<WarehouseManagement />} />
               <Route path="/management/projects" element={<ProjectManagement />} />
               <Route path="/management/sales" element={<SalesManagement />} />
+              <Route path="/management/outputs" element={<OutputsManagement />} />
             <Route path="/management/special-price-packages" element={<SpecialPricePackages />} />
             <Route path="/management/sales/add-special-price-package" element={<AddSpecialPricePackage />} />
             <Route path="/management/sales/edit-special-price-package/:id" element={<EditSpecialPricePackage />} />
@@ -270,6 +282,15 @@ const Index = () => {
               <Route path="/management/add-sales-accounts" element={<AddSalesAccounts />} />
               <Route path="/management/tax-settings" element={<TaxSettings />} />
               <Route path="/management/add-tax-setting" element={<AddTaxSetting />} />
+              <Route path="/management/governorates" element={<Governorates />} />
+              <Route path="/management/regions" element={<Regions />} />
+              <Route path="/management/districts" element={<Districts />} />
+              <Route path="/management/drivers" element={<Drivers />} />
+              <Route path="/management/delivery-orders" element={<DeliveryOrders />} />
+              <Route path="/management/delivery-orders/new" element={<AddDeliveryOrder />} />
+              <Route path="/management/branch-status" element={<BranchStatus />} />
+              <Route path="/management/delivery-warehouses" element={<DeliveryWarehouses />} />
+              <Route path="/management/link-branches" element={<LinkBranches />} />
               
               {/* Financial Management Sub-Routes */}
               <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
