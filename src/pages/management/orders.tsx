@@ -698,9 +698,12 @@ const DeliveryOrders: React.FC = () => {
 
   // دالة الحذف
   const handleDelete = async (orderId: string) => {
+    // البحث عن الطلب للحصول على رابط الملف
+    const orderToDelete = deliveryOrders.find(order => order.id === orderId);
+    
     Modal.confirm({
       title: 'تأكيد الحذف',
-      content: 'هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع عن هذا الإجراء.',
+      content: 'هل أنت متأكد من حذف هذا الطلب؟ سيتم حذف الملف المرفق أيضاً. لا يمكن التراجع عن هذا الإجراء.',
       okText: 'نعم، احذف',
       cancelText: 'إلغاء',
       okButtonProps: { danger: true },
@@ -709,8 +712,33 @@ const DeliveryOrders: React.FC = () => {
           const { deleteDoc, doc } = await import('firebase/firestore');
           const { db } = await import('@/lib/firebase');
           
+          // حذف الملف من Storage إذا كان موجوداً
+          if (orderToDelete?.fileUrl) {
+            try {
+              const { ref, deleteObject } = await import('firebase/storage');
+              const { storage } = await import('@/lib/firebase');
+              
+              // استخراج مسار الملف من URL
+              const fileUrl = orderToDelete.fileUrl;
+              const decodedUrl = decodeURIComponent(fileUrl);
+              const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
+              
+              if (pathMatch && pathMatch[1]) {
+                const filePath = pathMatch[1];
+                const fileRef = ref(storage, filePath);
+                await deleteObject(fileRef);
+                console.log('تم حذف الملف من Storage بنجاح');
+              }
+            } catch (storageError) {
+              console.error('Error deleting file from storage:', storageError);
+              // نكمل عملية الحذف حتى لو فشل حذف الملف
+              message.warning('تم حذف الطلب ولكن حدث خطأ في حذف الملف المرفق');
+            }
+          }
+          
+          // حذف السجل من Firestore
           await deleteDoc(doc(db, 'delivery_orders', orderId));
-          message.success('تم حذف الطلب بنجاح');
+          message.success('تم حذف الطلب والملف المرفق بنجاح');
           
           // تحديث القائمة
           fetchDeliveryOrders();
@@ -2898,7 +2926,7 @@ const handlePrintTable = () => {
               },
             },
             {
-              title: 'ر.س',
+              title: 'حالة الفرع ',
               dataIndex: 'amount',
               key: 'amount',
               minWidth: 100,

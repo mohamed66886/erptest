@@ -186,7 +186,7 @@ const ArchivedOrders: React.FC = () => {
              تحذير: هذا الإجراء لا يمكن التراجع عنه!
           </p>
           <p>
-            سيتم حذف <span className="font-bold">{selectedOrders.length}</span> طلب نهائياً من قاعدة البيانات.
+            سيتم حذف <span className="font-bold">{selectedOrders.length}</span> طلب نهائياً من قاعدة البيانات مع جميع الملفات المرفقة.
           </p>
           <p className="mt-2">هل أنت متأكد من المتابعة؟</p>
         </div>
@@ -197,14 +197,70 @@ const ArchivedOrders: React.FC = () => {
       onOk: async () => {
         setDeleting(true);
         try {
-          // حذف الطلبات المحددة نهائياً من قاعدة البيانات
-          const deletePromises = selectedOrders.map(orderId => 
-            deleteDoc(doc(db, 'delivery_orders', orderId))
-          );
+          const { ref, deleteObject } = await import('firebase/storage');
+          const { storage } = await import('@/lib/firebase');
+
+          let deletedFilesCount = 0;
+          let failedFilesCount = 0;
+
+          // حذف الملفات من Storage أولاً ثم حذف السجلات
+          const deletePromises = selectedOrders.map(async (orderId) => {
+            const order = orders.find(o => o.id === orderId);
+            
+            // حذف الملف الموقع إذا كان موجوداً
+            if (order?.signedFileUrl) {
+              try {
+                const decodedUrl = decodeURIComponent(order.signedFileUrl);
+                const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
+                
+                if (pathMatch && pathMatch[1]) {
+                  const filePath = pathMatch[1];
+                  const fileRef = ref(storage, filePath);
+                  await deleteObject(fileRef);
+                  deletedFilesCount++;
+                  console.log('تم حذف الملف الموقع من Storage:', filePath);
+                }
+              } catch (storageError) {
+                console.error('خطأ في حذف الملف الموقع:', storageError);
+                failedFilesCount++;
+              }
+            }
+
+            // حذف الملف المرفق إذا كان موجوداً
+            if (order?.fileUrl) {
+              try {
+                const decodedUrl = decodeURIComponent(order.fileUrl);
+                const pathMatch = decodedUrl.match(/\/o\/(.+?)\?/);
+                
+                if (pathMatch && pathMatch[1]) {
+                  const filePath = pathMatch[1];
+                  const fileRef = ref(storage, filePath);
+                  await deleteObject(fileRef);
+                  deletedFilesCount++;
+                  console.log('تم حذف الملف المرفق من Storage:', filePath);
+                }
+              } catch (storageError) {
+                console.error('خطأ في حذف الملف المرفق:', storageError);
+                failedFilesCount++;
+              }
+            }
+
+            // حذف السجل من Firestore
+            return deleteDoc(doc(db, 'delivery_orders', orderId));
+          });
 
           await Promise.all(deletePromises);
 
-          message.success(`تم حذف ${selectedOrders.length} طلب نهائياً من قاعدة البيانات`);
+          // رسالة نجاح مفصلة
+          let successMessage = `تم حذف ${selectedOrders.length} طلب نهائياً من قاعدة البيانات`;
+          if (deletedFilesCount > 0) {
+            successMessage += ` وحذف ${deletedFilesCount} ملف من التخزين`;
+          }
+          if (failedFilesCount > 0) {
+            successMessage += ` (فشل حذف ${failedFilesCount} ملف)`;
+          }
+          
+          message.success(successMessage);
           
           // إعادة تحميل البيانات
           setSelectedOrders([]);
