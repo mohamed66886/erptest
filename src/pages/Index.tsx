@@ -119,6 +119,8 @@ import LinkBranches from "./management/link-branches";
 import WarehouseNotifications from "./management/warehouse-notifications";
 import DriverNotifications from "./management/driver-notifications";
 import ComprehensiveReports from "./reports/ComprehensiveReports";
+import ProtectedRoute from "@/components/ProtectedRoute";
+
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -141,6 +143,7 @@ const Index = () => {
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [companyLoading, setCompanyLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
 
   // Check for logged in user from localStorage
   useEffect(() => {
@@ -154,6 +157,7 @@ const Index = () => {
         localStorage.removeItem('currentUser');
       }
     }
+    setUserLoading(false);
   }, []);
 
   useEffect(() => {
@@ -180,6 +184,8 @@ const Index = () => {
       try {
         const parsedUser = JSON.parse(storedUser);
         setCurrentUser(parsedUser);
+        // إطلاق حدث لإعلام باقي المكونات
+        window.dispatchEvent(new Event('localStorageUpdated'));
       } catch (error) {
         console.error('Error parsing stored user:', error);
       }
@@ -211,7 +217,8 @@ const Index = () => {
     setCompanyData(null);
   };
 
-  if (loading || companyLoading) {
+  // Show loading only if we're still checking for user or loading company data
+  if (userLoading || (companyLoading && !currentUser && !user)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white">
         <div className="flex flex-col items-center space-y-6">
@@ -309,7 +316,11 @@ const Index = () => {
               <Route path="/reports/sales-representative-sales" element={<SalesRepresentativeSales />} />
               <Route path="/reports/sold-items-by-category" element={<SoldItemsByCategory />} />
               <Route path="/reports/sold-items-by-type" element={<SoldItemsByType />} />
-              <Route path="/reports/comprehensive-reports" element={<ComprehensiveReports />} />
+              <Route path="/reports/comprehensive-reports" element={
+                <ProtectedRoute requiredPermission="comprehensive-reports">
+                  <ComprehensiveReports />
+                </ProtectedRoute>
+              } />
               
               {/* Management Routes */}
               <Route path="/management/financial" element={<FinancialManagement />} />
@@ -318,8 +329,16 @@ const Index = () => {
               <Route path="/management/projects" element={<ProjectManagement />} />
               <Route path="/management/sales" element={<SalesManagement />} />
               <Route path="/management/outputs" element={<OutputsManagement />} />
-              <Route path="/management/delivery-settings" element={<DeliverySettings />} />
-              <Route path="/management/users" element={<UsersManagement />} />
+              <Route path="/management/delivery-settings" element={
+                <ProtectedRoute requiredPermission="delivery-settings">
+                  <DeliverySettings />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/users" element={
+                <ProtectedRoute requiredPermission="users">
+                  <UsersManagement />
+                </ProtectedRoute>
+              } />
             <Route path="/management/special-price-packages" element={<SpecialPricePackages />} />
             <Route path="/management/sales/add-special-price-package" element={<AddSpecialPricePackage />} />
             <Route path="/management/sales/edit-special-price-package/:id" element={<EditSpecialPricePackage />} />
@@ -333,20 +352,70 @@ const Index = () => {
               <Route path="/management/add-sales-accounts" element={<AddSalesAccounts />} />
               <Route path="/management/tax-settings" element={<TaxSettings />} />
               <Route path="/management/add-tax-setting" element={<AddTaxSetting />} />
-              <Route path="/management/governorates" element={<Governorates />} />
-              <Route path="/management/regions" element={<Regions />} />
-              <Route path="/management/districts" element={<Districts />} />
-              <Route path="/management/drivers" element={<Drivers />} />
-              <Route path="/management/delivery-orders" element={<DeliveryOrders />} />
-              <Route path="/management/delivery-orders/new" element={<AddDeliveryOrder />} />
-              <Route path="/management/branch-status" element={<BranchStatus />} />
-              <Route path="/management/delivery-warehouses" element={<DeliveryWarehouses />} />
-              <Route path="/management/link-branches" element={<LinkBranches />} />
-              <Route path="/management/confirm-orders" element={<ConfirmOrders />} />
+              
+              {/* صفحات إدارة المخرجات المحمية بالصلاحيات */}
+              <Route path="/management/governorates" element={
+                <ProtectedRoute requiredPermission="governorates">
+                  <Governorates />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/regions" element={
+                <ProtectedRoute requiredPermission="regions">
+                  <Regions />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/districts" element={
+                <ProtectedRoute requiredPermission="districts">
+                  <Districts />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/drivers" element={
+                <ProtectedRoute requiredPermission="drivers">
+                  <Drivers />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/delivery-orders" element={
+                <ProtectedRoute requiredPermission="delivery-orders">
+                  <DeliveryOrders />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/delivery-orders/new" element={
+                <ProtectedRoute requiredPermission="delivery-orders">
+                  <AddDeliveryOrder />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/branch-status" element={
+                <ProtectedRoute requiredPermission="branch-status">
+                  <BranchStatus />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/delivery-warehouses" element={
+                <ProtectedRoute requiredPermission="delivery-warehouses">
+                  <DeliveryWarehouses />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/link-branches" element={
+                <ProtectedRoute requiredPermission="link-branches">
+                  <LinkBranches />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/confirm-orders" element={
+                <ProtectedRoute requiredPermission="confirm-orders">
+                  <ConfirmOrders />
+                </ProtectedRoute>
+              } />
               <Route path="/management/warehouse-notifications" element={<WarehouseNotifications />} />
               <Route path="/management/driver-notifications" element={<DriverNotifications />} />
-              <Route path="/management/completed-orders" element={<CompletedOrders />} />
-              <Route path="/management/archived-orders" element={<ArchivedOrders />} />
+              <Route path="/management/completed-orders" element={
+                <ProtectedRoute requiredPermission="completed-orders">
+                  <CompletedOrders />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/archived-orders" element={
+                <ProtectedRoute requiredPermission="archived-orders">
+                  <ArchivedOrders />
+                </ProtectedRoute>
+              } />
               
               {/* Financial Management Sub-Routes */}
               <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />

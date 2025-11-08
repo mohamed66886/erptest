@@ -50,6 +50,51 @@ const Header = ({
   const isDesktop = !useIsMobile();
   const [scrolled, setScrolled] = useState(false);
   
+  // بيانات المستخدم من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchName?: string;
+    warehouseName?: string;
+    permissions?: string[];
+  } | null>(null);
+  
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error);
+      }
+    }
+    
+    // الاستماع لتحديثات localStorage
+    const handleStorageChange = () => {
+      const storedUser = localStorage.getItem('currentUser');
+      if (storedUser) {
+        try {
+          setCurrentUser(JSON.parse(storedUser));
+        } catch (error) {
+          console.error('Error parsing user:', error);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+    };
+    
+    window.addEventListener('localStorageUpdated', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('localStorageUpdated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+  
   // استخدام السياق للسنة المالية
   const { 
     currentFinancialYear, 
@@ -240,6 +285,30 @@ const Header = ({
     return `${persianFormatted} ﷼`;
   };
 
+  // دالة لعرض المنصب مع اسم الفرع أو المستودع
+  const getPositionDisplay = () => {
+    if (!currentUser) return "موظف";
+    
+    const { fullName, position, branchName, warehouseName } = currentUser;
+    
+    let displayText = fullName || "";
+    
+    if (position) {
+      displayText += displayText ? ` - ${position}` : position;
+      
+      // إضافة اسم الفرع إذا كان مدير فرع
+      if (position === 'مدير فرع' && branchName) {
+        displayText += ` (${branchName})`;
+      }
+      // إضافة اسم المستودع إذا كان مدير مستودع
+      else if (position === 'مدير مستودع' && warehouseName) {
+        displayText += ` (${warehouseName})`;
+      }
+    }
+    
+    return displayText || "موظف";
+  };
+
   return (
     <>
       <header
@@ -321,9 +390,9 @@ const Header = ({
                         className="h-10 w-10 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
                       >
                         <SafeAvatar 
-                          src={userData?.avatar} 
-                          alt="صورة المستخدم"
-                          name={userData?.name}
+                          src="" 
+                          alt={currentUser?.username || "مستخدم"}
+                          name={currentUser?.username || "مستخدم"}
                         />
                       </Button>
                     </DropdownMenuTrigger>
@@ -331,10 +400,10 @@ const Header = ({
                       <DropdownMenuLabel className="font-normal">
                         <div className="flex flex-col space-y-1">
                           <p className="text-sm font-medium leading-none">
-                            {userData?.name || "مستخدم"}
+                            {currentUser?.username || "مستخدم"}
                           </p>
                           <p className="text-xs leading-none text-gray-500 dark:text-gray-400">
-                            {userData?.email || "بريد إلكتروني"}
+                            {getPositionDisplay()}
                           </p>
                         </div>
                       </DropdownMenuLabel>
@@ -483,9 +552,7 @@ const Header = ({
                             value={fiscalYear}
                             onChange={handleFiscalYearChange}
                             style={{ width: 100, background: 'transparent' }}
-                            classNames={{
-                              popup: 'text-right'
-                            }}
+                            popupClassName="text-right"
                             size="small"
                             variant="borderless"
                             placeholder="السنة المالية"
@@ -538,20 +605,20 @@ const Header = ({
                   <div className="flex items-center gap-4 mx-3">
                   <div className="flex flex-col items-end">
                     <span className="font-normal text-gray-900 dark:text-white flex items-center gap-1">
-                      {userData?.name || "مستخدم"}
+                      {currentUser?.username || "مستخدم"}
                       <BiSolidBadgeCheck className="text-blue-500" />
                     </span>
                     <span className="text-xs text-blue-500 dark:text-blue-300 mt-0">
-                      {userData?.email || "بريد إلكتروني"}
+                      {getPositionDisplay()}
                     </span>
                   </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <div className="flex items-center cursor-pointer relative">
                           <SafeAvatar 
-                            src={userData?.avatar} 
-                            alt="صورة المستخدم"
-                            name={userData?.name}
+                            src="" 
+                            alt={currentUser?.username || "مستخدم"}
+                            name={currentUser?.username || "مستخدم"}
                           />
                           {/* Badge for notifications */}
                           {unreadNotifications > 0 && (

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useFinancialYear } from "@/hooks/useFinancialYear";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Select as AntdSelect } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Breadcrumb from "@/components/Breadcrumb";
 import { Helmet } from "react-helmet";
+import { Tooltip } from 'antd';
 
 import { 
   Settings, 
@@ -45,7 +47,15 @@ import {
 const OutputsManagement: React.FC = () => {
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const { hasPermission, currentUser } = usePermissions();
   const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  // عرض بيانات المستخدم الحالي للتأكد من الصلاحيات
+  useEffect(() => {
+    console.log('👤 Current User in OutputsManagement:', currentUser);
+    console.log('📋 User Permissions:', currentUser?.permissions);
+    console.log('💼 User Position:', currentUser?.position);
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentFinancialYear) {
@@ -68,6 +78,7 @@ const OutputsManagement: React.FC = () => {
       description: "إضافة وتعديل المحافظات",
       icon: <Map className="h-6 w-6" />,
       color: "bg-blue-500",
+      permissionId: "governorates",
       onClick: () => {
         navigate('/management/governorates');
         window.scrollTo(0, 0);
@@ -78,6 +89,7 @@ const OutputsManagement: React.FC = () => {
       description: "إضافة وتعديل المناطق",
       icon: <MapPin className="h-6 w-6" />,
       color: "bg-green-500",
+      permissionId: "regions",
       onClick: () => {
         navigate('/management/regions');
         window.scrollTo(0, 0);
@@ -88,6 +100,7 @@ const OutputsManagement: React.FC = () => {
       description: "إضافة وتعديل الأحياء",
       icon: <MapPinned className="h-6 w-6" />,
       color: "bg-purple-500",
+      permissionId: "districts",
       onClick: () => {
         navigate('/management/districts');
         window.scrollTo(0, 0);
@@ -99,6 +112,7 @@ const OutputsManagement: React.FC = () => {
       description: "إضافة وتعديل بيانات السائقين",
       icon: <Truck className="h-6 w-6" />,
       color: "bg-cyan-500",
+      permissionId: "drivers",
       onClick: () => {
         navigate('/management/drivers');
         window.scrollTo(0, 0);
@@ -109,6 +123,7 @@ const OutputsManagement: React.FC = () => {
       description: "متابعة وإدارة حالة الفروع",
       icon: <Store className="h-6 w-6" />,
       color: "bg-orange-500",
+      permissionId: "branch-status",
       onClick: () => {
         navigate('/management/branch-status');
         window.scrollTo(0, 0);
@@ -119,6 +134,7 @@ const OutputsManagement: React.FC = () => {
       description: "إدارة مستودعات التوصيل",
       icon: <Warehouse className="h-6 w-6" />,
       color: "bg-indigo-500",
+      permissionId: "delivery-warehouses",
       onClick: () => {
         navigate('/management/delivery-warehouses');
         window.scrollTo(0, 0);
@@ -129,6 +145,7 @@ const OutputsManagement: React.FC = () => {
       description: "ربط الفروع بالمناطق والأحياء",
       icon: <Building2 className="h-6 w-6" />,
       color: "bg-pink-500",
+      permissionId: "link-branches",
       onClick: () => {
         navigate('/management/link-branches');
         window.scrollTo(0, 0);
@@ -139,6 +156,7 @@ const OutputsManagement: React.FC = () => {
       description: "إدارة إعدادات وخيارات التوصيل",
       icon: <Settings className="h-6 w-6" />,
       color: "bg-teal-500",
+      permissionId: "delivery-settings",
       onClick: () => {
         navigate('/management/delivery-settings');
         window.scrollTo(0, 0);
@@ -149,6 +167,7 @@ const OutputsManagement: React.FC = () => {
       description: "إدارة حسابات وصلاحيات المستخدمين",
       icon: <UserCog className="h-6 w-6" />,
       color: "bg-violet-500",
+      permissionId: "users",
       onClick: () => {
         navigate('/management/users');
         window.scrollTo(0, 0);
@@ -183,6 +202,7 @@ const OutputsManagement: React.FC = () => {
       description: "عرض جميع الطلبات",
       icon: <Package className="h-5 w-5 sm:h-6 sm:w-6" />,
       color: "bg-purple-600",
+      permissionId: "delivery-orders",
       onClick: () => {
         navigate('/management/delivery-orders');
         window.scrollTo(0, 0);
@@ -193,6 +213,7 @@ const OutputsManagement: React.FC = () => {
       description: "تأكيد ومراجعة الطلبات",
       icon: <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />,
       color: "bg-emerald-600",
+      permissionId: "confirm-orders",
       onClick: () => {
         navigate('/management/confirm-orders');
         window.scrollTo(0, 0);
@@ -203,6 +224,7 @@ const OutputsManagement: React.FC = () => {
       description: "عرض الطلبات المكتملة",
       icon: <PackageCheck className="h-5 w-5 sm:h-6 sm:w-6" />,
       color: "bg-teal-600",
+      permissionId: "completed-orders",
       onClick: () => {
         navigate('/management/completed-orders');
         window.scrollTo(0, 0);
@@ -213,6 +235,7 @@ const OutputsManagement: React.FC = () => {
       description: "أرشيف الطلبات القديمة",
       icon: <Archive className="h-5 w-5 sm:h-6 sm:w-6" />,
       color: "bg-gray-600",
+      permissionId: "archived-orders",
       onClick: () => {
         navigate('/management/archived-orders');
         window.scrollTo(0, 0);
@@ -246,6 +269,7 @@ const OutputsManagement: React.FC = () => {
       description: "تقارير شاملة عن جميع العمليات",
       icon: <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6" />,
       color: "bg-blue-700",
+      permissionId: "comprehensive-reports",
       onClick: () => {
         navigate('/reports/comprehensive-reports');
         window.scrollTo(0, 0);
@@ -484,19 +508,29 @@ const OutputsManagement: React.FC = () => {
     description: string;
     icon: React.ReactNode;
     color: string;
+    permissionId?: string;
     onClick?: () => void;
   }
 
   const CardComponent = ({ card, index }: { card: CardType, index: number }) => {
-    return (
+    // التحقق من الصلاحية: إذا كان هناك permissionId، يجب أن يكون لديه الصلاحية
+    const isAllowed = card.permissionId ? hasPermission(card.permissionId) : true;
+    
+    console.log(`🎴 Card: ${card.title}, permissionId: ${card.permissionId}, isAllowed: ${isAllowed}`);
+    
+    const cardContent = (
       <Card 
         key={index}
-        className="group hover:shadow-lg transition-all duration-300 cursor-pointer hover:scale-105"
-        onClick={card.onClick}
+        className={`group transition-all duration-300 ${
+          isAllowed 
+            ? 'hover:shadow-lg cursor-pointer hover:scale-105' 
+            : 'opacity-50 cursor-not-allowed bg-gray-100'
+        }`}
+        onClick={isAllowed ? card.onClick : undefined}
       >
         <CardContent className="p-3 sm:p-4">
           <div className="flex items-center space-x-2 space-x-reverse">
-            <div className={`p-1 sm:p-2 rounded-lg ${card.color} text-white flex items-center justify-center`}>
+            <div className={`p-1 sm:p-2 rounded-lg ${card.color} text-white flex items-center justify-center ${!isAllowed && 'grayscale'}`}>
               {card.icon}
             </div>
             <CardTitle className="text-xs sm:text-sm text-right">{card.title}</CardTitle>
@@ -504,6 +538,16 @@ const OutputsManagement: React.FC = () => {
         </CardContent>
       </Card>
     );
+
+    if (!isAllowed) {
+      return (
+        <Tooltip title="ليس لديك صلاحية للوصول إلى هذه الصفحة" placement="top">
+          {cardContent}
+        </Tooltip>
+      );
+    }
+
+    return cardContent;
   };
 
   return (

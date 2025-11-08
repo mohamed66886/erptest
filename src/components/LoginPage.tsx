@@ -23,6 +23,11 @@ interface SystemUser {
   fullName: string;
   password: string;
   position: string;
+  branchId?: string;
+  branchName?: string;
+  warehouseId?: string;
+  warehouseName?: string;
+  permissions?: string[];
 }
 
 const LoginPage = ({ onLogin }: LoginPageProps) => {
@@ -48,7 +53,12 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           username: doc.data().username,
           fullName: doc.data().fullName,
           password: doc.data().password,
-          position: doc.data().position
+          position: doc.data().position,
+          branchId: doc.data().branchId,
+          branchName: doc.data().branchName,
+          warehouseId: doc.data().warehouseId,
+          warehouseName: doc.data().warehouseName,
+          permissions: doc.data().permissions
         })) as SystemUser[];
         setUsers(usersData);
       } catch (error) {
@@ -109,12 +119,24 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
       if (user.password === password) {
         toast.success('تم تسجيل الدخول بنجاح!');
         
-        localStorage.setItem('currentUser', JSON.stringify({
+        const userData = {
           id: user.id,
           username: user.username,
           fullName: user.fullName,
-          position: user.position
-        }));
+          position: user.position,
+          branchId: user.branchId,
+          branchName: user.branchName,
+          warehouseId: user.warehouseId,
+          warehouseName: user.warehouseName,
+          permissions: user.permissions || []
+        };
+        
+        console.log('💾 Saving user to localStorage:', userData);
+        
+        localStorage.setItem('currentUser', JSON.stringify(userData));
+        
+        // إطلاق حدث مخصص لإعلام المكونات الأخرى بتحديث localStorage
+        window.dispatchEvent(new Event('localStorageUpdated'));
         
         onLogin();
       } else {

@@ -172,6 +172,8 @@ const UsersManagement: React.FC = () => {
     try {
       setLoading(true);
       
+      console.log('💾 Saving user with permissions:', selectedPermissions);
+      
       const userData: any = {
         username: values.username,
         fullName: values.fullName,
@@ -180,6 +182,8 @@ const UsersManagement: React.FC = () => {
         permissions: selectedPermissions,
         updatedAt: new Date()
       };
+
+      console.log('📦 User data to save:', userData);
 
       // إضافة الفرع إذا كان مدير فرع
       if (values.position === 'مدير فرع' && values.branchId) {
@@ -199,6 +203,32 @@ const UsersManagement: React.FC = () => {
         // تحديث مستخدم موجود
         await updateDoc(doc(db, 'users', editingUser.id), userData);
         message.success('تم تحديث المستخدم بنجاح');
+        
+        // تحديث localStorage إذا كان المستخدم الحالي هو الذي يتم تعديله
+        const currentUserData = localStorage.getItem('currentUser');
+        if (currentUserData) {
+          const currentUser = JSON.parse(currentUserData);
+          if (currentUser.id === editingUser.id) {
+            const updatedUser = {
+              id: editingUser.id,
+              username: userData.username,
+              fullName: userData.fullName,
+              position: userData.position,
+              branchId: userData.branchId,
+              branchName: userData.branchName,
+              warehouseId: userData.warehouseId,
+              warehouseName: userData.warehouseName,
+              permissions: userData.permissions
+            };
+            console.log('🔄 Updating currentUser in localStorage:', updatedUser);
+            localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+            
+            // إطلاق حدث التحديث
+            window.dispatchEvent(new Event('localStorageUpdated'));
+            
+            message.info('تم تحديث بيانات جلستك الحالية، قد تحتاج لإعادة تحميل الصفحة');
+          }
+        }
       } else {
         // إضافة مستخدم جديد
         userData.createdAt = new Date();
