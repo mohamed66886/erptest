@@ -237,7 +237,7 @@ const ComprehensiveReports: React.FC = () => {
       )
     },
     {
-      title: 'مبلغ التوصيل',
+      title: 'قيمة التوصيل',
       dataIndex: 'deliveryAmount',
       key: 'deliveryAmount',
       width: 130,

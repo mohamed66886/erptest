@@ -38,7 +38,8 @@ import {
   MapPinned,
   Home,
   Store,
-  BoxIcon
+  BoxIcon,
+  UserCog
 } from 'lucide-react';
 
 const OutputsManagement: React.FC = () => {
@@ -140,6 +141,16 @@ const OutputsManagement: React.FC = () => {
       color: "bg-teal-500",
       onClick: () => {
         navigate('/management/delivery-settings');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "إدارة المستخدمين",
+      description: "إدارة حسابات وصلاحيات المستخدمين",
+      icon: <UserCog className="h-6 w-6" />,
+      color: "bg-violet-500",
+      onClick: () => {
+        navigate('/management/users');
         window.scrollTo(0, 0);
       }
     }

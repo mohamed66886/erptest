@@ -1,35 +1,67 @@
 import { useState, useEffect } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Calculator, Lock, User, Loader2, Facebook } from "lucide-react";
-import { FaGithub } from "react-icons/fa";
-import { FcGoogle } from "react-icons/fc";
-import { motion, AnimatePresence } from "framer-motion";
+import { Eye, EyeOff, Lock, User, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { Select } from 'antd';
+import { collection, getDocs } from 'firebase/firestore';
+
+const { Option } = Select;
 
 interface LoginPageProps {
   onLogin: () => void;
 }
 
+interface SystemUser {
+  id: string;
+  username: string;
+  fullName: string;
+  password: string;
+  position: string;
+}
+
 const LoginPage = ({ onLogin }: LoginPageProps) => {
-  // State management
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState("");
+  const [selectedUser, setSelectedUser] = useState<string>("");
   const [password, setPassword] = useState("");
   const [isMobile, setIsMobile] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [users, setUsers] = useState<SystemUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [inputFocus, setInputFocus] = useState({
-    email: false,
+    user: false,
     password: false
   });
 
-  // Effects
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        setLoadingUsers(true);
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const usersData = usersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          username: doc.data().username,
+          fullName: doc.data().fullName,
+          password: doc.data().password,
+          position: doc.data().position
+        })) as SystemUser[];
+        setUsers(usersData);
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        toast.error('خطأ في تحميل المستخدمين');
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -38,7 +70,6 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
     handleResize();
     window.addEventListener("resize", handleResize);
     
-    // Auth state listener
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         onLogin();
@@ -51,49 +82,50 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
     };
   }, [onLogin]);
 
-  // Event handlers
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!selectedUser) {
+      toast.error('يرجى اختيار المستخدم');
+      return;
+    }
+
+    if (!password) {
+      toast.error('يرجى إدخال كلمة المرور');
+      return;
+    }
+
     setLoading(true);
     
-    toast.promise(
-      signInWithEmailAndPassword(auth, email, password),
-      {
-        loading: 'جاري التحقق من بياناتك...',
-        success: () => {
-          onLogin();
-          return 'تم تسجيل الدخول بنجاح! جاري تحويلك...';
-        },
-        error: (err) => {
-          let errorMessage = "حدث خطأ أثناء تسجيل الدخول";
-          
-          switch (err.code) {
-            case 'auth/invalid-email':
-              errorMessage = "البريد الإلكتروني غير صالح";
-              break;
-            case 'auth/user-disabled':
-              errorMessage = "هذا الحساب معطل";
-              break;
-            case 'auth/user-not-found':
-              errorMessage = "لا يوجد حساب مرتبط بهذا البريد الإلكتروني";
-              break;
-            case 'auth/wrong-password':
-              errorMessage = "كلمة المرور غير صحيحة";
-              break;
-            case 'auth/too-many-requests':
-              errorMessage = "عدد كبير جداً من المحاولات الفاشلة. يرجى المحاولة لاحقاً";
-              break;
-            default:
-              errorMessage = "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى";
-          }
-          
-          return errorMessage;
-        },
-        finally: () => {
-          setLoading(false);
-        }
+    try {
+      const user = users.find(u => u.id === selectedUser);
+      
+      if (!user) {
+        toast.error('المستخدم غير موجود');
+        setLoading(false);
+        return;
       }
-    );
+
+      if (user.password === password) {
+        toast.success('تم تسجيل الدخول بنجاح!');
+        
+        localStorage.setItem('currentUser', JSON.stringify({
+          id: user.id,
+          username: user.username,
+          fullName: user.fullName,
+          position: user.position
+        }));
+        
+        onLogin();
+      } else {
+        toast.error('كلمة المرور غير صحيحة');
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('حدث خطأ أثناء تسجيل الدخول');
+      setLoading(false);
+    }
   };
 
   return (
@@ -102,7 +134,6 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
       dir="rtl"
     >
       <div className="container mx-auto flex items-center justify-center flex-row-reverse">
-        {/* Side image for desktop */}
         {!isMobile && (
           <motion.div 
             initial={{ opacity: 0, x: -50 }}
@@ -129,7 +160,6 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           </motion.div>
         )}
 
-        {/* Login form */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -157,43 +187,35 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
             
             <CardContent>
               <form onSubmit={handleSubmit} className={isMobile ? 'space-y-5' : 'space-y-6'}>
-                {/* Email Input */}
                 <div className={isMobile ? 'space-y-1.5' : 'space-y-2'}>
-                  <Label htmlFor="email" className={isMobile ? 'font-arabic font-medium text-gray-700 text-base' : 'font-arabic font-medium text-gray-700'}>
-                    البريد الإلكتروني
+                  <Label htmlFor="user" className={isMobile ? 'font-arabic font-medium text-gray-700 text-base' : 'font-arabic font-medium text-gray-700'}>
+                    اختر المستخدم
                   </Label>
-                  <motion.div
-                    animate={{
-                      borderColor: inputFocus.email ? '#6366f1' : '#d1d5db',
-                      boxShadow: inputFocus.email ? '0 4px 24px 0 rgba(99,102,241,0.10)' : '0 1px 4px 0 rgba(0,0,0,0.04)',
-                      backgroundColor: inputFocus.email ? 'rgba(243,244,255,0.7)' : 'rgba(255,255,255,0.7)'
+                  <Select
+                    id="user"
+                    placeholder="اختر اسم المستخدم"
+                    value={selectedUser || undefined}
+                    onChange={(value) => setSelectedUser(value)}
+                    loading={loadingUsers}
+                    className="w-full"
+                    style={{
+                      height: isMobile ? '48px' : '44px',
                     }}
-                    transition={{ duration: 0.25 }}
-                    className="relative rounded-xl border-2 flex items-center transition-all duration-200"
+                    popupMatchSelectWidth={true}
+                    showSearch
+                    optionFilterProp="children"
                   >
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="بريدك الإلكتروني"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      onFocus={() => setInputFocus({...inputFocus, email: true})}
-                      onBlur={() => setInputFocus({...inputFocus, email: false})}
-                      className={isMobile ? 'pr-10 font-arabic border-none bg-transparent focus:ring-0 text-base py-3 rounded-xl transition-all duration-200' : 'pr-10 font-arabic border-none bg-transparent focus:ring-0 transition-all duration-200'}
-                      required
-                      style={{ boxShadow: 'none', outline: 'none' }}
-                    />
-                    <motion.span
-                      animate={{ color: inputFocus.email ? '#6366f1' : '#a3a3a3' }}
-                      transition={{ duration: 0.2 }}
-                      className={isMobile ? 'absolute right-3 top-1/2 -translate-y-1/2' : 'absolute right-3 top-1/2 -translate-y-1/2'}
-                    >
-                      <User className="w-4 h-4" />
-                    </motion.span>
-                  </motion.div>
+                    {users.map(user => (
+                      <Option key={user.id} value={user.id}>
+                        <div className="flex flex-col">
+                          <span className="font-semibold">{user.fullName}</span>
+                          <span className="text-xs text-gray-500">{user.position}</span>
+                        </div>
+                      </Option>
+                    ))}
+                  </Select>
                 </div>
                 
-                {/* Password Input */}
                 <div className={isMobile ? 'space-y-1.5' : 'space-y-2'}>
                   <Label htmlFor="password" className={isMobile ? 'font-arabic font-medium text-gray-700 text-base' : 'font-arabic font-medium text-gray-700'}>
                     كلمة المرور
@@ -240,17 +262,6 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
                   </motion.div>
                 </div>
                 
-                {/* Forgot Password */}
-                <div className="flex justify-end">
-                  <button 
-                    type="button"
-                    className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors font-arabic py-1"
-                  >
-                    نسيت كلمة المرور؟
-                  </button>
-                </div>
-                
-                {/* Submit Button */}
                 <motion.div
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}
@@ -268,30 +279,9 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
                     ) : "تسجيل الدخول"}
                   </Button>
                 </motion.div>
-                
-                {/* Social Login */}
-                <div className={isMobile ? 'text-center space-y-2 mt-4' : 'text-center space-y-3 mt-6'}>
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="h-px bg-gray-200 flex-1"></div>
-                    <span className="text-xs text-gray-400">أو</span>
-                    <div className="h-px bg-gray-200 flex-1"></div>
-                  </div>
-                  <div className="flex items-center justify-center gap-4 mt-2">
-                    <button type="button" aria-label="الدخول بجوجل" className="p-2 rounded-full border border-gray-200 hover:bg-gray-100 transition-colors">
-                      <FcGoogle size={24} />
-                    </button>
-                    <button type="button" aria-label="الدخول بفيسبوك" className="p-2 rounded-full border border-gray-200 hover:bg-gray-100 transition-colors">
-                      <Facebook size={22} className="text-[#1877f3]" />
-                    </button>
-                    <button type="button" aria-label="الدخول بجيتهب" className="p-2 rounded-full border border-gray-200 hover:bg-gray-100 transition-colors">
-                      <FaGithub size={22} className="text-black" />
-                    </button>
-                  </div>
-                </div>
               </form>
             </CardContent>
             
-            {/* Footer */}
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

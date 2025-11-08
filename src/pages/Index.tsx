@@ -60,6 +60,7 @@ import {
 
 import OutputsManagement from "./management/OutputsManagement";
 import DeliverySettings from "./management/DeliverySettings";
+import UsersManagement from "./management/UsersManagement";
 
 import { Player } from '@lottiefiles/react-lottie-player';
 import IssueWarehousePage from "./warehouses/issue-warehouse";
@@ -126,12 +127,34 @@ interface CompanyData {
   [key: string]: unknown;
 }
 
+interface CurrentUser {
+  id: string;
+  username: string;
+  fullName: string;
+  position: string;
+}
+
 const Index = () => {
   const { user, loading } = useAuth();
   const [appState, setAppState] = useState<AppState>("login");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [companyLoading, setCompanyLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
+  // Check for logged in user from localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setCurrentUser(parsedUser);
+      } catch (error) {
+        console.error('Error parsing stored user:', error);
+        localStorage.removeItem('currentUser');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const fetchCompany = async () => {
@@ -140,14 +163,28 @@ const Index = () => {
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {
         setCompanyData(snapshot.docs[0].data());
-        setAppState("dashboard");
+        // Only set to dashboard if user is logged in
+        if (currentUser || user) {
+          setAppState("dashboard");
+        }
       }
       setCompanyLoading(false);
     };
     fetchCompany();
-  }, []);
+  }, [currentUser, user]);
 
   const handleLogin = () => {
+    // Reload current user from localStorage
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setCurrentUser(parsedUser);
+      } catch (error) {
+        console.error('Error parsing stored user:', error);
+      }
+    }
+    
     if (companyData) {
       setAppState("dashboard");
     } else {
@@ -166,6 +203,9 @@ const Index = () => {
     } catch (error) {
       console.error("Error signing out:", error);
     }
+    // Clear localStorage
+    localStorage.removeItem('currentUser');
+    setCurrentUser(null);
     setAppState("login");
     setSidebarCollapsed(false);
     setCompanyData(null);
@@ -207,7 +247,8 @@ const Index = () => {
     );
   }
 
-  if (!user) {
+  // Check if user is logged in (either from localStorage or Firebase Auth)
+  if (!user && !currentUser) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
@@ -278,6 +319,7 @@ const Index = () => {
               <Route path="/management/sales" element={<SalesManagement />} />
               <Route path="/management/outputs" element={<OutputsManagement />} />
               <Route path="/management/delivery-settings" element={<DeliverySettings />} />
+              <Route path="/management/users" element={<UsersManagement />} />
             <Route path="/management/special-price-packages" element={<SpecialPricePackages />} />
             <Route path="/management/sales/add-special-price-package" element={<AddSpecialPricePackage />} />
             <Route path="/management/sales/edit-special-price-package/:id" element={<EditSpecialPricePackage />} />
