@@ -117,6 +117,7 @@ import ArchivedOrders from "./management/ArchivedOrders";
 import LinkBranches from "./management/link-branches";
 import WarehouseNotifications from "./management/warehouse-notifications";
 import DriverNotifications from "./management/driver-notifications";
+import ComprehensiveReports from "./reports/ComprehensiveReports";
 type AppState = "login" | "data-completion" | "dashboard";
 
 interface CompanyData {
@@ -267,6 +268,7 @@ const Index = () => {
               <Route path="/reports/sales-representative-sales" element={<SalesRepresentativeSales />} />
               <Route path="/reports/sold-items-by-category" element={<SoldItemsByCategory />} />
               <Route path="/reports/sold-items-by-type" element={<SoldItemsByType />} />
+              <Route path="/reports/comprehensive-reports" element={<ComprehensiveReports />} />
               
               {/* Management Routes */}
               <Route path="/management/financial" element={<FinancialManagement />} />

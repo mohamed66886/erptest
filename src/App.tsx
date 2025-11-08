@@ -36,6 +36,8 @@ const App = () => (
                 {/* صفحات الطلبات المنفصلة للسائقين */}
                 <Route path="/orders/view" element={<ViewOrder />} />
                 <Route path="/orders/complete" element={<CompleteOrder />} />
+                
+                {/* صفحة طباعة طلبات المستودع */}
      
                 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

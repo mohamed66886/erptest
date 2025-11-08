@@ -5,7 +5,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Table, Button, message } from "antd";
-import { WhatsAppOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import { WhatsAppOutlined, PrinterOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import Breadcrumb from "@/components/Breadcrumb";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { Select as AntdSelect } from 'antd';
@@ -201,6 +201,70 @@ const WarehouseNotifications: React.FC = () => {
     const whatsappUrl = `https://wa.me/${phoneWithCode}?text=${encodeURIComponent(whatsappMessage)}`;
     window.open(whatsappUrl, '_blank');
     message.success('تم فتح واتساب');
+  };
+
+  // تنزيل الملفات المرفقة
+  const handleDownloadFiles = async (warehouse: WarehouseData) => {
+    try {
+      // تصفية الطلبات التي تحتوي على ملفات
+      const ordersWithFiles = warehouse.orders.filter(order => order.fileUrl);
+      
+      if (ordersWithFiles.length === 0) {
+        message.warning(`لا توجد ملفات مرفقة في طلبات مستودع ${warehouse.name}`);
+        return;
+      }
+
+      message.loading({ content: `جاري تنزيل ${ordersWithFiles.length} ملف...`, key: 'download', duration: 0 });
+
+      let successCount = 0;
+      let failCount = 0;
+
+      // تنزيل كل ملف
+      for (const order of ordersWithFiles) {
+        if (order.fileUrl) {
+          try {
+            // فتح الملف في نافذة جديدة للتنزيل (حل لمشكلة CORS)
+            // المتصفح سيتعامل مع التنزيل تلقائياً
+            const link = document.createElement('a');
+            link.href = order.fileUrl;
+            
+            // استخراج اسم الملف من URL أو استخدام رقم الفاتورة
+            const urlParts = order.fileUrl.split('/');
+            const fileName = decodeURIComponent(
+              urlParts[urlParts.length - 1].split('?')[0]
+            ).replace(/^.*%2F/, '') || `${order.fullInvoiceNumber || 'file'}`;
+            
+            link.download = fileName;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            successCount++;
+            
+            // تأخير بسيط بين التنزيلات لتجنب حظر المتصفح
+            await new Promise(resolve => setTimeout(resolve, 800));
+          } catch (error) {
+            console.error(`Error downloading file for order ${order.fullInvoiceNumber}:`, error);
+            failCount++;
+          }
+        }
+      }
+
+      if (successCount > 0) {
+        message.success({ 
+          content: `تم فتح ${successCount} ملف للتنزيل${failCount > 0 ? ` (فشل ${failCount})` : ''}`, 
+          key: 'download' 
+        });
+      } else {
+        message.error({ content: 'فشل تنزيل جميع الملفات', key: 'download' });
+      }
+    } catch (error) {
+      console.error('Error downloading files:', error);
+      message.error({ content: 'حدث خطأ أثناء تنزيل الملفات', key: 'download' });
+    }
   };
 
   // طباعة طلبات المستودع
@@ -559,9 +623,9 @@ const WarehouseNotifications: React.FC = () => {
     {
       title: 'الإجراءات',
       key: 'actions',
-      width: 200,
+      width: 280,
       render: (_: unknown, record: WarehouseData) => (
-        <div className="flex gap-2 justify-center">
+        <div className="flex gap-2 justify-center flex-wrap">
           <Button
             type="primary"
             icon={<WhatsAppOutlined />}
@@ -577,6 +641,15 @@ const WarehouseNotifications: React.FC = () => {
             size="middle"
           >
             طباعة
+          </Button>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => handleDownloadFiles(record)}
+            size="middle"
+            type="default"
+            className="bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-300"
+          >
+            تنزيل الملفات
           </Button>
         </div>
       ),
@@ -626,7 +699,14 @@ const WarehouseNotifications: React.FC = () => {
                   boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
                   border: '1px solid #e2e8f0'
                 }}
-                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                styles={{
+                  popup: {
+                    root: {
+                      textAlign: 'right',
+                      fontSize: 16
+                    }
+                  }
+                }}
                 size="middle"
                 placeholder="السنة المالية"
               >

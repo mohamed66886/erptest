@@ -230,6 +230,16 @@ const OutputsManagement: React.FC = () => {
   ];
 
   const reportsCards = [
+    {
+      title: "التقارير الشاملة",
+      description: "تقارير شاملة عن جميع العمليات",
+      icon: <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-blue-700",
+      onClick: () => {
+        navigate('/reports/comprehensive-reports');
+        window.scrollTo(0, 0);
+      }
+    },
     // {
     //   title: "تقرير المستودع",
     //   description: "تقرير شامل عن حركة المستودع",
@@ -601,44 +611,6 @@ const OutputsManagement: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {reportsCards.map((card, index) => (
             <CardComponent key={`reports-${index}`} card={card} index={index} />
-          ))}
-        </div>
-      </div>
-
-      {/* إدارة المواقع Section */}
-      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <div className="p-2 bg-indigo-100 rounded-lg">
-            <MapPin className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-600" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">إدارة المواقع</h2>
-            <p className="text-sm sm:text-base text-gray-600">إدارة المحافظات والمناطق والأحياء والفروع</p>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {locationManagementCards.map((card, index) => (
-            <CardComponent key={`location-management-${index}`} card={card} index={index} />
-          ))}
-        </div>
-      </div>
-
-      {/* إدارة السائقين Section */}
-      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <div className="p-2 bg-cyan-100 rounded-lg">
-            <Truck className="h-5 w-5 sm:h-6 sm:w-6 text-cyan-600" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">إدارة السائقين</h2>
-            <p className="text-sm sm:text-base text-gray-600">إدارة السائقين والتوصيل والجدولة</p>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {driversManagementCards.map((card, index) => (
-            <CardComponent key={`drivers-management-${index}`} card={card} index={index} />
           ))}
         </div>
       </div>
