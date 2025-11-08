@@ -56,6 +56,7 @@ const CompletedOrders: React.FC = () => {
   const [filterDriver, setFilterDriver] = useState<string>("");
   const [filterBranch, setFilterBranch] = useState<string>("");
   const [searchText, setSearchText] = useState<string>("");
+  const [filterCompletedDate, setFilterCompletedDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [archiving, setArchiving] = useState(false);
 
   // السنة المالية
@@ -155,6 +156,11 @@ const CompletedOrders: React.FC = () => {
     
     if (filterBranch && order.branchName !== filterBranch) {
       matches = false;
+    }
+    
+    if (filterCompletedDate && order.completedAt) {
+      const orderDate = dayjs(order.completedAt).format('YYYY-MM-DD');
+      matches = matches && orderDate === filterCompletedDate;
     }
     
     if (searchText) {
@@ -454,7 +460,7 @@ const CompletedOrders: React.FC = () => {
             <SearchOutlined className="text-teal-600" /> خيارات البحث
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             <div className="flex flex-col">
               <span style={labelStyle}>تصفية حسب السائق</span>
               <Select
@@ -497,6 +503,19 @@ const CompletedOrders: React.FC = () => {
                   </Option>
                 ))}
               </Select>
+            </div>
+
+            <div className="flex flex-col">
+              <span style={labelStyle}>تصفية حسب تاريخ التأكيد</span>
+              <Input
+                type="date"
+                value={filterCompletedDate}
+                onChange={(e) => setFilterCompletedDate(e.target.value)}
+                placeholder="اختر تاريخ التأكيد"
+                size="large"
+                allowClear
+                style={largeControlStyle}
+              />
             </div>
 
             <div className="flex flex-col">

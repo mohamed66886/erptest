@@ -59,6 +59,7 @@ import {
 } from "../pages/management";
 
 import OutputsManagement from "./management/OutputsManagement";
+import DeliverySettings from "./management/DeliverySettings";
 
 import { Player } from '@lottiefiles/react-lottie-player';
 import IssueWarehousePage from "./warehouses/issue-warehouse";
@@ -274,6 +275,7 @@ const Index = () => {
               <Route path="/management/projects" element={<ProjectManagement />} />
               <Route path="/management/sales" element={<SalesManagement />} />
               <Route path="/management/outputs" element={<OutputsManagement />} />
+              <Route path="/management/delivery-settings" element={<DeliverySettings />} />
             <Route path="/management/special-price-packages" element={<SpecialPricePackages />} />
             <Route path="/management/sales/add-special-price-package" element={<AddSpecialPricePackage />} />
             <Route path="/management/sales/edit-special-price-package/:id" element={<EditSpecialPricePackage />} />

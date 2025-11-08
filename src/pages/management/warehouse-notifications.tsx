@@ -28,6 +28,7 @@ interface DeliveryOrder {
   deliveryDate: string;
   fileUrl?: string;
   requiresInstallation: boolean;
+  notes?: string;
   createdAt: string;
 }
 
@@ -48,6 +49,24 @@ const WarehouseNotifications: React.FC = () => {
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // بيانات الشركة
+  const [companyData, setCompanyData] = useState<{
+    arabicName?: string;
+    englishName?: string;
+    companyType?: string;
+    commercialRegistration?: string;
+    taxFile?: string;
+    city?: string;
+    region?: string;
+    street?: string;
+    district?: string;
+    buildingNumber?: string;
+    postalCode?: string;
+    phone?: string;
+    mobile?: string;
+    logoUrl?: string;
+  }>({});
+
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
@@ -66,6 +85,22 @@ const WarehouseNotifications: React.FC = () => {
     }
   };
 
+  // جلب بيانات الشركة
+  useEffect(() => {
+    const fetchCompanyData = async () => {
+      try {
+        const companiesSnapshot = await getDocs(collection(db, 'companies'));
+        if (!companiesSnapshot.empty) {
+          const companyDoc = companiesSnapshot.docs[0];
+          setCompanyData(companyDoc.data());
+        }
+      } catch (error) {
+        console.error('Error fetching company data:', error);
+      }
+    };
+    fetchCompanyData();
+  }, []);
+
   // جلب البيانات
   const fetchWarehouseData = async () => {
     try {
@@ -78,14 +113,14 @@ const WarehouseNotifications: React.FC = () => {
         ...doc.data()
       })) as DeliveryOrder[];
       
-      // جلب بيانات المستودعات
-      const warehousesSnapshot = await getDocs(collection(db, 'warehouses'));
+      // جلب بيانات المستودعات من delivery_warehouses
+      const warehousesSnapshot = await getDocs(collection(db, 'delivery_warehouses'));
       const warehousesData = warehousesSnapshot.docs.map(doc => ({
         id: doc.id,
-        name: doc.data().name || doc.data().nameAr || '',
-        keeper: doc.data().keeper || doc.data().warehouseKeeper || 'غير محدد',
-        phone: doc.data().phone || doc.data().mobile || '',
-        mobile: doc.data().mobile || doc.data().phone || '',
+        name: doc.data().name || '',
+        keeper: doc.data().keeper || 'غير محدد',
+        phone: doc.data().phone || '',
+        mobile: doc.data().phone || '',
         ...doc.data()
       }));
       
@@ -153,7 +188,7 @@ const WarehouseNotifications: React.FC = () => {
       whatsappMessage += `   الهاتف: ${order.customerPhone}\n`;
       whatsappMessage += `   المنطقة: ${order.districtName || 'غير محدد'}\n`;
       if (order.requiresInstallation) {
-        whatsappMessage += `   🔧 يتطلب تركيب\n`;
+        whatsappMessage += `   ⚙️ يتطلب تركيب\n`;
       }
     });
 
@@ -170,7 +205,7 @@ const WarehouseNotifications: React.FC = () => {
 
   // طباعة طلبات المستودع
   const handlePrint = (warehouse: WarehouseData) => {
-    const printWindow = window.open('', '', 'width=900,height=1200');
+    const printWindow = window.open('', '', 'width=1200,height=900');
     if (!printWindow) return;
 
     printWindow.document.write(`
@@ -179,51 +214,104 @@ const WarehouseNotifications: React.FC = () => {
         <title>طلبات مستودع ${warehouse.name}</title>
         <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
-          @page { size: A4; margin: 15mm; }
+          @page { size: A4 landscape; margin: 15mm; }
           body { 
             font-family: 'Tajawal', sans-serif; 
-            padding: 20px; 
+            padding: 15px; 
             color: #000;
-            font-size: 14px;
-            line-height: 1.5;
+            font-size: 11px;
+            line-height: 1.4;
+            margin: 0;
+          }
+          .company-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #8b5cf6;
+            padding-bottom: 10px;
+          }
+          .header-section {
+            flex: 1;
+            min-width: 0;
+            padding: 0 8px;
+            box-sizing: border-box;
+          }
+          .header-section.center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 120px;
+            max-width: 120px;
+            min-width: 100px;
+          }
+          .logo {
+            width: 100px;
+            height: auto;
+            margin-bottom: 8px;
+          }
+          .company-info-ar {
+            text-align: right;
+            font-size: 10px;
+            font-weight: 500;
+            line-height: 1.4;
+          }
+          .company-info-en {
+            text-align: left;
+            font-family: Arial, sans-serif;
+            direction: ltr;
+            font-size: 9px;
+            font-weight: 500;
+            line-height: 1.4;
           }
           .header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
             border-bottom: 3px solid #8b5cf6;
             padding-bottom: 15px;
           }
           .header h1 {
             color: #8b5cf6;
-            margin: 0;
-            font-size: 28px;
+            margin: 0 0 8px 0;
+            font-size: 24px;
             font-weight: 700;
+          }
+          .header p {
+            margin: 0;
+            color: #6b7280;
+            font-size: 13px;
           }
           .warehouse-info {
             background: #f3f4f6;
-            padding: 15px;
+            padding: 12px 15px;
             border-radius: 8px;
             margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
           }
           .warehouse-info div {
-            margin: 5px 0;
-            font-size: 16px;
+            margin: 3px 10px;
+            font-size: 13px;
           }
           table { 
             width: 100%; 
             border-collapse: collapse; 
             margin-bottom: 20px;
+            font-size: 10px;
           }
           th, td { 
             border: 1px solid #d1d5db; 
-            padding: 12px 8px; 
+            padding: 8px 4px; 
             text-align: center;
+            vertical-align: middle;
           }
           th { 
             background-color: #8b5cf6;
             color: #fff;
             font-weight: 600;
-            font-size: 15px;
+            font-size: 11px;
           }
           tbody tr:nth-child(even) {
             background-color: #f9fafb;
@@ -234,15 +322,21 @@ const WarehouseNotifications: React.FC = () => {
           .installation-badge {
             background: #10b981;
             color: white;
-            padding: 4px 8px;
+            padding: 3px 6px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 9px;
+            font-weight: 600;
           }
+          .status-pending { color: #f59e0b; font-weight: bold; }
+          .status-delivered { color: #10b981; font-weight: bold; }
+          .status-cancelled { color: #ef4444; font-weight: bold; }
           .footer {
-            margin-top: 30px;
+            margin-top: 20px;
             text-align: center;
-            font-size: 12px;
+            font-size: 11px;
             color: #6b7280;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 10px;
           }
           @media print {
             body { padding: 10px; }
@@ -250,48 +344,172 @@ const WarehouseNotifications: React.FC = () => {
         </style>
       </head>
       <body>
+        <!-- Company Header Section -->
+        <div class="company-header">
+          <div class="header-section company-info-ar">
+            <div>${companyData.arabicName || ''}</div>
+            <div>${companyData.companyType || ''}</div>
+            <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
+            <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
+            <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+            <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
+            <div>الهاتف: ${companyData.phone || ''}</div>
+            <div>الجوال: ${companyData.mobile || ''}</div>
+          </div>
+          <div class="header-section center">
+            <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+          </div>
+          <div class="header-section company-info-en">
+            <div>${companyData.englishName || ''}</div>
+            <div>${companyData.companyType || ''}</div>
+            <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+            <div>Tax File: ${companyData.taxFile || ''}</div>
+            <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+            <div>Postal Code: ${companyData.postalCode || ''}</div>
+            <div>Phone: ${companyData.phone || ''}</div>
+            <div>Mobile: ${companyData.mobile || ''}</div>
+          </div>
+        </div>
+        
         <div class="header">
-          <h1>📦 طلبات التوصيل - ${warehouse.name}</h1>
+          <h1>
+            <svg style="display: inline-block; vertical-align: middle; width: 28px; height: 28px; margin-left: 8px;" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            طلبات التوصيل - مستودع ${warehouse.name}
+          </h1>
+          <p>نظام إدارة الموارد ERP90</p>
         </div>
         
         <div class="warehouse-info">
           <div><strong>أمين المستودع:</strong> ${warehouse.keeper}</div>
           <div><strong>رقم الهاتف:</strong> ${warehouse.phone || warehouse.mobile || 'غير متوفر'}</div>
           <div><strong>عدد الطلبات:</strong> ${warehouse.ordersCount} طلب</div>
-          <div><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA')}</div>
+          <div><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</div>
         </div>
         
         <table>
           <thead>
             <tr>
-              <th>م</th>
-              <th>رقم الفاتورة</th>
-              <th>اسم العميل</th>
-              <th>رقم الهاتف</th>
-              <th>المنطقة</th>
-              <th>الحي</th>
-              <th>التركيب</th>
-              <th>الحالة</th>
+              <th style="width: 40px;">م</th>
+              <th style="width: 90px;">رقم الفاتورة</th>
+              <th style="width: 120px;">اسم العميل</th>
+              <th style="width: 85px;">هاتف العميل</th>
+              <th style="width: 80px;">السائق</th>
+              <th style="width: 70px;">الحي</th>
+              <th style="width: 100px;">الملاحظات</th>
+              <th style="width: 50px;">التركيب</th>
+              <th style="width: 70px;">حالة الفرع</th>
+              <th style="width: 80px;">حالة التوصيل</th>
+              <th style="width: 80px;">تاريخ التسليم</th>
+              <th style="width: 80px;">وقت الإنشاء</th>
             </tr>
           </thead>
           <tbody>
-            ${warehouse.orders.map((order, index) => `
+            ${warehouse.orders.map((order, index) => {
+              const formatDate = (dateStr) => {
+                if (!dateStr) return '-';
+                try {
+                  const date = new Date(dateStr);
+                  return date.toLocaleDateString('ar-SA');
+                } catch {
+                  return dateStr;
+                }
+              };
+              
+              const formatDateTime = (dateStr) => {
+                if (!dateStr) return '-';
+                try {
+                  const date = new Date(dateStr);
+                  return date.toLocaleString('ar-SA', { 
+                    year: 'numeric', 
+                    month: '2-digit', 
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  });
+                } catch {
+                  return dateStr;
+                }
+              };
+              
+              const getStatusClass = (status) => {
+                if (status === 'تم التوصيل') return 'status-delivered';
+                if (status === 'ملغي') return 'status-cancelled';
+                return 'status-pending';
+              };
+              
+              return `
               <tr>
                 <td>${index + 1}</td>
                 <td><strong>${order.fullInvoiceNumber}</strong></td>
-                <td>${order.customerName || 'غير محدد'}</td>
-                <td>${order.customerPhone}</td>
-                <td>${order.regionName || '-'}</td>
+                <td>${order.customerName || '-'}</td>
+                <td>${order.customerPhone || '-'}</td>
+                <td>${order.driverName || 'غير محدد'}</td>
                 <td>${order.districtName || '-'}</td>
-                <td>${order.requiresInstallation ? '<span class="installation-badge">نعم 🔧</span>' : 'لا'}</td>
-                <td>${order.status || 'قيد الانتظار'}</td>
+                <td style="font-size: 9px; text-align: right; padding-right: 6px;">${order.notes || '-'}</td>
+                <td>${order.requiresInstallation ? '<span class="installation-badge">نعم <svg style="display: inline-block; vertical-align: middle; width: 12px; height: 12px; margin-right: 2px;" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg></span>' : 'لا'}</td>
+                <td>${order.branchName || '-'}</td>
+                <td class="${getStatusClass(order.status)}">${order.status || 'قيد الانتظار'}</td>
+                <td>${formatDate(order.deliveryDate)}</td>
+                <td>${formatDateTime(order.createdAt)}</td>
               </tr>
-            `).join('')}
+            `;
+            }).join('')}
           </tbody>
         </table>
         
         <div class="footer">
-          <p>تم الطباعة من نظام ERP90 - إدارة الموارد</p>
+          <p><strong>نظام ERP90 - إدارة الموارد</strong> | تم الطباعة بواسطة: ${warehouse.keeper}</p>
+          <p style="margin-top: 5px; font-size: 10px;">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA')}</p>
+        </div>
+        
+        <!-- Signature Section -->
+        <div style="
+          margin-top: 40px;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 0 20px;
+          page-break-inside: avoid;
+        ">
+          <div style="flex: 1; text-align: right; font-size: 12px; font-weight: 500;">
+            <div style="margin-bottom: 6px;">أمين المستودع: ___________________</div>
+            <div>التوقيع: ___________________</div>
+          </div>
+          <div style="flex: 1; text-align: center; position: relative;">
+            <div style="
+              margin-top: 10px;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              width: 160px;
+              height: 60px;
+              border: 3px dashed #8b5cf6;
+              border-radius: 50%;
+              box-shadow: 0 3px 10px 0 rgba(139,92,246,0.15);
+              opacity: 0.9;
+              background: repeating-linear-gradient(135deg, #f3f4f6 0 10px, #fff 10px 20px);
+              font-family: 'Tajawal', Arial, sans-serif;
+              font-size: 14px;
+              font-weight: bold;
+              color: #8b5cf6;
+              letter-spacing: 1px;
+              text-align: center;
+              margin-left: auto;
+              margin-right: auto;
+              z-index: 2;
+            ">
+              <div style="width: 100%;">
+                <div style="font-size: 16px; font-weight: 700; line-height: 1.2;">${companyData.arabicName || 'الشركة'}</div>
+                <div style="font-size: 12px; font-weight: 500; margin-top: 4px; line-height: 1.1;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
+              </div>
+            </div>
+          </div>
+          <div style="flex: 1; text-align: left; font-size: 12px; font-weight: 500;">
+            <div style="margin-bottom: 6px;">مدير المستودعات: ___________________</div>
+            <div>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</div>
+          </div>
         </div>
       </body>
       </html>

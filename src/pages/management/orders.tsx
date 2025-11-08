@@ -1527,7 +1527,7 @@ const handlePrintTable = () => {
             </tr>
             <tr>
               <td class="total-label">المبلغ بعد الخصم:</td>
-              <td class="total-value">${afterDiscount.toLocaleString()}</td>
+              <td class="total-value">${totalAfterDiscount.toLocaleString()}</td>
             </tr>
             <tr>
               <td class="total-label">إجمالي الضرائب:</td>
@@ -1769,481 +1769,308 @@ const handlePrintTable = () => {
     });
   };
 
-  // دالة طباعة محتوى المودال فقط
+  // دالة طباعة طلبات التوصيل المفلترة
   const handlePrint = () => {
-    // Professional print template
-    if (!selectedInvoice) return;
-    // تجهيز بيانات الفاتورة للطباعة بشكل صحيح
-    let invoice = { ...selectedInvoice };
-    // إذا كان هناك itemData.items (كما في جدول التقارير)، استخدمها للطباعة
-    if (selectedInvoice && selectedInvoice.itemData && Array.isArray(selectedInvoice.itemData.items)) {
-      invoice.items = selectedInvoice.itemData.items;
-    } else if (selectedInvoice && Array.isArray(selectedInvoice.items)) {
-      invoice.items = selectedInvoice.items;
-    } else if (selectedInvoice && selectedInvoice.itemData && typeof selectedInvoice.itemData === 'object') {
-      // إذا كان المستخدم ضغط على صف صنف واحد (itemData مفرد)
-      invoice.items = [selectedInvoice.itemData];
-    } else {
-      invoice.items = [];
-    }
-    // تجهيز بيانات العميل للطباعة
-    invoice.customerName = selectedInvoice.customerName || selectedInvoice.customer || '';
-    invoice.customerNumber = selectedInvoice.customerPhone || selectedInvoice.customerMobile || selectedInvoice.customerNumber || selectedInvoice.phone || selectedInvoice.mobile || selectedInvoice.phoneNumber || '';
-    invoice.taxFile = selectedInvoice.taxFile || companyData.taxFile || '';
-    invoice.customerAddress = selectedInvoice.customerAddress || '';
-    // تجهيز اسم البائع للطباعة
-    invoice.delegate = selectedInvoice.delegate || selectedInvoice.seller || selectedInvoice.salesman || '';
-
-    // حساب الإجماليات إذا لم تكن موجودة أو ناقصة
-    if (!invoice.totals || typeof invoice.totals !== 'object') {
-      invoice.totals = {};
-    }
-    const items = Array.isArray(invoice.items) ? invoice.items : [];
-    // إجمالي قبل الخصم
-    let total = 0;
-    // إجمالي الخصم
-    let totalDiscount = 0;
-    // إجمالي بعد الخصم
-    let afterDiscount = 0;
-    // إجمالي الضريبة
-    let totalTax = 0;
-    // الإجمالي النهائي
-    let afterTax = 0;
-    items.forEach((it) => {
-      const price = Number(it.price) || 0;
-      const quantity = Number(it.quantity) || 0;
-      const discountValue = Number(it.discountValue) || 0;
-      const taxValue = Number(it.taxValue) || 0;
-      const subtotal = price * quantity;
-      total += subtotal;
-      totalDiscount += discountValue;
-      totalTax += taxValue;
-      afterDiscount += (subtotal - discountValue);
-      afterTax += (subtotal - discountValue + taxValue);
-    });
-    // إذا لم تكن القيم موجودة في totals، احسبها
-    invoice.totals.total = typeof invoice.totals.total === 'number' && !isNaN(invoice.totals.total) ? invoice.totals.total : total;
-    invoice.totals.afterDiscount = typeof invoice.totals.afterDiscount === 'number' && !isNaN(invoice.totals.afterDiscount) ? invoice.totals.afterDiscount : afterDiscount;
-    invoice.totals.afterTax = typeof invoice.totals.afterTax === 'number' && !isNaN(invoice.totals.afterTax) ? invoice.totals.afterTax : afterTax;
-    invoice.totals.totalDiscount = typeof invoice.totals.totalDiscount === 'number' && !isNaN(invoice.totals.totalDiscount) ? invoice.totals.totalDiscount : totalDiscount;
-    invoice.totals.totalTax = typeof invoice.totals.totalTax === 'number' && !isNaN(invoice.totals.totalTax) ? invoice.totals.totalTax : totalTax;
     // تأكد من تحميل بيانات الشركة قبل الطباعة
     if (!companyData || !companyData.arabicName) {
-      if (typeof window !== 'undefined' && (window as any).toast) {
-        (window as any).toast.error('لم يتم تحميل بيانات الشركة بعد، يرجى المحاولة بعد لحظات');
-      } else {
-        alert('لم يتم تحميل بيانات الشركة بعد، يرجى المحاولة بعد لحظات');
-      }
+      message.error('لم يتم تحميل بيانات الشركة بعد، يرجى المحاولة بعد لحظات');
       return;
     }
-    let qrDataUrl = '';
-    if (typeof window !== 'undefined' && (window as any).generateInvoiceQR) {
-      try { qrDataUrl = (window as any).generateInvoiceQR(invoice); } catch { qrDataUrl = ''; }
-    } else {
-      qrDataUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=' + encodeURIComponent(invoice.invoiceNumber || '');
+
+    // الحصول على طلبات التوصيل المفلترة
+    const ordersToPrint = filteredDeliveryOrders;
+    
+    if (ordersToPrint.length === 0) {
+      message.warning('لا توجد طلبات توصيل للطباعة');
+      return;
     }
-    const printWindow = window.open('', '', 'width=900,height=1200');
+
+    // إنشاء HTML للطباعة
+    const printWindow = window.open('', '', 'width=1400,height=900');
     printWindow?.document.write(`
-        <html>
-        <head>
-          <title> فواتير المبيعات | Sales Invoice Report</title>
-          <meta name="description" content=" فواتير المبيعات، عرض وطباعة فواتير العملاء، ERP90 Dashboard">
-          <meta name="keywords" content="ERP, فواتير, مبيعات, تقرير, عملاء, ضريبة, طباعة, Sales, Invoice, Report, Tax, Customer">
-          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-          <style>
-            @page { size: A4; margin: 10mm; }
-            body {
-              font-family: 'Tajawal', sans-serif;
-              direction: rtl;
-              padding: 5mm;
+      <html>
+      <head>
+        <title>طباعة طلبات التوصيل</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap');
+          @page { 
+            size: A4 landscape; 
+            margin: 15mm; 
+          }
+          body { 
+            font-family: 'Tajawal', Arial, sans-serif; 
+            direction: rtl; 
+            padding: 10px; 
+            font-size: 11px;
+            line-height: 1.3;
+            margin: 0;
+          }
+          .company-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 10px;
+          }
+          .header-section {
+            flex: 1;
+            min-width: 0;
+            padding: 0 8px;
+            box-sizing: border-box;
+          }
+          .header-section.center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 120px;
+            max-width: 120px;
+            min-width: 100px;
+          }
+          .logo {
+            width: 100px;
+            height: auto;
+            margin-bottom: 8px;
+          }
+          .company-info-ar {
+            text-align: right;
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.4;
+          }
+          .company-info-en {
+            text-align: left;
+            font-family: Arial, sans-serif;
+            direction: ltr;
+            font-size: 10px;
+            font-weight: 500;
+            line-height: 1.4;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+          }
+          .header h1 {
+            color: #000;
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+          }
+          .header p {
+            color: #000;
+            margin: 3px 0 0 0;
+            font-size: 12px;
+          }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 20px;
+            font-size: 9px;
+          }
+          th, td { 
+            border: 1px solid #d1d5db; 
+            padding: 4px 2px; 
+            text-align: center;
+            vertical-align: middle;
+            font-size: 8px;
+          }
+          th { 
+            background-color: #bbbbbc !important;
+            color: #fff;
+            font-weight: 600;
+            font-size: 9px;
+            padding: 6px 4px;
+          }
+          tbody tr:nth-child(even) {
+            background-color: #f5f5f5;
+          }
+          tbody tr:hover {
+            background-color: #e5e5e5;
+          }
+          .print-date {
+            text-align: left;
+            margin-top: 15px;
+            font-size: 9px;
+            color: #000;
+          }
+          .status-pending { color: #f59e0b; font-weight: bold; }
+          .status-delivered { color: #10b981; font-weight: bold; }
+          .status-cancelled { color: #ef4444; font-weight: bold; }
+          @media print {
+            body { margin: 0; padding: 10px; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <!-- Company Header Section -->
+        <div class="company-header">
+          <div class="header-section company-info-ar">
+            <div>${companyData.arabicName || ''}</div>
+            <div>${companyData.companyType || ''}</div>
+            <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
+            <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
+            <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+            <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
+            <div>الهاتف: ${companyData.phone || ''}</div>
+            <div>الجوال: ${companyData.mobile || ''}</div>
+          </div>
+          <div class="header-section center">
+            <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
+          </div>
+          <div class="header-section company-info-en">
+            <div>${companyData.englishName || ''}</div>
+            <div>${companyData.companyType || ''}</div>
+            <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
+            <div>Tax File: ${companyData.taxFile || ''}</div>
+            <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
+            <div>Postal Code: ${companyData.postalCode || ''}</div>
+            <div>Phone: ${companyData.phone || ''}</div>
+            <div>Mobile: ${companyData.mobile || ''}</div>
+          </div>
+        </div>
+        
+        <div class="header">
+          <h1>تقرير طلبات التوصيل</h1>
+          <p class="font-weight-bold">نظام إدارة الموارد ERP90</p>
+          <div style="margin-top: 10px; font-size: 14px; color: #333;">
+            إجمالي الطلبات: ${ordersToPrint.length}
+          </div>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 60px;">م</th>
+              <th style="width: 90px;">رقم الفاتورة</th>
+              <th style="width: 120px;">اسم العميل</th>
+              <th style="width: 85px;">هاتف العميل</th>
+              <th style="width: 80px;">السائق</th>
+              <th style="width: 70px;">الحي</th>
+              <th style="width: 100px;">الملاحظات</th>
+              <th style="width: 50px;">التركيب</th>
+              <th style="width: 70px;">حالة الفرع</th>
+              <th style="width: 80px;">حالة التوصيل</th>
+              <th style="width: 80px;">تاريخ التسليم</th>
+              <th style="width: 80px;">وقت الإنشاء</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ordersToPrint.map((order, idx) => {
+              const formatDate = (dateStr) => {
+                if (!dateStr) return '-';
+                try {
+                  const date = new Date(dateStr);
+                  return date.toLocaleDateString('ar-SA');
+                } catch {
+                  return dateStr;
+                }
+              };
+              
+              const formatDateTime = (dateStr) => {
+                if (!dateStr) return '-';
+                try {
+                  const date = new Date(dateStr);
+                  return date.toLocaleString('ar-SA', { 
+                    year: 'numeric', 
+                    month: '2-digit', 
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  });
+                } catch {
+                  return dateStr;
+                }
+              };
+              
+              const getStatusClass = (status) => {
+                if (status === 'تم التوصيل') return 'status-delivered';
+                if (status === 'ملغي') return 'status-cancelled';
+                return 'status-pending';
+              };
+              
+              return '<tr>' +
+                '<td>' + (idx + 1) + '</td>' +
+                '<td>' + (order.fullInvoiceNumber || order.invoiceNumberPart || '-') + '</td>' +
+                '<td>' + (order.customerName || '-') + '</td>' +
+                '<td>' + (order.customerPhone || '-') + '</td>' +
+                '<td>' + (order.driverName || 'غير محدد') + '</td>' +
+                '<td>' + (order.districtName || '-') + '</td>' +
+                '<td>' + (order.notes || '-') + '</td>' +
+                '<td>' + (order.requiresInstallation ? 'نعم' : 'لا') + '</td>' +
+                '<td>' + (order.branchName || '-') + '</td>' +
+                '<td class="' + getStatusClass(order.status) + '">' + (order.status || 'قيد الانتظار') + '</td>' +
+                '<td>' + formatDate(order.deliveryDate) + '</td>' +
+                '<td>' + formatDateTime(order.createdAt) + '</td>' +
+                '</tr>';
+            }).join('')}
+          </tbody>
+        </table>
+        
+        <div class="print-date">
+          تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA')}
+        </div>
+        
+        <!-- Signature Section -->
+        <div style="
+          margin-top: 50px;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 0 20px;
+          page-break-inside: avoid;
+        ">
+          <div style="flex: 1; text-align: right; font-size: 14px; font-weight: 500;">
+            <div style="margin-bottom: 8px;">مدير العمليات: ___________________</div>
+            <div>التوقيع: ___________________</div>
+          </div>
+          <div style="flex: 1; text-align: center; position: relative;">
+            <div style="
+              margin-top: 10px;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              width: 180px;
+              height: 70px;
+              border: 3px dashed #000;
+              border-radius: 50%;
+              box-shadow: 0 3px 10px 0 rgba(0,0,0,0.12);
+              opacity: 0.9;
+              background: repeating-linear-gradient(135deg, #f8f8f8 0 10px, #fff 10px 20px);
+              font-family: 'Tajawal', Arial, sans-serif;
+              font-size: 16px;
+              font-weight: bold;
               color: #000;
-              font-size: 12px;
-              line-height: 1.4;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              margin-bottom: 5mm;
-              border-bottom: 1px solid #000;
-              padding-bottom: 3mm;
-            }
-            .header-section {
-              flex: 1;
-              min-width: 0;
-              padding: 0 8px;
-              box-sizing: border-box;
-            }
-            .header-section.center {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              flex: 0 0 120px;
-              height: auto;
-              margin-bottom: 8px;
-            }
-            .company-info-ar {
-              text-align: right;
-              font-size: 13px;
-              font-weight: 500;
-              line-height: 1.5;
-            }
-            .company-info-en {
-              text-align: left;
-              font-family: Arial, sans-serif;
-              direction: ltr;
-              font-size: 12px;
-              font-weight: 500;
-              line-height: 1.5;
-            }
-            .info-row-table {
-              border: 1px solid #bbb;
-              border-radius: 4px;
-              margin-bottom: 0;
-              width: 100%;
-              border-collapse: collapse;
-              font-size: 12px;
-              margin-top: 0;
-            }
-            .info-row-table td {
-              border: none;
-              padding: 2px 8px;
-              vertical-align: middle;
-              font-weight: 500;
-            }
-            .info-row-table .label {
-              color: #444;
-              font-weight: bold;
-              min-width: 80px;
-              text-align: right;
-            }
-            .info-row-table .value {
-              color: #222;
-              text-align: left;
-            }
-            .info-row-container {
-              display: flex;
-              flex-direction: row;
-              justify-content: space-between;
-              align-items: flex-start;
-              margin-bottom: 10px;
-              gap: 16px;
-            }
-            .info-row-table.left {
-              direction: rtl;
-            }
-            .info-row-table.right {
-              direction: rtl;
-            }
-            .qr-center {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              min-width: 100px;
-              max-width: 120px;
-              flex: 0 0 120px;
-            }
-            .qr-code {
-              width: 80px;
-              height: 80px;
-              border: 1px solid #ddd;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-family: Arial;
-              font-size: 8px;
+              letter-spacing: 1px;
               text-align: center;
-              margin-top: 4px;
-            }
-            .invoice-title { text-align: center; font-size: 16px; font-weight: bold; margin: 5mm 0; border: 1px solid #000; padding: 2mm; background-color: #f3f3f3; }
-            .customer-info { margin-bottom: 5mm; border: 1px solid #ddd; padding: 3mm; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 11px; }
-            th, td { border: 1px solid #000; padding: 2mm; text-align: center; }
-            th {
-              background-color: #000;
-              color: #fff;
-              font-weight: bold;
-              font-size: 12.5px;
-              letter-spacing: 0.5px;
-            }
-            .totals { margin-top: 5mm; border-top: 1px solid #000; padding-top: 3mm; font-weight: bold; }
-            .policy { font-size: 10px; border: 1px solid #ddd; padding: 3mm; /*margin-top: 5mm;*/ }
-            .policy-title { font-weight: bold; margin-bottom: 2mm; }
-            .signature { margin-top: 5mm; display: flex; justify-content: space-between; }
-            .signature-box { width: 45%; border-top: 1px solid #000; padding-top: 3mm; }
-            .footer { margin-top: 5mm; text-align: center; font-size: 10px; }
-            /* Ensure totals and policy are always side by side on print */
-            .totals-policy-row {
-              display: flex;
-              flex-direction: row;
-              flex-wrap: nowrap !important;
-              justify-content: flex-end;
-              align-items: flex-start;
-              gap: 24px;
-              margin-top: 5mm;
-            }
-            @media print {
-              .totals-policy-row {
-                display: flex !important;
-                flex-direction: row !important;
-                flex-wrap: nowrap !important;
-                justify-content: flex-end !important;
-                align-items: flex-start !important;
-                gap: 24px !important;
-                margin-top: 5mm !important;
-              }
-              .policy { margin-top: 0 !important; }
-            }
-          </style>
-        </head>
-        <body>
-          <!-- Header Section: Arabic (right), Logo (center), English (left) -->
-          <div class="header">
-            <div class="header-section company-info-ar">
-              <div>${companyData.arabicName || ''}</div>
-              <div>${companyData.companyType || ''}</div>
-              <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
-              <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
-              <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-              <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
-              <div>الهاتف: ${companyData.phone || ''}</div>
-              <div>الجوال: ${companyData.mobile || ''}</div>
-            </div>
-            <div class="header-section center">
-              <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
-            </div>
-            <div class="header-section company-info-en">
-              <div>${companyData.englishName || ''}</div>
-              <div>${companyData.companyType || ''}</div>
-              <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
-              <div>Tax File: ${companyData.taxFile || ''}</div>
-              <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-              <div>Postal Code: ${companyData.postalCode || ''}</div>
-              <div>Phone: ${companyData.phone || ''}</div>
-              <div>Mobile: ${companyData.mobile || ''}</div>
-            </div>
-          </div>
-          <!-- Info Row Section: Invoice info (right), QR (center), Customer info (left) -->
-          <div class="info-row-container">
-            <table class="info-row-table right">
-              <tr><td class="label">طريقة الدفع</td><td class="value">${invoice.paymentMethod || ''}</td></tr>
-              <tr><td class="label">رقم الفاتورة</td><td class="value">${invoice.invoiceNumber || ''}</td></tr>
-              <tr><td class="label">تاريخ الفاتورة</td><td class="value">${invoice.date || ''}</td></tr>
-              <tr><td class="label">تاريخ الاستحقاق</td><td class="value">${invoice.dueDate || ''}</td></tr>
-            </table>
-            <div class="qr-center">
-              <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">
-                ${(() => {
-                  const branch = (typeof branches !== 'undefined' && Array.isArray(branches))
-                    ? branches.find(b => b.id === invoice.branch)
-                    : null;
-                  return branch ? (branch.name || branch.id) : (invoice.branch || '');
-                })()}
-              </div>
-              <div class="qr-code">
-                <img src="${qrDataUrl}" alt="QR Code" style="width:80px;height:80px;" /><br>
-               </div>
-            </div>
-            <table class="info-row-table left">
-              <tr><td class="label">اسم العميل</td><td class="value">${invoice.customerName || ''}</td></tr>
-              <tr><td class="label">رقم الجوال</td><td class="value">${invoice.customerNumber || ''}</td></tr>
-              <tr><td class="label">م.ض</td><td class="value">${invoice.taxFile || ''}</td></tr>
-              <tr><td class="label">عنوان العميل</td><td class="value">${invoice.customerAddress || ''}</td></tr>
-            </table>
-          </div>
-          <!-- Items Table -->
-          <table>
-            <thead>
-              <tr>
-                <th>الرقم</th>
-                <th>كود الصنف</th>
-                <th>اسم الصنف</th>
-                <th>الكمية</th>
-                <th>السعر</th>
-                <th>نسبة الخصم %</th>
-                <th>مبلغ الخصم</th>
-                <th>الإجمالي قبل الضريبة</th>
-                <th>قيمة الضريبة</th>
-                <th>الإجمالي شامل الضريبة</th>
-                <th>المخزن</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(invoice.items || []).map((it, idx) => {
-                const subtotal = Number(it.price) * Number(it.quantity);
-                const discountValue = Number(it.discountValue) || 0;
-                const taxValue = Number(it.taxValue) || 0;
-                const afterDiscount = subtotal - discountValue;
-                const net = afterDiscount + taxValue;
-                const warehouseId = it.warehouseId || invoice.warehouse;
-                const warehouseObj = Array.isArray(warehouses) ? warehouses.find((w: any) => w.id === warehouseId) : null;
-                const warehouseName = warehouseObj ? (warehouseObj.name || warehouseObj.id) : (warehouseId || '');
-                return `<tr>
-                  <td>${idx + 1}</td>
-                  <td>${it.itemNumber || ''}</td>
-                  <td>${it.itemName || ''}</td>
-                  <td>${it.quantity || ''}</td>
-                  <td>${Number(it.price).toFixed(2)}</td>
-                  <td>${it.discountPercent || '0'}</td>
-                  <td>${discountValue.toFixed(2)}</td>
-                  <td>${afterDiscount.toFixed(2)}</td>
-                  <td>${taxValue.toFixed(2)}</td>
-                  <td>${net.toFixed(2)}</td>
-                  <td>${warehouseName}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-            <!-- Summary Row -->
-            <tfoot>
-              <tr style="background:#f0f0f0; font-weight:bold;">
-                <td colspan="6" style="text-align:right; font-weight:bold; color:#000;">الإجماليات:</td>
-                <td style="color:#000; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي الخصم
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => { total += Number(it.discountValue) || 0; });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#000; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي قبل الضريبة
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => {
-                      const subtotal = Number(it.price) * Number(it.quantity);
-                      const discountValue = Number(it.discountValue) || 0;
-                      total += subtotal - discountValue;
-                    });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#000; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي الضريبة
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => { total += Number(it.taxValue) || 0; });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td style="color:#000; font-weight:bold;">
-                  ${(() => {
-                    // إجمالي النهائي
-                    if (!invoice.items) return '0.00';
-                    let total = 0;
-                    invoice.items.forEach((it) => {
-                      const subtotal = Number(it.price) * Number(it.quantity);
-                      const discountValue = Number(it.discountValue) || 0;
-                      const taxValue = Number(it.taxValue) || 0;
-                      total += (subtotal - discountValue + taxValue);
-                    });
-                    return total.toFixed(2);
-                  })()}
-                </td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-          <!-- Totals and Policies Section side by side -->
-          <div class="totals-policy-row">
-           <div style="flex: 1 1 340px; min-width: 260px; max-width: 600px;">
-              <div class="policy">
-                <div class="policy-title">سياسة الاستبدال والاسترجاع:</div>
-                <div>1- يستوجب أن يكون المنتج بحالته الأصلية بدون أي استعمال وبكامل اكسسواراته وبالتعبئة الأصلية.</div>
-                <div>2- البضاعة المباعة ترد أو تستبدل خلال ثلاثة أيام من تاريخ استلام العميل للمنتج مع إحضار أصل الفاتورة وتكون البضاعة بحالة سليمة ومغلقة.</div>
-                <div>3- يتحمل العميل قيمة التوصيل في حال إرجاع الفاتورة ويتم إعادة المبلغ خلال 3 أيام عمل.</div>
-                <div>4- ${companyData.arabicName || 'الشركة'} غير مسؤولة عن تسليم البضاعة بعد 10 أيام من تاريخ الفاتورة.</div>
-                <div class="policy-title" style="margin-top: 3mm;">سياسة التوصيل:</div>
-                <div>1- توصيل الطلبات من 5 أيام إلى 10 أيام عمل.</div>
-                <div>2- الحد المسموح به للتوصيل هو الدور الأرضي كحد أقصى، وفي حال رغبة العميل بالتوصيل لأعلى من الحد المسموح به، يتم ذلك بواسطة العميل.</div>
-                <div>3- يتم التوصيل حسب جدول المواعيد المحدد من ${companyData.arabicName || 'الشركة'}، كما أن ${companyData.arabicName || 'الشركة'} غير مسؤولة عن أي أضرار ناتجه بسبب التأخير او تأجيل موعد التوصيل.</div>
-                <div>4- يستوجب فحص المنتج أثناء استلامه مع التوقيع باستلامه، وعدم الفحص يسقط حق العميل في المطالبة بالاسترجاع او الاستبدال في حال وجود كسر.</div>
-                <div>5- لايوجد لدينا تركيب الضمان هو ضمان ${companyData.arabicName || 'الشركة'}، كما أن الضمان لا يشمل سوء الاستخدام الناتج من العميل.</div>
-              </div>
-            </div>
-            <div style="flex: 0 0 320px; max-width: 340px; min-width: 220px;">
-              <table style="border:1.5px solid #000; border-radius:6px; font-size:13px; min-width:220px; max-width:320px; margin-left:0; margin-right:0; border-collapse:collapse; box-shadow:none; width:100%;">
-                <tbody>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">إجمالى الفاتورة</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.total?.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">مبلغ الخصم</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.total - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى بعد الخصم</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${invoice.totals?.afterDiscount?.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الضريبة (${invoice.items && invoice.items[0] ? (invoice.items[0].taxPercent || 0) : 0}%)</td>
-                    <td style="text-align:left; font-weight:500; border:1px solid #000; background:#fff;">${(invoice.totals?.afterTax - invoice.totals?.afterDiscount).toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-weight:bold; color:#000; text-align:right; padding:7px 12px; border:1px solid #000; background:#fff;">الاجمالى النهايي</td>
-                    <td style="text-align:left; font-weight:700; border:1px solid #000; background:#fff;">${invoice.totals?.afterTax?.toFixed(2)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-           
-          </div>
-          <!-- Signature Section -->
-          <div class="signature">
-            <div class="signature-box">
-              <div>اسم العميل: ${invoice.customerName || ''}</div>
-              <div>التوقيع: ___________________</div>
-            </div>
-            <div class="signature-box" style="position:relative;">
-              <div>البائع: ${invoice.delegate || ''}</div>
-              <div>التاريخ: ${invoice.date || ''}</div>
-              <!-- Decorative Stamp -->
-              <div style="
-                margin-top:18px;
-                display:flex;
-                justify-content:center;
-                align-items:center;
-                width:160px;
-                height:60px;
-                border:2.5px dashed #000;
-                border-radius:50%;
-                box-shadow:0 2px 8px 0 rgba(0,0,0,0.08);
-                opacity:0.85;
-                background: repeating-linear-gradient(135deg, #f8f8f8 0 8px, #fff 8px 16px);
-                font-family: 'Cairo', 'Tajawal', Arial, sans-serif;
-                font-size:15px;
-                font-weight:bold;
-                color:#000;
-                letter-spacing:1px;
-                text-align:center;
-                position:absolute;
-                left:50%;
-                transform:translateX(-50%);
-                bottom:-80px;
-                z-index:2;
-              ">
-                <div style="width:100%;">
-                  <div style="font-size:16px; font-weight:700;">${companyData.arabicName || 'الشركة'}</div>
-                  <div style="font-size:13px; font-weight:500; margin-top:2px;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
-                </div>
+              margin-left: auto;
+              margin-right: auto;
+              z-index: 2;
+            ">
+              <div style="width: 100%;">
+                <div style="font-size: 18px; font-weight: 700; line-height: 1.2;">${companyData.arabicName || 'الشركة'}</div>
+                <div style="font-size: 14px; font-weight: 500; margin-top: 4px; line-height: 1.1;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
               </div>
             </div>
           </div>
-          <!-- Footer -->
-          <div class="footer">
-            ${companyData.website ? `لزيارة متجرنا الإلكتروني / Visit our e-shop: ${companyData.website}` : ''}
+          <div style="flex: 1; text-align: left; font-size: 14px; font-weight: 500;">
+            <div style="margin-bottom: 8px;">مدير التوصيل: ___________________</div>
+            <div>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</div>
           </div>
-        </body>
-        </html>
-      `);
+        </div>
+      </body>
+      </html>
+    `);
+    
     printWindow?.document.close();
     printWindow?.focus();
-    setTimeout(() => { printWindow?.print(); printWindow?.close(); }, 700);
+    setTimeout(() => { 
+      printWindow?.print(); 
+      printWindow?.close(); 
+    }, 1000);
   };
   return (
     <>
@@ -2743,7 +2570,7 @@ const handlePrintTable = () => {
               }
               className="bg-blue-100 text-blue-600 hover:bg-blue-700 border-blue-600 hover:border-blue-700"
               size="large"
-              onClick={handlePrintTable}
+              onClick={handlePrint}
             >
               طباعة
             </Button>

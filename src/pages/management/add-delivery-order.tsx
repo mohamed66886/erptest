@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet";
 import { useNavigate } from 'react-router-dom';
-import { collection, getDocs, addDoc, query, where, orderBy, limit } from "firebase/firestore";
+import { collection, getDocs, addDoc, query, where, orderBy, limit, doc, getDoc } from "firebase/firestore";
 import { db, storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion } from "framer-motion";
@@ -82,6 +82,13 @@ interface District {
   governorateName?: string;
 }
 
+interface DeliverySettings {
+  maxOrdersPerRegion: number;
+  allowZeroLimit: boolean;
+  enableDriverAssignment: boolean;
+  requireDriverForOrder: boolean;
+}
+
 const AddDeliveryOrder: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -121,6 +128,12 @@ const AddDeliveryOrder: React.FC = () => {
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [invoiceExists, setInvoiceExists] = useState(false);
   const [checkingInvoice, setCheckingInvoice] = useState(false);
+  
+  // إعدادات التوصيل
+  const [deliverySettings, setDeliverySettings] = useState<DeliverySettings | null>(null);
+  const [maxOrdersReached, setMaxOrdersReached] = useState(false);
+  const [currentOrdersCount, setCurrentOrdersCount] = useState(0);
+  const [shouldAutoAdjustDate, setShouldAutoAdjustDate] = useState(false);
 
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
@@ -338,6 +351,83 @@ const AddDeliveryOrder: React.FC = () => {
     fetchDistricts();
   }, []);
 
+  // جلب إعدادات التوصيل
+  useEffect(() => {
+    const fetchDeliverySettings = async () => {
+      if (!currentFinancialYear) return;
+      
+      try {
+        const settingsRef = doc(db, `financialYears/${currentFinancialYear.id}/settings`, 'delivery');
+        const settingsDoc = await getDoc(settingsRef);
+        
+        if (settingsDoc.exists()) {
+          setDeliverySettings(settingsDoc.data() as DeliverySettings);
+        }
+      } catch (error) {
+        console.error('Error fetching delivery settings:', error);
+      }
+    };
+    fetchDeliverySettings();
+  }, [currentFinancialYear]);
+
+  // فحص عدد الطلبات الحالية للمنطقة في التاريخ المحدد
+  useEffect(() => {
+    const checkCurrentOrders = async () => {
+      if (!districtId || !deliveryDate || !deliverySettings) return;
+
+      try {
+        const selectedDate = deliveryDate.format('YYYY-MM-DD');
+
+        const ordersQuery = query(
+          collection(db, 'delivery_orders'),
+          where('districtId', '==', districtId),
+          where('deliveryDate', '==', selectedDate)
+        );
+
+        const ordersSnapshot = await getDocs(ordersQuery);
+        const count = ordersSnapshot.size;
+        setCurrentOrdersCount(count);
+
+        // التحقق من الوصول للحد الأقصى
+        if (deliverySettings.maxOrdersPerRegion > 0) {
+          if (!deliverySettings.allowZeroLimit && count >= deliverySettings.maxOrdersPerRegion) {
+            setMaxOrdersReached(true);
+            setShouldAutoAdjustDate(true);
+          } else {
+            setMaxOrdersReached(false);
+            setShouldAutoAdjustDate(false);
+          }
+        } else if (deliverySettings.maxOrdersPerRegion === 0 && !deliverySettings.allowZeroLimit) {
+          setMaxOrdersReached(true);
+          setShouldAutoAdjustDate(true);
+        } else {
+          setMaxOrdersReached(false);
+          setShouldAutoAdjustDate(false);
+        }
+      } catch (error) {
+        console.error('Error checking current orders:', error);
+      }
+    };
+    checkCurrentOrders();
+  }, [districtId, deliveryDate, deliverySettings]);
+
+  // تحويل التاريخ تلقائياً عند الوصول للحد الأقصى
+  useEffect(() => {
+    if (shouldAutoAdjustDate && deliveryDate && districtId) {
+      const nextDay = deliveryDate.add(1, 'day');
+      setDeliveryDate(nextDay);
+      setShouldAutoAdjustDate(false);
+      
+      const district = districts.find(d => d.id === districtId);
+      const districtName = district?.nameAr || district?.name || 'المنطقة';
+      
+      message.warning({
+        content: `تم الوصول للحد الأقصى في ${districtName}! تم تغيير التاريخ تلقائياً إلى ${nextDay.format('YYYY-MM-DD')}`,
+        duration: 3
+      });
+    }
+  }, [shouldAutoAdjustDate, deliveryDate, districtId, districts]);
+
   // عند اختيار الفرع
   useEffect(() => {
     if (!branchId || !branches.length) return;
@@ -481,6 +571,19 @@ const AddDeliveryOrder: React.FC = () => {
     }
     if (fileList.length === 0) {
       message.error('يرجى إرفاق ملف');
+      return;
+    }
+
+    // التحقق من الحد الأقصى للطلبات في المنطقة
+    if (maxOrdersReached) {
+      const district = districts.find(d => d.id === districtId);
+      const districtName = district?.name || 'هذه المنطقة';
+      
+      if (deliverySettings?.maxOrdersPerRegion === 0) {
+        message.error(`لا يمكن إضافة طلبات في ${districtName} (الحد الأقصى مغلق)`);
+      } else {
+        message.error(`تم الوصول للحد الأقصى للطلبات في ${districtName} (${deliverySettings?.maxOrdersPerRegion} طلب)`);
+      }
       return;
     }
 
@@ -788,6 +891,24 @@ const AddDeliveryOrder: React.FC = () => {
                 </Option>
               ))}
             </Select>
+            
+            {/* عرض عدد الطلبات الحالية */}
+            {districtId && deliveryDate && deliverySettings && deliverySettings.maxOrdersPerRegion > 0 && (
+              <div className={`mt-2 p-2 rounded ${maxOrdersReached ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'}`}>
+                <span className={`text-sm ${maxOrdersReached ? 'text-red-600' : 'text-blue-600'}`}>
+                  عدد الطلبات: {currentOrdersCount} / {deliverySettings.maxOrdersPerRegion}
+                  {maxOrdersReached && ' (تم الوصول للحد الأقصى)'}
+                </span>
+              </div>
+            )}
+            
+            {districtId && deliveryDate && deliverySettings && deliverySettings.maxOrdersPerRegion === 0 && !deliverySettings.allowZeroLimit && (
+              <div className="mt-2 p-2 rounded bg-red-50 border border-red-200">
+                <span className="text-sm text-red-600">
+                  هذه المنطقة مغلقة حالياً
+                </span>
+              </div>
+            )}
           </div>
 
           {/* المنطقة */}

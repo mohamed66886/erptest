@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
-import { Table, Button, message, Tag, Checkbox, Select, Input } from "antd";
+import { Table, Button, message, Tag, Checkbox, Select, Input, Alert } from "antd";
 import { WhatsAppOutlined, CheckCircleOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import Breadcrumb from "@/components/Breadcrumb";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
@@ -54,8 +54,9 @@ const ConfirmOrders: React.FC = () => {
   const [filterDriver, setFilterDriver] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("قيد الانتظار");
   const [searchText, setSearchText] = useState<string>("");
-  const [filterDeliveryDate, setFilterDeliveryDate] = useState<string>("");
+  const [filterDeliveryDate, setFilterDeliveryDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [sending, setSending] = useState(false);
+  const [multipleDriversSelected, setMultipleDriversSelected] = useState(false);
 
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
@@ -123,20 +124,36 @@ const ConfirmOrders: React.FC = () => {
 
   // معالجة تحديد الطلبات
   const handleSelectOrder = (orderId: string, checked: boolean) => {
-    if (checked) {
-      setSelectedOrders([...selectedOrders, orderId]);
-    } else {
-      setSelectedOrders(selectedOrders.filter(id => id !== orderId));
-    }
+    const newSelectedOrders = checked 
+      ? [...selectedOrders, orderId]
+      : selectedOrders.filter(id => id !== orderId);
+    
+    setSelectedOrders(newSelectedOrders);
+    checkMultipleDrivers(newSelectedOrders);
   };
 
   const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      const allIds = filteredOrders.map(order => order.id);
-      setSelectedOrders(allIds);
-    } else {
-      setSelectedOrders([]);
+    const newSelectedOrders = checked ? filteredOrders.map(order => order.id) : [];
+    setSelectedOrders(newSelectedOrders);
+    checkMultipleDrivers(newSelectedOrders);
+  };
+
+  // التحقق من تعدد السائقين
+  const checkMultipleDrivers = (orderIds: string[]) => {
+    if (orderIds.length === 0) {
+      setMultipleDriversSelected(false);
+      return;
     }
+
+    const uniqueDrivers = new Set<string>();
+    orderIds.forEach(orderId => {
+      const order = orders.find(o => o.id === orderId);
+      if (order && order.driverId) {
+        uniqueDrivers.add(order.driverId);
+      }
+    });
+
+    setMultipleDriversSelected(uniqueDrivers.size > 1);
   };
 
   // تصفية الطلبات
@@ -189,6 +206,12 @@ const ConfirmOrders: React.FC = () => {
 
     if (ordersByDriver.size === 0) {
       message.error('الطلبات المحددة ليس لها سائق مخصص');
+      return;
+    }
+
+    // التحقق من أن جميع الطلبات لسائق واحد فقط
+    if (ordersByDriver.size > 1) {
+      message.error('يجب اختيار طلبات لسائق واحد فقط. لا يمكن إرسال طلبات لأكثر من سائق في نفس الوقت');
       return;
     }
 
@@ -258,18 +281,33 @@ const ConfirmOrders: React.FC = () => {
       ),
     },
     {
-      title: 'اسم العميل',
-      dataIndex: 'customerName',
-      key: 'customerName',
-      width: 150,
-      sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.customerName || '').localeCompare(b.customerName || ''),
-    },
-    {
       title: 'رقم الهاتف',
       dataIndex: 'customerPhone',
       key: 'customerPhone',
       width: 120,
       sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.customerPhone || '').localeCompare(b.customerPhone || ''),
+    },
+    {
+      title: 'السائق',
+      dataIndex: 'driverName',
+      key: 'driverName',
+      width: 120,
+      sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.driverName || '').localeCompare(b.driverName || ''),
+      render: (text: string) => text || <span className="text-gray-400">غير محدد</span>,
+    },
+    {
+      title: 'الحي',
+      dataIndex: 'districtName',
+      key: 'districtName',
+      width: 120,
+      sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.districtName || '').localeCompare(b.districtName || ''),
+    },
+    {
+      title: 'اسم العميل',
+      dataIndex: 'customerName',
+      key: 'customerName',
+      width: 150,
+      sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.customerName || '').localeCompare(b.customerName || ''),
     },
     {
       title: 'الفرع',
@@ -284,21 +322,6 @@ const ConfirmOrders: React.FC = () => {
       key: 'regionName',
       width: 120,
       sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.regionName || '').localeCompare(b.regionName || ''),
-    },
-    {
-      title: 'الحي',
-      dataIndex: 'districtName',
-      key: 'districtName',
-      width: 120,
-      sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.districtName || '').localeCompare(b.districtName || ''),
-    },
-    {
-      title: 'السائق',
-      dataIndex: 'driverName',
-      key: 'driverName',
-      width: 120,
-      sorter: (a: DeliveryOrder, b: DeliveryOrder) => (a.driverName || '').localeCompare(b.driverName || ''),
-      render: (text: string) => text || <span className="text-gray-400">غير محدد</span>,
     },
     {
       title: 'تاريخ التسليم',
@@ -516,6 +539,21 @@ const ConfirmOrders: React.FC = () => {
           className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 shadow-sm overflow-hidden relative"
         >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-200"></div>
+          
+          {/* تنبيه عند اختيار أكثر من سائق */}
+          {multipleDriversSelected && (
+            <div className="mb-4">
+              <Alert
+                message="تنبيه: تم اختيار طلبات لأكثر من سائق"
+                description="لا يمكن إرسال طلبات لأكثر من سائق في نفس الوقت. يرجى اختيار طلبات لسائق واحد فقط."
+                type="warning"
+                showIcon
+                closable
+                onClose={() => setMultipleDriversSelected(false)}
+                style={{ fontSize: 16 }}
+              />
+            </div>
+          )}
           
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
