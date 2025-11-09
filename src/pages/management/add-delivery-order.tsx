@@ -5,8 +5,8 @@ import { collection, getDocs, addDoc, query, where, orderBy, limit, doc, getDoc 
 import { db, storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { motion } from "framer-motion";
-import { DatePicker, Input, Select, Button, Upload, Checkbox, message, UploadFile } from "antd";
-import { UploadOutlined, SaveOutlined } from '@ant-design/icons';
+import { DatePicker, Input, Select, Button, Upload, Checkbox, message, UploadFile, Modal } from "antd";
+import { UploadOutlined, SaveOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import arEG from 'antd/es/date-picker/locale/ar_EG';
 import { fetchBranches, Branch as BranchType } from "@/lib/branches";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -403,6 +403,58 @@ const AddDeliveryOrder: React.FC = () => {
     fetchDeliverySettings();
   }, [currentFinancialYear]);
 
+  // دالة عرض رسالة تأكيد تجاوز الحد الأقصى
+  const showMaxOrdersConfirmation = useCallback((currentCount: number) => {
+    if (!districtId || !deliveryDate || !deliverySettings) return;
+    
+    const district = districts.find(d => d.id === districtId);
+    const districtName = district?.nameAr || district?.name || 'هذه المنطقة';
+    const maxOrders = deliverySettings.maxOrdersPerRegion;
+    const formattedDate = deliveryDate.format('YYYY-MM-DD');
+    const nextDay = deliveryDate.add(1, 'day');
+    const nextDayFormatted = nextDay.format('YYYY-MM-DD');
+
+    let modalContent = '';
+    if (maxOrders === 0) {
+      modalContent = `الحي "${districtName}" مغلق حالياً ولا يمكن إضافة أي طلبات توصيل إليه.
+
+هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة؟
+
+ملاحظة: قد يكون الحي مفتوحاً في تاريخ آخر حسب إعدادات النظام.`;
+    } else {
+      modalContent = `تم الوصول للحد الأقصى للطلبات في حي "${districtName}" بتاريخ ${formattedDate}.
+      
+الوضع الحالي: ${currentCount} من ${maxOrders} طلب
+
+هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة؟`;
+    }
+
+    Modal.confirm({
+      title: maxOrders === 0 ? '🔒 الحي مغلق حالياً' : '⚠️ تجاوز الحد الأقصى للطلبات',
+      content: modalContent,
+      icon: <ExclamationCircleOutlined style={{ color: maxOrders === 0 ? '#ef4444' : '#faad14' }} />,
+      okText: 'نعم، تغيير التاريخ والمتابعة',
+      cancelText: 'إلغاء',
+      centered: true,
+      onOk() {
+        // تغيير التاريخ إلى اليوم التالي
+        setDeliveryDate(nextDay);
+        setMaxOrdersReached(false);
+        setShouldAutoAdjustDate(false);
+        
+        message.success({
+          content: `تم تغيير التاريخ إلى ${nextDayFormatted}`,
+          duration: 2
+        });
+      },
+      onCancel() {
+        // إبقاء التاريخ كما هو ولكن مع إبقاء التحذير
+        setMaxOrdersReached(true);
+        setShouldAutoAdjustDate(false);
+      },
+    });
+  }, [districtId, deliveryDate, deliverySettings, districts]);
+
   // فحص عدد الطلبات الحالية للمنطقة في التاريخ المحدد
   useEffect(() => {
     const checkCurrentOrders = async () => {
@@ -422,17 +474,20 @@ const AddDeliveryOrder: React.FC = () => {
         setCurrentOrdersCount(count);
 
         // التحقق من الوصول للحد الأقصى
-        if (deliverySettings.maxOrdersPerRegion > 0) {
-          if (!deliverySettings.allowZeroLimit && count >= deliverySettings.maxOrdersPerRegion) {
+        if (deliverySettings.maxOrdersPerRegion === 0) {
+          // الحد الأقصى = 0 يعني أن الحي مغلق تماماً
+          setMaxOrdersReached(true);
+          // عرض رسالة تأكيد للمستخدم
+          showMaxOrdersConfirmation(count);
+        } else if (deliverySettings.maxOrdersPerRegion > 0) {
+          if (count >= deliverySettings.maxOrdersPerRegion) {
             setMaxOrdersReached(true);
-            setShouldAutoAdjustDate(true);
+            // عرض رسالة تأكيد للمستخدم
+            showMaxOrdersConfirmation(count);
           } else {
             setMaxOrdersReached(false);
             setShouldAutoAdjustDate(false);
           }
-        } else if (deliverySettings.maxOrdersPerRegion === 0 && !deliverySettings.allowZeroLimit) {
-          setMaxOrdersReached(true);
-          setShouldAutoAdjustDate(true);
         } else {
           setMaxOrdersReached(false);
           setShouldAutoAdjustDate(false);
@@ -442,24 +497,7 @@ const AddDeliveryOrder: React.FC = () => {
       }
     };
     checkCurrentOrders();
-  }, [districtId, deliveryDate, deliverySettings]);
-
-  // تحويل التاريخ تلقائياً عند الوصول للحد الأقصى
-  useEffect(() => {
-    if (shouldAutoAdjustDate && deliveryDate && districtId) {
-      const nextDay = deliveryDate.add(1, 'day');
-      setDeliveryDate(nextDay);
-      setShouldAutoAdjustDate(false);
-      
-      const district = districts.find(d => d.id === districtId);
-      const districtName = district?.nameAr || district?.name || 'المنطقة';
-      
-      message.warning({
-        content: `تم الوصول للحد الأقصى في ${districtName}! تم تغيير التاريخ تلقائياً إلى ${nextDay.format('YYYY-MM-DD')}`,
-        duration: 3
-      });
-    }
-  }, [shouldAutoAdjustDate, deliveryDate, districtId, districts]);
+  }, [districtId, deliveryDate, deliverySettings, showMaxOrdersConfirmation]);
 
   // عند اختيار الفرع
   useEffect(() => {
@@ -568,7 +606,8 @@ const AddDeliveryOrder: React.FC = () => {
   };
 
   // دالة الحفظ
-  const handleSave = async () => {
+  const handleSave = async (overrideDate?: dayjs.Dayjs) => {
+    const currentDeliveryDate = overrideDate || deliveryDate;
     // التحقق من الحقول المطلوبة
     if (!branchId) {
       message.error('يرجى اختيار الفرع');
@@ -598,7 +637,7 @@ const AddDeliveryOrder: React.FC = () => {
       message.error('يرجى اختيار المستودع');
       return;
     }
-    if (!deliveryDate) {
+    if (!currentDeliveryDate) {
       message.error('يرجى تحديد تاريخ التسليم');
       return;
     }
@@ -607,16 +646,50 @@ const AddDeliveryOrder: React.FC = () => {
       return;
     }
 
-    // التحقق من الحد الأقصى للطلبات في المنطقة
+    // التحقق من الحد الأقصى للطلبات في المنطقة مع إعطاء خيار للمستخدم
     if (maxOrdersReached) {
       const district = districts.find(d => d.id === districtId);
-      const districtName = district?.name || 'هذه المنطقة';
+      const districtName = district?.nameAr || district?.name || 'هذه المنطقة';
+      const formattedDate = deliveryDate.format('YYYY-MM-DD');
+      const nextDay = deliveryDate.add(1, 'day');
+      const nextDayFormatted = nextDay.format('YYYY-MM-DD');
       
+      let modalContent = '';
       if (deliverySettings?.maxOrdersPerRegion === 0) {
-        message.error(`لا يمكن إضافة طلبات في ${districtName} (الحد الأقصى مغلق)`);
+        modalContent = `الحي "${districtName}" مغلق حالياً ولا يمكن إضافة أي طلبات توصيل إليه.
+        
+هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة مع الحفظ؟
+
+ملاحظة: قد يكون الحي مفتوحاً في تاريخ آخر حسب إعدادات النظام.`;
       } else {
-        message.error(`تم الوصول للحد الأقصى للطلبات في ${districtName} (${deliverySettings?.maxOrdersPerRegion} طلب)`);
+        modalContent = `تم الوصول للحد الأقصى للطلبات في حي "${districtName}" بتاريخ ${formattedDate}.
+        
+الوضع الحالي: ${currentOrdersCount} من ${deliverySettings?.maxOrdersPerRegion} طلب
+
+هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة مع الحفظ؟`;
       }
+
+      Modal.confirm({
+        title: deliverySettings?.maxOrdersPerRegion === 0 ? '🔒 الحي مغلق حالياً' : '⚠️ تجاوز الحد الأقصى للطلبات',
+        content: modalContent,
+        icon: <ExclamationCircleOutlined style={{ color: deliverySettings?.maxOrdersPerRegion === 0 ? '#ef4444' : '#faad14' }} />,
+        okText: 'نعم، تغيير التاريخ والحفظ',
+        cancelText: 'إلغاء',
+        centered: true,
+        onOk() {
+          // تغيير التاريخ إلى اليوم التالي والمتابعة مع الحفظ
+          setDeliveryDate(nextDay);
+          setMaxOrdersReached(false);
+          
+          // استدعاء دالة الحفظ مع التاريخ الجديد
+          setTimeout(() => {
+            handleSave(nextDay);
+          }, 100);
+        },
+        onCancel() {
+          return; // إلغاء العملية
+        },
+      });
       return;
     }
 
@@ -674,7 +747,7 @@ const AddDeliveryOrder: React.FC = () => {
         warehouseName: warehouses.find(w => w.id === warehouseId)?.name || '',
         warehouseKeeper,
         status,
-        deliveryDate: deliveryDate.format('YYYY-MM-DD'),
+        deliveryDate: currentDeliveryDate.format('YYYY-MM-DD'),
         notes,
         requiresInstallation,
         fileName: fileList[0]?.name || '',
@@ -702,6 +775,11 @@ const AddDeliveryOrder: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // دالة الحفظ العادي (بدون معاملات) للاستخدام مع onClick
+  const handleSaveClick = () => {
+    handleSave();
   };
 
 
@@ -919,11 +997,16 @@ const AddDeliveryOrder: React.FC = () => {
               value={districtId || undefined}
               onChange={setDistrictId}
               placeholder="اختر الحي"
-              style={largeControlStyle}
+              style={{
+                ...largeControlStyle,
+                backgroundColor: deliveryDate && deliverySettings?.maxOrdersPerRegion === 0 ? '#f5f5f5' : '#fff',
+                cursor: deliveryDate && deliverySettings?.maxOrdersPerRegion === 0 ? 'not-allowed' : 'pointer'
+              }}
               size="large"
               className={styles.noAntBorder}
               showSearch
               allowClear
+              disabled={deliveryDate && deliverySettings?.maxOrdersPerRegion === 0}
               filterOption={(input, option) =>
                 option?.children?.toString().toLowerCase().includes(input.toLowerCase())
               }
@@ -935,6 +1018,15 @@ const AddDeliveryOrder: React.FC = () => {
               ))}
             </Select>
             
+            {/* رسالة تحذيرية عندما يكون الحد الأقصى = 0 */}
+            {deliveryDate && deliverySettings?.maxOrdersPerRegion === 0 && (
+              <div className="mt-2 p-3 rounded bg-red-50 border border-red-200">
+                <span className="text-sm text-red-600 font-medium">
+                  🔒 جميع الأحياء مغلقة في هذا التاريخ - يرجى اختيار تاريخ آخر
+                </span>
+              </div>
+            )}
+            
             {/* عرض عدد الطلبات الحالية */}
             {districtId && deliveryDate && deliverySettings && deliverySettings.maxOrdersPerRegion > 0 && (
               <div className={`mt-2 p-2 rounded ${maxOrdersReached ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'}`}>
@@ -945,10 +1037,10 @@ const AddDeliveryOrder: React.FC = () => {
               </div>
             )}
             
-            {districtId && deliveryDate && deliverySettings && deliverySettings.maxOrdersPerRegion === 0 && !deliverySettings.allowZeroLimit && (
+            {districtId && deliveryDate && deliverySettings && deliverySettings.maxOrdersPerRegion === 0 && (
               <div className="mt-2 p-2 rounded bg-red-50 border border-red-200">
-                <span className="text-sm text-red-600">
-                  هذه المنطقة مغلقة حالياً
+                <span className="text-sm text-red-600 font-medium">
+                  🔒 هذا الحي مغلق حالياً - لا يمكن إضافة طلبات
                 </span>
               </div>
             )}
@@ -1147,7 +1239,7 @@ const AddDeliveryOrder: React.FC = () => {
             type="primary"
             icon={<SaveOutlined />}
             size="large"
-            onClick={handleSave}
+            onClick={handleSaveClick}
             loading={saving}
             className="bg-green-600 hover:bg-green-700"
             style={{ height: 48, fontSize: 18, minWidth: 120 }}
