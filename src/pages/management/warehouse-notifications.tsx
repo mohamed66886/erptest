@@ -108,10 +108,15 @@ const WarehouseNotifications: React.FC = () => {
       
       // جلب طلبات التوصيل
       const ordersSnapshot = await getDocs(collection(db, 'delivery_orders'));
-      const orders = ordersSnapshot.docs.map(doc => ({
+      const allOrders = ordersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as DeliveryOrder[];
+      
+      // تصفية الطلبات قيد الانتظار فقط
+      const orders = allOrders.filter(order => 
+        order.status === 'قيد الانتظار' || !order.status
+      );
       
       // جلب بيانات المستودعات من delivery_warehouses
       const warehousesSnapshot = await getDocs(collection(db, 'delivery_warehouses'));
@@ -203,7 +208,7 @@ const WarehouseNotifications: React.FC = () => {
     message.success('تم فتح واتساب');
   };
 
-  // تنزيل الملفات المرفقة
+  // عرض جميع الملفات في صفحة واحدة
   const handleDownloadFiles = async (warehouse: WarehouseData) => {
     try {
       // تصفية الطلبات التي تحتوي على ملفات
@@ -214,56 +219,171 @@ const WarehouseNotifications: React.FC = () => {
         return;
       }
 
-      message.loading({ content: `جاري تنزيل ${ordersWithFiles.length} ملف...`, key: 'download', duration: 0 });
+      message.loading({ content: `جاري فتح ${ordersWithFiles.length} ملف...`, key: 'download', duration: 0 });
 
-      let successCount = 0;
-      let failCount = 0;
-
-      // تنزيل كل ملف
-      for (const order of ordersWithFiles) {
-        if (order.fileUrl) {
-          try {
-            // فتح الملف في نافذة جديدة للتنزيل (حل لمشكلة CORS)
-            // المتصفح سيتعامل مع التنزيل تلقائياً
-            const link = document.createElement('a');
-            link.href = order.fileUrl;
-            
-            // استخراج اسم الملف من URL أو استخدام رقم الفاتورة
-            const urlParts = order.fileUrl.split('/');
-            const fileName = decodeURIComponent(
-              urlParts[urlParts.length - 1].split('?')[0]
-            ).replace(/^.*%2F/, '') || `${order.fullInvoiceNumber || 'file'}`;
-            
-            link.download = fileName;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            successCount++;
-            
-            // تأخير بسيط بين التنزيلات لتجنب حظر المتصفح
-            await new Promise(resolve => setTimeout(resolve, 800));
-          } catch (error) {
-            console.error(`Error downloading file for order ${order.fullInvoiceNumber}:`, error);
-            failCount++;
-          }
-        }
+      // فتح نافذة جديدة تحتوي على جميع الملفات
+      const printWindow = window.open('', '', 'width=1400,height=900');
+      if (!printWindow) {
+        message.error({ content: 'فشل فتح النافذة. يرجى السماح بالنوافذ المنبثقة', key: 'download' });
+        return;
       }
 
-      if (successCount > 0) {
-        message.success({ 
-          content: `تم فتح ${successCount} ملف للتنزيل${failCount > 0 ? ` (فشل ${failCount})` : ''}`, 
-          key: 'download' 
-        });
-      } else {
-        message.error({ content: 'فشل تنزيل جميع الملفات', key: 'download' });
-      }
+      // إنشاء HTML يحتوي على جميع ملفات PDF
+      const pdfsHtml = ordersWithFiles.map((order, index) => `
+        <div class="pdf-container" style="page-break-after: always; margin-bottom: 20px;">
+          <div class="pdf-header">
+            <h3>ملف رقم ${index + 1} - فاتورة: ${order.fullInvoiceNumber} - ${order.customerName || 'غير محدد'}</h3>
+          </div>
+          <embed 
+            src="${order.fileUrl}" 
+            type="application/pdf" 
+            width="100%" 
+            height="1100px"
+            style="border: 2px solid #8b5cf6; border-radius: 8px;"
+          />
+        </div>
+      `).join('');
+
+      printWindow.document.write(`
+        <html dir="rtl">
+        <head>
+          <title>ملفات مستودع ${warehouse.name} - ${ordersWithFiles.length} ملف</title>
+          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap" rel="stylesheet">
+          <style>
+            @page { 
+              size: A4; 
+              margin: 10mm;
+            }
+            body { 
+              font-family: 'Tajawal', sans-serif; 
+              padding: 20px;
+              margin: 0;
+              background: #f3f4f6;
+            }
+            .header {
+              background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+              color: white;
+              padding: 20px;
+              border-radius: 12px;
+              margin-bottom: 20px;
+              text-align: center;
+              box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+            .header h1 {
+              margin: 0 0 10px 0;
+              font-size: 28px;
+              font-weight: 700;
+            }
+            .header p {
+              margin: 5px 0;
+              font-size: 16px;
+              opacity: 0.95;
+            }
+            .pdf-container {
+              background: white;
+              padding: 20px;
+              border-radius: 12px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+            .pdf-header {
+              background: #f9fafb;
+              padding: 15px;
+              border-radius: 8px;
+              margin-bottom: 15px;
+              border-right: 4px solid #8b5cf6;
+            }
+            .pdf-header h3 {
+              margin: 0;
+              color: #1f2937;
+              font-size: 18px;
+              font-weight: 600;
+            }
+            .controls {
+              position: fixed;
+              top: 20px;
+              left: 20px;
+              background: white;
+              padding: 15px;
+              border-radius: 12px;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+              z-index: 1000;
+            }
+            .btn {
+              background: #8b5cf6;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 8px;
+              cursor: pointer;
+              font-family: 'Tajawal', sans-serif;
+              font-size: 14px;
+              font-weight: 600;
+              margin: 5px;
+              transition: all 0.3s;
+            }
+            .btn:hover {
+              background: #7c3aed;
+              transform: translateY(-2px);
+              box-shadow: 0 4px 8px rgba(139, 92, 246, 0.3);
+            }
+            .btn-print {
+              background: #10b981;
+            }
+            .btn-print:hover {
+              background: #059669;
+            }
+            @media print {
+              .controls { display: none; }
+              .header { 
+                background: #8b5cf6 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              body { background: white; }
+              .pdf-container {
+                box-shadow: none;
+                page-break-after: always;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="controls">
+            <button class="btn btn-print" onclick="window.print()">
+              🖨️ طباعة الكل
+            </button>
+            <button class="btn" onclick="window.close()">
+              ✖️ إغلاق
+            </button>
+          </div>
+          
+          <div class="header">
+            <h1>📦 ملفات مستودع ${warehouse.name}</h1>
+            <p><strong>أمين المستودع:</strong> ${warehouse.keeper}</p>
+            <p><strong>عدد الملفات:</strong> ${ordersWithFiles.length} ملف</p>
+            <p><strong>التاريخ:</strong> ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
+          
+          ${pdfsHtml}
+          
+          <div style="text-align: center; padding: 30px; color: #6b7280; font-size: 14px;">
+            <p><strong>نظام ERP90 - إدارة الموارد</strong></p>
+            <p>تم إنشاء هذا المستند بواسطة: ${warehouse.keeper}</p>
+          </div>
+        </body>
+        </html>
+      `);
+      
+      printWindow.document.close();
+      
+      message.success({ 
+        content: `تم فتح ${ordersWithFiles.length} ملف في نافذة واحدة`, 
+        key: 'download' 
+      });
+      
     } catch (error) {
-      console.error('Error downloading files:', error);
-      message.error({ content: 'حدث خطأ أثناء تنزيل الملفات', key: 'download' });
+      console.error('Error opening files:', error);
+      message.error({ content: 'حدث خطأ أثناء فتح الملفات', key: 'download' });
     }
   };
 
