@@ -110,6 +110,7 @@ import Districts from "./management/districts";
 import Drivers from "./management/drivers";
 import DeliveryOrders from "./management/orders";
 import AddDeliveryOrder from "./management/add-delivery-order";
+import EditDeliveryOrder from "./management/edit-delivery-order";
 import BranchStatus from "./management/branch-status";
 import DeliveryWarehouses from "./management/delivery-warehouses";
 import ConfirmOrders from "./management/confirm-orders";
@@ -382,6 +383,11 @@ const Index = () => {
               <Route path="/management/delivery-orders/new" element={
                 <ProtectedRoute requiredPermission="delivery-orders">
                   <AddDeliveryOrder />
+                </ProtectedRoute>
+              } />
+              <Route path="/management/delivery-orders/edit/:orderId" element={
+                <ProtectedRoute requiredPermission="delivery-orders">
+                  <EditDeliveryOrder />
                 </ProtectedRoute>
               } />
               <Route path="/management/branch-status" element={
