@@ -17,6 +17,7 @@ const { Option } = Select;
 interface CompletedOrder {
   id: string;
   fullInvoiceNumber: string;
+  branchId: string;
   branchName: string;
   customerName: string;
   customerPhone: string;
@@ -59,6 +60,19 @@ const CompletedOrders: React.FC = () => {
   const [filterCompletedDate, setFilterCompletedDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [archiving, setArchiving] = useState(false);
 
+  // بيانات المستخدم الحالي من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchId?: string;
+    branchName?: string;
+    warehouseId?: string;
+    warehouseName?: string;
+    permissions?: string[];
+  } | null>(null);
+
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
@@ -76,6 +90,20 @@ const CompletedOrders: React.FC = () => {
       setCurrentFinancialYear(selectedYear);
     }
   };
+
+  // تحميل بيانات المستخدم الحالي من localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        console.log('👤 Current User in Completed Orders:', user);
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error);
+      }
+    }
+  }, []);
 
   // جلب السائقين
   useEffect(() => {
@@ -110,7 +138,10 @@ const CompletedOrders: React.FC = () => {
       // فلترة الطلبات المكتملة فقط
       const completedOrders = ordersData.filter(order => order.status === 'مكتمل');
       
-      console.log('Fetched completed orders:', completedOrders);
+      console.log('✅ Fetched completed orders:', completedOrders.length);
+      console.log('👤 Current user position:', currentUser?.position);
+      console.log('🏪 Current user branchId:', currentUser?.branchId);
+      
       setOrders(completedOrders);
       
       if (completedOrders.length === 0) {
@@ -126,6 +157,7 @@ const CompletedOrders: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // معالجة تحديد الطلبات
@@ -149,6 +181,13 @@ const CompletedOrders: React.FC = () => {
   // تصفية الطلبات
   const filteredOrders = orders.filter(order => {
     let matches = true;
+    
+    // فلترة حسب فرع المستخدم إذا كان مدير فرع
+    if (currentUser?.position === 'مدير فرع' && currentUser?.branchId) {
+      if (order.branchId !== currentUser.branchId) {
+        return false;
+      }
+    }
     
     if (filterDriver && order.driverId !== filterDriver) {
       matches = false;

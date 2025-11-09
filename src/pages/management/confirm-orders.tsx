@@ -18,6 +18,7 @@ const { Option } = Select;
 interface DeliveryOrder {
   id: string;
   fullInvoiceNumber: string;
+  branchId: string;
   branchName: string;
   customerName: string;
   customerPhone: string;
@@ -58,6 +59,19 @@ const ConfirmOrders: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [multipleDriversSelected, setMultipleDriversSelected] = useState(false);
 
+  // بيانات المستخدم الحالي من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchId?: string;
+    branchName?: string;
+    warehouseId?: string;
+    warehouseName?: string;
+    permissions?: string[];
+  } | null>(null);
+
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
@@ -75,6 +89,20 @@ const ConfirmOrders: React.FC = () => {
       setCurrentFinancialYear(selectedYear);
     }
   };
+
+  // تحميل بيانات المستخدم الحالي من localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        console.log('👤 Current User in Confirm Orders:', user);
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error);
+      }
+    }
+  }, []);
 
   // جلب السائقين
   useEffect(() => {
@@ -94,7 +122,7 @@ const ConfirmOrders: React.FC = () => {
   }, []);
 
   // جلب الطلبات
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -104,7 +132,10 @@ const ConfirmOrders: React.FC = () => {
         ...doc.data()
       })) as DeliveryOrder[];
       
-      console.log('Fetched orders:', ordersData);
+      console.log('✅ Fetched all orders:', ordersData.length);
+      console.log('👤 Current user position:', currentUser?.position);
+      console.log('🏪 Current user branchId:', currentUser?.branchId);
+      
       setOrders(ordersData);
       
       if (ordersData.length === 0) {
@@ -116,11 +147,11 @@ const ConfirmOrders: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser?.position, currentUser?.branchId]);
 
   useEffect(() => {
     fetchOrders();
-  }, []);
+  }, [fetchOrders]);
 
   // معالجة تحديد الطلبات
   const handleSelectOrder = (orderId: string, checked: boolean) => {
@@ -159,6 +190,13 @@ const ConfirmOrders: React.FC = () => {
   // تصفية الطلبات
   const filteredOrders = orders.filter(order => {
     let matches = true;
+    
+    // فلترة حسب فرع المستخدم إذا كان مدير فرع
+    if (currentUser?.position === 'مدير فرع' && currentUser?.branchId) {
+      if (order.branchId !== currentUser.branchId) {
+        return false;
+      }
+    }
     
     if (filterDriver && order.driverId !== filterDriver) {
       matches = false;

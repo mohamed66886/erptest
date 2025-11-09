@@ -24,6 +24,8 @@ interface OrderData {
   id: string;
   status?: string;
   driverName?: string;
+  branchId?: string;
+  branchName?: string;
   branchBalance?: number | string; // حالة الفرع = مبلغ التوصيل
   deliveryAmount?: number | string;
   totalAmount?: number | string;
@@ -56,6 +58,33 @@ const ComprehensiveReports: React.FC = () => {
   const [inProgressOrders, setInProgressOrders] = useState(0);
   const [driversData, setDriversData] = useState<DriverReportData[]>([]);
 
+  // بيانات المستخدم الحالي من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchId?: string;
+    branchName?: string;
+    warehouseId?: string;
+    warehouseName?: string;
+    permissions?: string[];
+  } | null>(null);
+
+  // تحميل بيانات المستخدم الحالي من localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        console.log('👤 Current User in Comprehensive Reports:', user);
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error);
+      }
+    }
+  }, []);
+
   // جلب البيانات من Firebase
   const fetchReportData = async () => {
     if (!dateRange || !currentFinancialYear) return;
@@ -79,17 +108,26 @@ const ComprehensiveReports: React.FC = () => {
         ...doc.data()
       }));
 
-      console.log('Orders fetched:', orders); // للتأكد من جلب البيانات
+      console.log('✅ Fetched orders for reports:', orders.length);
+      console.log('👤 Current user position:', currentUser?.position);
+      console.log('🏪 Current user branchId:', currentUser?.branchId);
+
+      // فلترة الطلبات حسب فرع المستخدم إذا كان مدير فرع
+      let filteredOrders = orders;
+      if (currentUser?.position === 'مدير فرع' && currentUser?.branchId) {
+        filteredOrders = orders.filter(order => order.branchId === currentUser.branchId);
+        console.log('🏪 Filtering orders for branch:', currentUser.branchId, 'Orders count:', filteredOrders.length);
+      }
 
       // حساب الإحصائيات العامة
-      const total = orders.length;
+      const total = filteredOrders.length;
       // المكتملة تشمل: المكتملة + المؤرشفة
-      const completed = orders.filter(order => 
+      const completed = filteredOrders.filter(order => 
         order.status === 'completed' || 
         order.status === 'مكتمل' || 
         order.status === 'مؤرشف'
       ).length;
-      const inProgress = orders.filter(order => 
+      const inProgress = filteredOrders.filter(order => 
         order.status === 'in-progress' || 
         order.status === 'قيد التنفيذ' || 
         order.status === 'قيد الانتظار'
@@ -108,7 +146,7 @@ const ComprehensiveReports: React.FC = () => {
         deliveryAmount: number;
       }>();
 
-      orders.forEach(order => {
+      filteredOrders.forEach(order => {
         const driverName = order.driverName || 'غير محدد';
         // مبلغ التوصيل هو حالة الفرع (branchBalance)
         const deliveryAmount = typeof order.branchBalance === 'number' 
@@ -164,7 +202,7 @@ const ComprehensiveReports: React.FC = () => {
       fetchReportData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange]);
+  }, [dateRange, currentUser]);
 
   // حساب الإجماليات
   const totals = driversData.reduce(

@@ -93,6 +93,19 @@ const AddDeliveryOrder: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   
+  // بيانات المستخدم الحالي من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchId?: string;
+    branchName?: string;
+    warehouseId?: string;
+    warehouseName?: string;
+    permissions?: string[];
+  } | null>(null);
+  
   // حالات البيانات الأساسية
   const [branches, setBranches] = useState<Branch[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -138,6 +151,26 @@ const AddDeliveryOrder: React.FC = () => {
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  // تحميل بيانات المستخدم الحالي من localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        console.log('👤 Current User:', user);
+        
+        // إذا كان مدير فرع، تعيين الفرع تلقائياً
+        if (user.position === 'مدير فرع' && user.branchId) {
+          setBranchId(user.branchId);
+          console.log('🏪 Auto-selected branch for مدير فرع:', user.branchId);
+        }
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (currentFinancialYear) {
@@ -756,10 +789,15 @@ const AddDeliveryOrder: React.FC = () => {
               value={branchId}
               onChange={setBranchId}
               placeholder="اختر الفرع"
-              style={largeControlStyle}
+              style={{
+                ...largeControlStyle,
+                backgroundColor: currentUser?.position === 'مدير فرع' ? '#f0f9ff' : '#fff',
+                cursor: currentUser?.position === 'مدير فرع' ? 'not-allowed' : 'pointer'
+              }}
               size="large"
               className={styles.noAntBorder}
               loading={branchesLoading}
+              disabled={currentUser?.position === 'مدير فرع'}
               showSearch
               filterOption={(input, option) =>
                 option?.children?.toString().toLowerCase().includes(input.toLowerCase())
@@ -771,6 +809,11 @@ const AddDeliveryOrder: React.FC = () => {
                 </Option>
               ))}
             </Select>
+            {currentUser?.position === 'مدير فرع' && branchId && (
+              <span className="text-blue-600 text-sm mt-1 font-medium">
+                ✓ تم تحديد فرعك تلقائياً: {currentUser?.branchName || branches.find(b => b.id === branchId)?.name}
+              </span>
+            )}
           </div>
 
           {/* حالة الفرع */}

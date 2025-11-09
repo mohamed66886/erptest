@@ -114,6 +114,19 @@ const DeliveryOrders: React.FC = () => {
   const [seller, setSeller] = useState<string>("");
   const [salesRepAccounts, setSalesRepAccounts] = useState<{ id: string; name: string; number: string; mobile?: string }[]>([]);
 
+  // بيانات المستخدم الحالي من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchId?: string;
+    branchName?: string;
+    warehouseId?: string;
+    warehouseName?: string;
+    permissions?: string[];
+  } | null>(null);
+
   // السنة المالية من السياق العام
   const { currentFinancialYear, setCurrentFinancialYear, activeYears } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
@@ -123,6 +136,20 @@ const DeliveryOrders: React.FC = () => {
       setFiscalYear(currentFinancialYear.year.toString());
     }
   }, [currentFinancialYear]);
+
+  // تحميل بيانات المستخدم الحالي من localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        console.log('👤 Current User in Orders:', user);
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error);
+      }
+    }
+  }, []);
 
   const handleFiscalYearChange = (value: string) => {
     setFiscalYear(value);
@@ -754,6 +781,12 @@ const DeliveryOrders: React.FC = () => {
   useEffect(() => {
     let filtered = [...deliveryOrders];
 
+    // فلترة حسب فرع المستخدم إذا كان مدير فرع
+    if (currentUser?.position === 'مدير فرع' && currentUser?.branchId) {
+      filtered = filtered.filter(order => order.branchId === currentUser.branchId);
+      console.log('🏪 Filtering orders for branch:', currentUser.branchId, 'Orders count:', filtered.length);
+    }
+
     if (searchInvoiceNumber) {
       filtered = filtered.filter(order => 
         order.fullInvoiceNumber?.toLowerCase().includes(searchInvoiceNumber.toLowerCase()) ||
@@ -821,6 +854,7 @@ const DeliveryOrders: React.FC = () => {
     setCurrentPage(1);
   }, [
     deliveryOrders,
+    currentUser,
     searchInvoiceNumber,
     searchCustomerName,
     searchCustomerPhone,
@@ -2584,9 +2618,10 @@ const handlePrintTable = () => {
               onClick={() => {
                 navigate('/management/confirm-orders');
               }}
-              disabled={filteredDeliveryOrders.length === 0}
+              disabled={filteredDeliveryOrders.length === 0 || currentUser?.position === 'مدير فرع'}
               className="bg-green-500 hover:bg-green-600 border-green-600"
               size="large"
+              title={currentUser?.position === 'مدير فرع' ? 'غير متاح لمدير الفرع' : ''}
             >
               تأكيد الطلبات
             </Button>
@@ -2600,9 +2635,10 @@ const handlePrintTable = () => {
               onClick={() => {
                 navigate('/management/warehouse-notifications');
               }}
-              disabled={filteredDeliveryOrders.length === 0}
+              disabled={filteredDeliveryOrders.length === 0 || currentUser?.position === 'مدير فرع'}
               className="bg-purple-500 hover:bg-purple-600 border-purple-600"
               size="large"
+              title={currentUser?.position === 'مدير فرع' ? 'غير متاح لمدير الفرع' : ''}
             >
               إشعار مخزن
             </Button>
@@ -2616,9 +2652,10 @@ const handlePrintTable = () => {
               onClick={() => {
                 navigate('/management/driver-notifications');
               }}
-              disabled={filteredDeliveryOrders.length === 0}
+              disabled={filteredDeliveryOrders.length === 0 || currentUser?.position === 'مدير فرع'}
               className="bg-orange-500 hover:bg-orange-600 border-orange-600"
               size="large"
+              title={currentUser?.position === 'مدير فرع' ? 'غير متاح لمدير الفرع' : ''}
             >
               إشعار سائق
             </Button>

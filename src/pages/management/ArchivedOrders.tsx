@@ -17,6 +17,7 @@ const { Option } = Select;
 interface ArchivedOrder {
   id: string;
   fullInvoiceNumber: string;
+  branchId: string;
   branchName: string;
   customerName: string;
   customerPhone: string;
@@ -60,6 +61,19 @@ const ArchivedOrders: React.FC = () => {
   const [filterArchivedDate, setFilterArchivedDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [deleting, setDeleting] = useState(false);
 
+  // بيانات المستخدم الحالي من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchId?: string;
+    branchName?: string;
+    warehouseId?: string;
+    warehouseName?: string;
+    permissions?: string[];
+  } | null>(null);
+
   // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
@@ -77,6 +91,20 @@ const ArchivedOrders: React.FC = () => {
       setCurrentFinancialYear(selectedYear);
     }
   };
+
+  // تحميل بيانات المستخدم الحالي من localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        console.log('👤 Current User in Archived Orders:', user);
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error);
+      }
+    }
+  }, []);
 
   // جلب السائقين
   useEffect(() => {
@@ -111,7 +139,10 @@ const ArchivedOrders: React.FC = () => {
       // فلترة الطلبات المؤرشفة فقط
       const archivedOrders = ordersData.filter(order => order.status === 'مؤرشف');
       
-      console.log('Fetched archived orders:', archivedOrders);
+      console.log('✅ Fetched archived orders:', archivedOrders.length);
+      console.log('👤 Current user position:', currentUser?.position);
+      console.log('🏪 Current user branchId:', currentUser?.branchId);
+      
       setOrders(archivedOrders);
       
       if (archivedOrders.length === 0) {
@@ -127,6 +158,7 @@ const ArchivedOrders: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // معالجة تحديد الطلبات
@@ -150,6 +182,13 @@ const ArchivedOrders: React.FC = () => {
   // تصفية الطلبات
   const filteredOrders = orders.filter(order => {
     let matches = true;
+    
+    // فلترة حسب فرع المستخدم إذا كان مدير فرع
+    if (currentUser?.position === 'مدير فرع' && currentUser?.branchId) {
+      if (order.branchId !== currentUser.branchId) {
+        return false;
+      }
+    }
     
     if (filterDriver && order.driverId !== filterDriver) {
       matches = false;
