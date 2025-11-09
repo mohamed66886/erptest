@@ -79,6 +79,23 @@ export const getSectionFromPath = (pathname: string): SectionType => {
     return 'equipment';
   }
   
+  if (pathname.startsWith('/management/outputs') ||
+      pathname.startsWith('/management/governorates') ||
+      pathname.startsWith('/management/regions') ||
+      pathname.startsWith('/management/districts') ||
+      pathname.startsWith('/management/drivers') ||
+      pathname.startsWith('/management/branch-status') ||
+      pathname.startsWith('/management/delivery-warehouses') ||
+      pathname.startsWith('/management/link-branches') ||
+      pathname.startsWith('/management/delivery-settings') ||
+      pathname.startsWith('/management/delivery-orders') ||
+      pathname.startsWith('/management/confirm-orders') ||
+      pathname.startsWith('/management/completed-orders') ||
+      pathname.startsWith('/management/archived-orders') ||
+      pathname.startsWith('/reports/comprehensive-reports')) {
+    return 'outputs';
+  }
+  
   return 'default';
 };
 
@@ -423,6 +440,46 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
         }
       ];
 
+    case 'outputs':
+      return [
+        ...commonItems,
+        { 
+          label: "الإعدادات", 
+          icon: React.createElement(FaCog, { className: "text-blue-500" }), 
+          hasSubmenu: true,
+          submenu: [
+            { label: "إدارة المحافظات", icon: React.createElement(FaBuilding), path: "/management/governorates" },
+            { label: "إدارة المناطق", icon: React.createElement(FaBuilding), path: "/management/regions" },
+            { label: "إدارة الأحياء", icon: React.createElement(FaBuilding), path: "/management/districts" },
+            { label: "إدارة السائقين", icon: React.createElement(FaUserTie), path: "/management/drivers" },
+            { label: "حالة الفرع", icon: React.createElement(FaBuilding), path: "/management/branch-status" },
+            { label: "مستودعات التوصيل", icon: React.createElement(FaWarehouse), path: "/management/delivery-warehouses" },
+            { label: "ربط الفروع", icon: React.createElement(FaBuilding), path: "/management/link-branches" },
+            { label: "إعدادات التوصيل", icon: React.createElement(FaCog), path: "/management/delivery-settings" },
+            { label: "إدارة المستخدمين", icon: React.createElement(FaUsers), path: "/management/users" }
+          ]
+        },
+        { 
+          label: "العمليات", 
+          icon: React.createElement(FaShoppingCart, { className: "text-green-500" }), 
+          hasSubmenu: true,
+          submenu: [
+            { label: "الطلبات", icon: React.createElement(FaClipboardList), path: "/management/delivery-orders" },
+            { label: "تأكيد الطلبات", icon: React.createElement(FaFileInvoice), path: "/management/confirm-orders" },
+            { label: "الطلبات المكتملة", icon: React.createElement(FaBoxes), path: "/management/completed-orders" },
+            { label: "الطلبات المؤرشفة", icon: React.createElement(FaFileAlt), path: "/management/archived-orders" }
+          ]
+        },
+        { 
+          label: "التقارير", 
+          icon: React.createElement(FaChartBar, { className: "text-purple-500" }), 
+          hasSubmenu: true,
+          submenu: [
+            { label: "التقارير الشاملة", icon: React.createElement(FaChartPie), path: "/reports/comprehensive-reports" }
+          ]
+        }
+      ];
+
     default:
       return [
         ...commonItems,
@@ -431,11 +488,11 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
           icon: React.createElement(FaCog, { className: "text-blue-500" }), 
           hasSubmenu: true,
           submenu: [
-            { label: "ادارة الفروع", icon: React.createElement(FaBuilding), path: "/business/branches" },
-            { label: "اداره طرق الدفع", icon: React.createElement(FaMoneyCheckAlt), path: "/business/payment-methods" },
+            // { label: "ادارة الفروع", icon: React.createElement(FaBuilding), path: "/business/branches" },
+            // { label: "اداره طرق الدفع", icon: React.createElement(FaMoneyCheckAlt), path: "/business/payment-methods" },
             { label: "الاعدادات العامة", icon: React.createElement(FaSlidersH), path: "/settings" },
-            { label: "النظام", icon: React.createElement(FaServer), path: "/system" },
-            { label: "النسخ الاحطياطي", icon: React.createElement(FaCloudUploadAlt), path: "/backup" },
+            // { label: "النظام", icon: React.createElement(FaServer), path: "/system" },
+            // { label: "النسخ الاحطياطي", icon: React.createElement(FaCloudUploadAlt), path: "/backup" },
             { label: "الاسئله الشائعه", icon: React.createElement(FaQuestionCircle), path: "/help" }
           ]
         },

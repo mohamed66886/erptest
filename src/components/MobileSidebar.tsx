@@ -1,12 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   FaHome,
-  FaStar,
-  FaCog,
-  FaExchangeAlt,
-  FaChartBar,
-  FaFileInvoice,
-  FaUsers,
   FaWarehouse,
   FaTimes,
   FaChevronLeft,
@@ -17,13 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 // تعريف عناصر القائمة الرئيسية
 const menuItems = [
   { label: "الصفحة الرئيسية", icon: <FaHome />, path: "/" },
-  { label: "المفضلة", icon: <FaStar />, path: null },
-  { label: "الإعدادات الأساسية", icon: <FaCog />, path: null, submenu: "settings" },
-  { label: "العمليات", icon: <FaExchangeAlt />, path: null, submenu: "operations" },
-  { label: "تقارير المبيعات", icon: <FaChartBar />, path: null, submenu: "sales" },
-  { label: "تقارير المشتريات", icon: <FaFileInvoice />, path: null, submenu: "purchases" },
-  { label: "ادارة الأفراد", icon: <FaUsers />, path: null, submenu: "people" },
-  { label: "المخازن", icon: <FaWarehouse />, path: null, submenu: "stores" },
+  { label: "إدارة المخرجات", icon: <FaWarehouse />, path: null, submenu: "outputs" },
 ];
 
 // تعريف واجهة الخصائص للمكون
@@ -184,12 +172,7 @@ const MobileSidebar: React.FC<MobileSidebarProps> = ({ open, onClose }) => {
 // دالة للحصول على عنوان القائمة الفرعية
 function getSubmenuTitle(key: string): string {
   const titles: Record<string, string> = {
-    settings: "الإعدادات الأساسية",
-    operations: "العمليات",
-    sales: "تقارير المبيعات",
-    purchases: "تقارير المشتريات",
-    people: "ادارة الأفراد",
-    stores: "المخازن",
+    outputs: "إدارة المخرجات",
   };
   return titles[key] || "";
 }
@@ -197,51 +180,22 @@ function getSubmenuTitle(key: string): string {
 // دالة للحصول على عناصر القائمة الفرعية
 function getSubmenuItems(key: string): Array<{ label: string; path?: string }> {
   const submenus: Record<string, Array<{ label: string; path?: string }>> = {
-    settings: [
-      { label: "ادارة الفروع", path: "/business/branches" },
-      { label: "اداره طرق الدفع", path: "/business/payment-methods" },
-      { label: "الاعدادات العامة", path: "/settings" },
-      { label: "النظام", path: "/system" },
-      { label: "النسخ الاحطياطي", path: "/backup" },
-      { label: "الاسئله الشائعه", path: "/help" },
-    ],
-    operations: [
-      { label: "فاتورة مبيعات", path: "/stores/sales" },
-      { label: "مرتجع مبيعات", path: "/stores/sales-return" },
-      { label: "فاتورة مشتريات", path: "/stores/purchases" },
-      { label: "مرتجع مشتريات", path: "/stores/purchases-return" },
-    ],
-    sales: [
-      { label: "تقرير المبيعات اليومية", path: "/reports/daily-sales" },
-      { label: "تقرير بارباح الفواتير", path: "/reports/invoice-profits" },
-      { label: "تقرير بالفواتير التفضيلي" },
-      { label: "تقرير بعروض السعر" },
-      { label: "تقرير بعروض السعر تفصيلي" },
-      { label: "تحليل المبيعات" },
-      { label: "تقرير الأصناف المباعة" },
-      { label: "تقرير مبيعات بائع" },
-      { label: "كشف حساب عميل" },
-    ],
-    purchases: [
-      { label: "تقرير بفواتير المشتريات" },
-      { label: "تقرير بفواتير المشتريات التفضيلي" },
-      { label: "تقرير بعروض الشراء" },
-      { label: "تقرير بعروض الشراء تفصيلي" },
-      { label: "تحليل المشتريات" },
-      { label: "تقرير الأصناف المشتراة" },
-      { label: "تقرير مشتريات مورد" },
-      { label: "كشف حساب مورد" },
-    ],
-    people: [
-      { label: "ادارة الموظفين", path: "/admin/employees" },
-      { label: "ادارة العملاء", path: "/customers" },
-      { label: "ادارة الموردين", path: "/suppliers" },
-      { label: "اداره مديرين الفروع", path: "/admin/admins" },
-    ],
-    stores: [
-      { label: "ادارة المخازن", path: "/stores/manage" },
-      { label: "ادارة الاصناف", path: "/stores/item" },
-      { label: "المخزون", path: "/stores/stock" },
+    outputs: [
+      { label: "لوحة التحكم", path: "/management/outputs" },
+      { label: "إدارة المحافظات", path: "/management/governorates" },
+      { label: "إدارة المناطق", path: "/management/regions" },
+      { label: "إدارة الأحياء", path: "/management/districts" },
+      { label: "إدارة السائقين", path: "/management/drivers" },
+      { label: "حالة الفرع", path: "/management/branch-status" },
+      { label: "مستودعات التوصيل", path: "/management/delivery-warehouses" },
+      { label: "ربط الفروع", path: "/management/link-branches" },
+      { label: "إعدادات التوصيل", path: "/management/delivery-settings" },
+      { label: "إدارة المستخدمين", path: "/management/users" },
+      { label: "الطلبات", path: "/management/delivery-orders" },
+      { label: "تأكيد الطلبات", path: "/management/confirm-orders" },
+      { label: "الطلبات المكتملة", path: "/management/completed-orders" },
+      { label: "الطلبات المؤرشفة", path: "/management/archived-orders" },
+      { label: "التقارير الشاملة", path: "/reports/comprehensive-reports" },
     ],
   };
 

@@ -11,7 +11,8 @@ export type SectionType =
   | 'sales'
   | 'purchase'
   | 'contracts'
-  | 'equipment';
+  | 'equipment'
+  | 'outputs';
 
 interface SidebarContextType {
   currentSection: SectionType;
