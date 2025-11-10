@@ -55,6 +55,7 @@ const WarehouseNotifications: React.FC = () => {
   // حالات التصفية
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
   const [selectedDeliveryDate, setSelectedDeliveryDate] = useState<dayjs.Dayjs | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<string>('قيد الانتظار'); // الحالة الافتراضية
   const [allWarehousesList, setAllWarehousesList] = useState<{id: string; name: string}[]>([]);
 
   // بيانات الشركة
@@ -205,13 +206,29 @@ const WarehouseNotifications: React.FC = () => {
       }).filter(w => w.ordersCount > 0);
     }
 
+    // تصفية حسب الحالة
+    if (selectedStatus) {
+      filtered = filtered.map(warehouse => {
+        const filteredOrders = warehouse.orders.filter(order => {
+          const orderStatus = order.status || 'قيد الانتظار';
+          return orderStatus === selectedStatus;
+        });
+        return {
+          ...warehouse,
+          orders: filteredOrders,
+          ordersCount: filteredOrders.length
+        };
+      }).filter(w => w.ordersCount > 0);
+    }
+
     setFilteredWarehouses(filtered);
-  }, [selectedWarehouseId, selectedDeliveryDate, warehouses]);
+  }, [selectedWarehouseId, selectedDeliveryDate, selectedStatus, warehouses]);
 
   // إعادة تعيين التصفية
   const handleResetFilters = () => {
     setSelectedWarehouseId('');
     setSelectedDeliveryDate(null);
+    setSelectedStatus('قيد الانتظار'); // إعادة للحالة الافتراضية
     setFilteredWarehouses(warehouses);
     message.success('تم إعادة تعيين التصفية');
   };
@@ -239,7 +256,7 @@ const WarehouseNotifications: React.FC = () => {
       whatsappMessage += `   الهاتف: ${order.customerPhone}\n`;
       whatsappMessage += `   المنطقة: ${order.districtName || 'غير محدد'}\n`;
       if (order.requiresInstallation) {
-        whatsappMessage += `   ⚙️ يتطلب تركيب\n`;
+        whatsappMessage += ` يتطلب تركيب\n`;
       }
     });
 
@@ -453,48 +470,6 @@ const WarehouseNotifications: React.FC = () => {
             line-height: 1.4;
             margin: 0;
           }
-          .company-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-          }
-          .header-section {
-            flex: 1;
-            min-width: 0;
-            padding: 0 8px;
-            box-sizing: border-box;
-          }
-          .header-section.center {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            flex: 0 0 120px;
-            max-width: 120px;
-            min-width: 100px;
-          }
-          .logo {
-            width: 100px;
-            height: auto;
-            margin-bottom: 8px;
-          }
-          .company-info-ar {
-            text-align: right;
-            font-size: 10px;
-            font-weight: 500;
-            line-height: 1.4;
-          }
-          .company-info-en {
-            text-align: left;
-            font-family: Arial, sans-serif;
-            direction: ltr;
-            font-size: 9px;
-            font-weight: 500;
-            line-height: 1.4;
-          }
           .header {
             text-align: center;
             margin-bottom: 20px;
@@ -574,33 +549,6 @@ const WarehouseNotifications: React.FC = () => {
         </style>
       </head>
       <body>
-        <!-- Company Header Section -->
-        <div class="company-header">
-          <div class="header-section company-info-ar">
-            <div>${companyData.arabicName || ''}</div>
-            <div>${companyData.companyType || ''}</div>
-            <div>السجل التجاري: ${companyData.commercialRegistration || ''}</div>
-            <div>الملف الضريبي: ${companyData.taxFile || ''}</div>
-            <div>العنوان: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-            <div>الرمز البريدي: ${companyData.postalCode || ''}</div>
-            <div>الهاتف: ${companyData.phone || ''}</div>
-            <div>الجوال: ${companyData.mobile || ''}</div>
-          </div>
-          <div class="header-section center">
-            <img src="${companyData.logoUrl || 'https://via.placeholder.com/100x50?text=Company+Logo'}" class="logo" alt="Company Logo">
-          </div>
-          <div class="header-section company-info-en">
-            <div>${companyData.englishName || ''}</div>
-            <div>${companyData.companyType || ''}</div>
-            <div>Commercial Reg.: ${companyData.commercialRegistration || ''}</div>
-            <div>Tax File: ${companyData.taxFile || ''}</div>
-            <div>Address: ${companyData.city || ''} ${companyData.region || ''} ${companyData.street || ''} ${companyData.district || ''} ${companyData.buildingNumber || ''}</div>
-            <div>Postal Code: ${companyData.postalCode || ''}</div>
-            <div>Phone: ${companyData.phone || ''}</div>
-            <div>Mobile: ${companyData.mobile || ''}</div>
-          </div>
-        </div>
-        
         <div class="header">
           <h1>
             <svg style="display: inline-block; vertical-align: middle; width: 28px; height: 28px; margin-left: 8px;" fill="currentColor" viewBox="0 0 24 24">
@@ -692,54 +640,6 @@ const WarehouseNotifications: React.FC = () => {
         <div class="footer">
           <p><strong>نظام ERP90 - إدارة الموارد</strong> | تم الطباعة بواسطة: ${warehouse.keeper}</p>
           <p style="margin-top: 5px; font-size: 10px;">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}</p>
-        </div>
-        
-        <!-- Signature Section -->
-        <div style="
-          margin-top: 40px;
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          padding: 0 20px;
-          page-break-inside: avoid;
-        ">
-          <div style="flex: 1; text-align: right; font-size: 12px; font-weight: 500;">
-            <div style="margin-bottom: 6px;">أمين المستودع: ___________________</div>
-            <div>التوقيع: ___________________</div>
-          </div>
-          <div style="flex: 1; text-align: center; position: relative;">
-            <div style="
-              margin-top: 10px;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              width: 160px;
-              height: 60px;
-              border: 3px dashed #000;
-              border-radius: 50%;
-              box-shadow: 0 3px 10px 0 rgba(0,0,0,0.12);
-              opacity: 0.9;
-              background: repeating-linear-gradient(135deg, #f3f4f6 0 10px, #fff 10px 20px);
-              font-family: 'Tajawal', Arial, sans-serif;
-              font-size: 14px;
-              font-weight: bold;
-              color: #000;
-              letter-spacing: 1px;
-              text-align: center;
-              margin-left: auto;
-              margin-right: auto;
-              z-index: 2;
-            ">
-              <div style="width: 100%;">
-                <div style="font-size: 16px; font-weight: 700; line-height: 1.2;">${companyData.arabicName || 'الشركة'}</div>
-                <div style="font-size: 12px; font-weight: 500; margin-top: 4px; line-height: 1.1;">${companyData.phone ? 'هاتف: ' + companyData.phone : ''}</div>
-              </div>
-            </div>
-          </div>
-          <div style="flex: 1; text-align: left; font-size: 12px; font-weight: 500;">
-            <div style="margin-bottom: 6px;">مدير المستودعات: ___________________</div>
-            <div>التاريخ: ${new Date().toLocaleDateString('en-GB')}</div>
-          </div>
         </div>
       </body>
       </html>
@@ -954,23 +854,45 @@ const WarehouseNotifications: React.FC = () => {
             />
           </div>
 
-          {/* زر إعادة التعيين */}
-          <div className="flex flex-col justify-end">
-            <Button
-              onClick={handleResetFilters}
+          {/* تصفية الحالة */}
+          <div className="flex flex-col">
+            <label className="mb-2 text-sm font-medium text-gray-700">حالة الطلب</label>
+            <AntdSelect
+              value={selectedStatus || undefined}
+              onChange={setSelectedStatus}
+              placeholder="اختر الحالة"
+              allowClear
+              style={{ 
+                width: '100%', 
+                height: 42,
+                borderRadius: 8,
+              }}
               size="large"
-              className="h-[42px]"
-              icon={<ReloadOutlined />}
             >
-              إعادة تعيين التصفية
-            </Button>
+              <AntdSelect.Option value="قيد الانتظار"> قيد الانتظار</AntdSelect.Option>
+              <AntdSelect.Option value="مكتمل">مكتمل</AntdSelect.Option>
+              <AntdSelect.Option value="مؤرشف"> مؤرشف</AntdSelect.Option>
+            </AntdSelect>
           </div>
         </div>
 
+        {/* زر إعادة التعيين */}
+        <div className="mt-4 flex justify-end">
+          <Button
+            onClick={handleResetFilters}
+            icon={<ReloadOutlined />}
+            disabled={!selectedWarehouseId && !selectedDeliveryDate && selectedStatus === 'قيد الانتظار'}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300"
+            size="large"
+          >
+            إعادة تعيين الفلاتر
+          </Button>
+        </div>
+
         {/* عرض نتائج التصفية */}
-        {(selectedWarehouseId || selectedDeliveryDate) && (
+        {(selectedWarehouseId || selectedDeliveryDate || selectedStatus) && (
           <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm flex-wrap">
               <span className="font-semibold text-purple-700">التصفية النشطة:</span>
               {selectedWarehouseId && (
                 <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
@@ -980,6 +902,11 @@ const WarehouseNotifications: React.FC = () => {
               {selectedDeliveryDate && (
                 <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
                   التاريخ: {selectedDeliveryDate.format('YYYY-MM-DD')}
+                </span>
+              )}
+              {selectedStatus && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
+                  الحالة: {selectedStatus === 'قيد الانتظار' ? '⏳' : selectedStatus === 'مكتمل' ? '✅' : '📦'} {selectedStatus}
                 </span>
               )}
               <span className="mr-auto font-semibold text-purple-700">

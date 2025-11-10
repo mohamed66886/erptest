@@ -432,7 +432,7 @@ const DeliverySettings: React.FC = () => {
                       <div className="flex justify-between items-center mb-2">
                         <Text type="secondary">المساحة المستخدمة:</Text>
                         <Text strong style={{ color: '#1890ff' }}>
-                          {(storageStats.usedSpace / 1024).toFixed(2)} GB
+                          {storageStats.usedSpace.toFixed(2)} MB
                           {loadingStorage && <LoadingOutlined style={{ marginRight: 8 }} />}
                         </Text>
                       </div>
