@@ -59,7 +59,7 @@ const UsersManagement: React.FC = () => {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [form] = Form.useForm();
 
-  // جميع الصفحات المتاحة في إدارة المخرجات
+  // جميع الصفحات المتاحة في إدارة التوصيلات
   const availablePages = [
     { id: 'governorates', name: 'إدارة المحافظات', category: 'الإعدادات' },
     { id: 'regions', name: 'إدارة المناطق', category: 'الإعدادات' },
@@ -365,7 +365,7 @@ const UsersManagement: React.FC = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة المخرجات", to: "/management/outputs" },
+          { label: "إدارة التوصيلات", to: "/management/outputs" },
           { label: "إدارة المستخدمين" },
         ]}
       />

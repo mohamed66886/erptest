@@ -311,7 +311,7 @@ const ComprehensiveReports: React.FC = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة المخرجات", to: "/management/outputs" },
+          { label: "إدارة التوصيلات", to: "/management/outputs" },
           { label: "التقارير الشاملة" }
         ]}
       />

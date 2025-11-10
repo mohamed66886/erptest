@@ -2170,7 +2170,7 @@ const handlePrintTable = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة المخرجات", to: "/management/outputs" },
+          { label: "إدارة التوصيلات", to: "/management/outputs" },
           { label: "طلبات التوصيل" }
         ]}
       />
@@ -2489,7 +2489,7 @@ const handlePrintTable = () => {
     }
     onClick={() => navigate('/management/delivery-orders/new')}
   >
-    إضافة فاتورة جديدة
+    اضافة طلب جديد
   </Button>
 </motion.div>
       </motion.div>

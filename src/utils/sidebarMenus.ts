@@ -93,7 +93,7 @@ export const getSectionFromPath = (pathname: string): SectionType => {
       pathname.startsWith('/management/completed-orders') ||
       pathname.startsWith('/management/archived-orders') ||
       pathname.startsWith('/reports/comprehensive-reports')) {
-    return 'outputs';
+    return 'delivery';
   }
   
   return 'default';
@@ -440,7 +440,7 @@ export const getSidebarMenus = (section: SectionType): MenuItem[] => {
         }
       ];
 
-    case 'outputs':
+    case 'delivery':
       return [
         ...commonItems,
         { 

@@ -58,7 +58,7 @@ import {
   WarehouseManagement,
 } from "../pages/management";
 
-import OutputsManagement from "./management/OutputsManagement";
+import DeliveryManagement from "./management/DeliveryManagement";
 import DeliverySettings from "./management/DeliverySettings";
 import UsersManagement from "./management/UsersManagement";
 
@@ -121,6 +121,7 @@ import WarehouseNotifications from "./management/warehouse-notifications";
 import DriverNotifications from "./management/driver-notifications";
 import ComprehensiveReports from "./reports/ComprehensiveReports";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import InstallationPage from "./installation/InstallationPage";
 
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -329,7 +330,7 @@ const Index = () => {
               <Route path="/management/warehouse" element={<WarehouseManagement />} />
               <Route path="/management/projects" element={<ProjectManagement />} />
               <Route path="/management/sales" element={<SalesManagement />} />
-              <Route path="/management/outputs" element={<OutputsManagement />} />
+              <Route path="/management/outputs" element={<DeliveryManagement />} />
               <Route path="/management/delivery-settings" element={
                 <ProtectedRoute requiredPermission="delivery-settings">
                   <DeliverySettings />
@@ -349,12 +350,13 @@ const Index = () => {
               <Route path="/management/performance-evaluation" element={<PerformanceEvaluationPage />} />
               <Route path="/management/purchase" element={<PurchaseManagement />} />
               <Route path="/management/equipment" element={<EquipmentManagement />} />
+              <Route path="/management/installation" element={<InstallationPage />} />
               <Route path="/management/discounts-offers" element={<DiscountsOffers />} />
               <Route path="/management/add-sales-accounts" element={<AddSalesAccounts />} />
               <Route path="/management/tax-settings" element={<TaxSettings />} />
               <Route path="/management/add-tax-setting" element={<AddTaxSetting />} />
               
-              {/* صفحات إدارة المخرجات المحمية بالصلاحيات */}
+              {/* صفحات إدارة التوصيلات المحمية بالصلاحيات */}
               <Route path="/management/governorates" element={
                 <ProtectedRoute requiredPermission="governorates">
                   <Governorates />

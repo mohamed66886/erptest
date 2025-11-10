@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 // تعريف عناصر القائمة الرئيسية
 const menuItems = [
   { label: "الصفحة الرئيسية", icon: <FaHome />, path: "/" },
-  { label: "إدارة المخرجات", icon: <FaWarehouse />, path: null, submenu: "outputs" },
+  { label: "إدارة التوصيلات", icon: <FaWarehouse />, path: null, submenu: "delivery" },
 ];
 
 // تعريف واجهة الخصائص للمكون
@@ -172,7 +172,7 @@ const MobileSidebar: React.FC<MobileSidebarProps> = ({ open, onClose }) => {
 // دالة للحصول على عنوان القائمة الفرعية
 function getSubmenuTitle(key: string): string {
   const titles: Record<string, string> = {
-    outputs: "إدارة المخرجات",
+    delivery: "إدارة التوصيلات",
   };
   return titles[key] || "";
 }
@@ -180,7 +180,7 @@ function getSubmenuTitle(key: string): string {
 // دالة للحصول على عناصر القائمة الفرعية
 function getSubmenuItems(key: string): Array<{ label: string; path?: string }> {
   const submenus: Record<string, Array<{ label: string; path?: string }>> = {
-    outputs: [
+    delivery: [
       { label: "لوحة التحكم", path: "/management/outputs" },
       { label: "إدارة المحافظات", path: "/management/governorates" },
       { label: "إدارة المناطق", path: "/management/regions" },

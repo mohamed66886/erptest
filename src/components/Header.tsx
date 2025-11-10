@@ -5,7 +5,7 @@ import { BiSolidBadgeCheck } from "react-icons/bi";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { Select as AntdSelect, AutoComplete } from 'antd';
+import { Select as AntdSelect } from 'antd';
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/utils/utils";
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -27,7 +27,6 @@ import { useTheme } from "next-themes";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { searchService, SearchResult } from "@/services/searchService";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 
 interface HeaderProps {
@@ -127,37 +126,11 @@ const Header = ({
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string>("");
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
-
-  // Debounce search
-  const performSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    setIsSearching(true);
-
-    try {
-      const results = await searchService.universalSearch({
-        query: query.trim(),
-        limit: 10
-      });
-      setSearchResults(results);
-    } catch (error) {
-      console.error('خطأ في البحث:', error);
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  }, []);
 
   useEffect(() => {
     const fetchLogo = async () => {
@@ -241,29 +214,6 @@ const Header = ({
 
   const toggleMobileSearch = () => {
     setShowMobileSearch(!showMobileSearch);
-  };
-
-  const handleSearchResultClick = (result: SearchResult) => {
-    navigate(result.route);
-    setSearchQuery("");
-    setShowMobileSearch(false);
-  };
-
-  const getSearchResultIcon = (type: SearchResult['type']) => {
-    const icons = {
-      invoice: '📋',
-      customer: '👤',
-      supplier: '🏢',
-      item: '📦',
-      account: '💰',
-      branch: '🏪',
-      warehouse: '🏭',
-      return: '↩️',
-      purchase: '🛒',
-      delegate: '👨‍💼',
-      cashbox: '💳'
-    };
-    return icons[type] || '📄';
   };
 
   const markNotificationsAsRead = async () => {
@@ -430,7 +380,7 @@ const Header = ({
                 </div>
               )}
             </div>
-            {/* Middle Section - Search (Desktop) */}
+            {/* Middle Section - Search (Desktop) - Disabled */}
             {isDesktop && (
               <motion.div 
                 className="flex-1 max-w-xl mx-4 relative"
@@ -438,59 +388,18 @@ const Header = ({
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.2 }}
               >
-                <AutoComplete
+                <Input
                   value={searchQuery}
-                  onChange={setSearchQuery}
-                  onSearch={performSearch}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="ابحث في الفواتير، العملاء، المنتجات..."
-                  className="w-full"
-                  size="large"
-                  allowClear
+                  className="w-full text-right"
+                  disabled
                   style={{
                     direction: 'rtl',
-                    textAlign: 'right'
+                    textAlign: 'right',
+                    cursor: 'not-allowed',
+                    opacity: 0.6
                   }}
-                  options={searchResults.map((result, index) => ({
-                    value: result.title,
-                    label: (
-                      <div 
-                        key={`${result.type}-${result.id}-${index}`}
-                        onClick={() => handleSearchResultClick(result)}
-                        className="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-50"
-                      >
-                        <span className="text-lg">{getSearchResultIcon(result.type)}</span>
-                        <div className="flex-1 min-w-0 text-right">
-                          <div className="font-medium text-gray-900 truncate">
-                            {result.title}
-                          </div>
-                          {result.subtitle && (
-                            <div className="text-sm text-gray-500 truncate">
-                              {result.subtitle}
-                            </div>
-                          )}
-                          {result.description && (
-                            <div className="text-xs text-gray-400 truncate">
-                              {result.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  }))}
-                  notFoundContent={
-                    isSearching ? (
-                      <div className="p-4 text-center">
-                        <div className="inline-flex items-center gap-2">
-                          <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                          <span className="text-gray-600">جاري البحث...</span>
-                        </div>
-                      </div>
-                    ) : searchQuery.trim() ? (
-                      <div className="p-4 text-center text-gray-500">
-                        لا توجد نتائج للبحث "{searchQuery}"
-                      </div>
-                    ) : null
-                  }
                 />
               </motion.div>
             )}
@@ -658,7 +567,7 @@ const Header = ({
               </motion.div>
             </div>
           </div>
-          {/* Mobile Search Bar (shown when activated) */}
+          {/* Mobile Search Bar (shown when activated) - Disabled */}
           <AnimatePresence>
             {!isDesktop && showMobileSearch && (
               <motion.div 
@@ -668,55 +577,19 @@ const Header = ({
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <AutoComplete
+                <Input
                   value={searchQuery}
-                  onChange={setSearchQuery}
-                  onSearch={performSearch}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="ابحث في الفواتير، العملاء..."
-                  className="w-full"
-                  size="large"
-                  allowClear
+                  className="w-full text-right"
+                  disabled
                   autoFocus
                   style={{
                     direction: 'rtl',
-                    textAlign: 'right'
+                    textAlign: 'right',
+                    cursor: 'not-allowed',
+                    opacity: 0.6
                   }}
-                  options={searchResults.map((result, index) => ({
-                    value: result.title,
-                    label: (
-                      <div 
-                        key={`mobile-${result.type}-${result.id}-${index}`}
-                        onClick={() => handleSearchResultClick(result)}
-                        className="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-50"
-                      >
-                        <span className="text-lg">{getSearchResultIcon(result.type)}</span>
-                        <div className="flex-1 min-w-0 text-right">
-                          <div className="font-medium text-gray-900 truncate text-sm">
-                            {result.title}
-                          </div>
-                          {result.subtitle && (
-                            <div className="text-xs text-gray-500 truncate">
-                              {result.subtitle}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  }))}
-                  notFoundContent={
-                    isSearching ? (
-                      <div className="p-4 text-center">
-                        <div className="inline-flex items-center gap-2">
-                          <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                          <span className="text-gray-600">جاري البحث...</span>
-                        </div>
-                      </div>
-                    ) : searchQuery.trim() ? (
-                      <div className="p-4 text-center text-gray-500 text-sm">
-                        لا توجد نتائج للبحث "{searchQuery}"
-                      </div>
-                    ) : null
-                  }
                 />
               </motion.div>
             )}

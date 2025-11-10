@@ -4,11 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
-import { Table, Button, message } from "antd";
-import { WhatsAppOutlined, PrinterOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Table, Button, message, DatePicker } from "antd";
+import { WhatsAppOutlined, PrinterOutlined, ReloadOutlined, DownloadOutlined, FilterOutlined } from '@ant-design/icons';
 import Breadcrumb from "@/components/Breadcrumb";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { Select as AntdSelect } from 'antd';
+import arEG from 'antd/es/date-picker/locale/ar_EG';
+import dayjs from 'dayjs';
 
 interface DeliveryOrder {
   id: string;
@@ -47,7 +49,13 @@ const WarehouseNotifications: React.FC = () => {
   
   // حالات البيانات
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([]);
+  const [filteredWarehouses, setFilteredWarehouses] = useState<WarehouseData[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // حالات التصفية
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
+  const [selectedDeliveryDate, setSelectedDeliveryDate] = useState<dayjs.Dayjs | null>(null);
+  const [allWarehousesList, setAllWarehousesList] = useState<{id: string; name: string}[]>([]);
 
   // بيانات الشركة
   const [companyData, setCompanyData] = useState<{
@@ -129,6 +137,9 @@ const WarehouseNotifications: React.FC = () => {
         ...doc.data()
       }));
       
+      // حفظ قائمة المستودعات للتصفية
+      setAllWarehousesList(warehousesData.map(w => ({ id: w.id, name: w.name })));
+      
       // تجميع الطلبات حسب المستودع
       const warehouseMap = new Map<string, WarehouseData>();
       
@@ -153,7 +164,9 @@ const WarehouseNotifications: React.FC = () => {
         warehouse.ordersCount = warehouse.orders.length;
       });
       
-      setWarehouses(Array.from(warehouseMap.values()));
+      const warehousesArray = Array.from(warehouseMap.values());
+      setWarehouses(warehousesArray);
+      setFilteredWarehouses(warehousesArray);
       
       if (warehouseMap.size === 0) {
         message.info('لا توجد طلبات في المستودعات');
@@ -169,6 +182,39 @@ const WarehouseNotifications: React.FC = () => {
   useEffect(() => {
     fetchWarehouseData();
   }, []);
+
+  // تطبيق التصفية
+  useEffect(() => {
+    let filtered = [...warehouses];
+
+    // تصفية حسب المستودع
+    if (selectedWarehouseId) {
+      filtered = filtered.filter(w => w.id === selectedWarehouseId);
+    }
+
+    // تصفية حسب تاريخ التسليم
+    if (selectedDeliveryDate) {
+      const dateStr = selectedDeliveryDate.format('YYYY-MM-DD');
+      filtered = filtered.map(warehouse => {
+        const filteredOrders = warehouse.orders.filter(order => order.deliveryDate === dateStr);
+        return {
+          ...warehouse,
+          orders: filteredOrders,
+          ordersCount: filteredOrders.length
+        };
+      }).filter(w => w.ordersCount > 0);
+    }
+
+    setFilteredWarehouses(filtered);
+  }, [selectedWarehouseId, selectedDeliveryDate, warehouses]);
+
+  // إعادة تعيين التصفية
+  const handleResetFilters = () => {
+    setSelectedWarehouseId('');
+    setSelectedDeliveryDate(null);
+    setFilteredWarehouses(warehouses);
+    message.success('تم إعادة تعيين التصفية');
+  };
 
   // إرسال واتساب
   const handleSendWhatsApp = (warehouse: WarehouseData) => {
@@ -361,7 +407,7 @@ const WarehouseNotifications: React.FC = () => {
             <h1>📦 ملفات مستودع ${warehouse.name}</h1>
             <p><strong>أمين المستودع:</strong> ${warehouse.keeper}</p>
             <p><strong>عدد الملفات:</strong> ${ordersWithFiles.length} ملف</p>
-            <p><strong>التاريخ:</strong> ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</p>
+            <p><strong>التاريخ:</strong> ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
           </div>
           
           ${pdfsHtml}
@@ -412,7 +458,7 @@ const WarehouseNotifications: React.FC = () => {
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
-            border-bottom: 2px solid #8b5cf6;
+            border-bottom: 2px solid #000;
             padding-bottom: 10px;
           }
           .header-section {
@@ -452,11 +498,11 @@ const WarehouseNotifications: React.FC = () => {
           .header {
             text-align: center;
             margin-bottom: 20px;
-            border-bottom: 3px solid #8b5cf6;
+            border-bottom: 3px solid #000;
             padding-bottom: 15px;
           }
           .header h1 {
-            color: #8b5cf6;
+            color: #000;
             margin: 0 0 8px 0;
             font-size: 24px;
             font-weight: 700;
@@ -492,7 +538,7 @@ const WarehouseNotifications: React.FC = () => {
             vertical-align: middle;
           }
           th { 
-            background-color: #8b5cf6;
+            background-color: #bbbbbc;
             color: #fff;
             font-weight: 600;
             font-size: 11px;
@@ -569,7 +615,7 @@ const WarehouseNotifications: React.FC = () => {
           <div><strong>أمين المستودع:</strong> ${warehouse.keeper}</div>
           <div><strong>رقم الهاتف:</strong> ${warehouse.phone || warehouse.mobile || 'غير متوفر'}</div>
           <div><strong>عدد الطلبات:</strong> ${warehouse.ordersCount} طلب</div>
-          <div><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</div>
+          <div><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
         </div>
         
         <table>
@@ -595,7 +641,7 @@ const WarehouseNotifications: React.FC = () => {
                 if (!dateStr) return '-';
                 try {
                   const date = new Date(dateStr);
-                  return date.toLocaleDateString('ar-SA');
+                  return date.toLocaleDateString('en-GB');
                 } catch {
                   return dateStr;
                 }
@@ -605,7 +651,7 @@ const WarehouseNotifications: React.FC = () => {
                 if (!dateStr) return '-';
                 try {
                   const date = new Date(dateStr);
-                  return date.toLocaleString('ar-SA', { 
+                  return date.toLocaleString('en-GB', { 
                     year: 'numeric', 
                     month: '2-digit', 
                     day: '2-digit',
@@ -645,7 +691,7 @@ const WarehouseNotifications: React.FC = () => {
         
         <div class="footer">
           <p><strong>نظام ERP90 - إدارة الموارد</strong> | تم الطباعة بواسطة: ${warehouse.keeper}</p>
-          <p style="margin-top: 5px; font-size: 10px;">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-SA')} - ${new Date().toLocaleTimeString('ar-SA')}</p>
+          <p style="margin-top: 5px; font-size: 10px;">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}</p>
         </div>
         
         <!-- Signature Section -->
@@ -669,15 +715,15 @@ const WarehouseNotifications: React.FC = () => {
               align-items: center;
               width: 160px;
               height: 60px;
-              border: 3px dashed #8b5cf6;
+              border: 3px dashed #000;
               border-radius: 50%;
-              box-shadow: 0 3px 10px 0 rgba(139,92,246,0.15);
+              box-shadow: 0 3px 10px 0 rgba(0,0,0,0.12);
               opacity: 0.9;
               background: repeating-linear-gradient(135deg, #f3f4f6 0 10px, #fff 10px 20px);
               font-family: 'Tajawal', Arial, sans-serif;
               font-size: 14px;
               font-weight: bold;
-              color: #8b5cf6;
+              color: #000;
               letter-spacing: 1px;
               text-align: center;
               margin-left: auto;
@@ -692,7 +738,7 @@ const WarehouseNotifications: React.FC = () => {
           </div>
           <div style="flex: 1; text-align: left; font-size: 12px; font-weight: 500;">
             <div style="margin-bottom: 6px;">مدير المستودعات: ___________________</div>
-            <div>التاريخ: ${new Date().toLocaleDateString('ar-SA')}</div>
+            <div>التاريخ: ${new Date().toLocaleDateString('en-GB')}</div>
           </div>
         </div>
       </body>
@@ -843,11 +889,106 @@ const WarehouseNotifications: React.FC = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة المخرجات", to: "/management/outputs" },
-          { label: "طلبات التوصيل", to: "/management/orders" },
+          { label: "إدارة التوصيلات", to: "/management/outputs" },
+          { label: "طلبات التوصيل", to: "/management/delivery-orders" },
           { label: "إشعارات المستودعات" }
         ]}
       />
+
+      {/* قسم التصفية */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="w-full bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-4"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <FilterOutlined className="text-purple-600 text-xl" />
+          <h3 className="text-lg font-semibold text-gray-700">تصفية البيانات</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* تصفية المستودع */}
+          <div className="flex flex-col">
+            <label className="mb-2 text-sm font-medium text-gray-700">المستودع</label>
+            <AntdSelect
+              value={selectedWarehouseId || undefined}
+              onChange={setSelectedWarehouseId}
+              placeholder="جميع المستودعات"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+              }
+              style={{ 
+                width: '100%', 
+                height: 42,
+                borderRadius: 8,
+              }}
+              size="large"
+            >
+              {allWarehousesList.map(warehouse => (
+                <AntdSelect.Option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
+                </AntdSelect.Option>
+              ))}
+            </AntdSelect>
+          </div>
+
+          {/* تصفية تاريخ التسليم */}
+          <div className="flex flex-col">
+            <label className="mb-2 text-sm font-medium text-gray-700">تاريخ التسليم</label>
+            <DatePicker
+              value={selectedDeliveryDate}
+              onChange={setSelectedDeliveryDate}
+              placeholder="جميع التواريخ"
+              format="YYYY-MM-DD"
+              locale={arEG}
+              allowClear
+              style={{ 
+                width: '100%', 
+                height: 42,
+                borderRadius: 8,
+              }}
+              size="large"
+            />
+          </div>
+
+          {/* زر إعادة التعيين */}
+          <div className="flex flex-col justify-end">
+            <Button
+              onClick={handleResetFilters}
+              size="large"
+              className="h-[42px]"
+              icon={<ReloadOutlined />}
+            >
+              إعادة تعيين التصفية
+            </Button>
+          </div>
+        </div>
+
+        {/* عرض نتائج التصفية */}
+        {(selectedWarehouseId || selectedDeliveryDate) && (
+          <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-semibold text-purple-700">التصفية النشطة:</span>
+              {selectedWarehouseId && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
+                  المستودع: {allWarehousesList.find(w => w.id === selectedWarehouseId)?.name}
+                </span>
+              )}
+              {selectedDeliveryDate && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
+                  التاريخ: {selectedDeliveryDate.format('YYYY-MM-DD')}
+                </span>
+              )}
+              <span className="mr-auto font-semibold text-purple-700">
+                النتائج: {filteredWarehouses.length} مستودع - {filteredWarehouses.reduce((sum, w) => sum + w.ordersCount, 0)} طلب
+              </span>
+            </div>
+          </div>
+        )}
+      </motion.div>
 
       {/* الجدول */}
       <motion.div 
@@ -858,7 +999,12 @@ const WarehouseNotifications: React.FC = () => {
       >
         <div className="p-4 border-b border-gray-200 flex justify-between items-center">
           <h3 className="text-lg font-semibold text-gray-700">
-            المستودعات ({warehouses.length})
+            المستودعات ({filteredWarehouses.length})
+            {filteredWarehouses.length > 0 && (
+              <span className="text-sm text-gray-500 mr-2">
+                - إجمالي الطلبات: {filteredWarehouses.reduce((sum, w) => sum + w.ordersCount, 0)}
+              </span>
+            )}
           </h3>
           <Button
             icon={<ReloadOutlined />}
@@ -871,7 +1017,7 @@ const WarehouseNotifications: React.FC = () => {
         
         <Table
           columns={columns}
-          dataSource={warehouses}
+          dataSource={filteredWarehouses}
           rowKey="id"
           loading={loading}
           pagination={{

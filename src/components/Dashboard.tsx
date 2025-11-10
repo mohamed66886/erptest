@@ -7,7 +7,7 @@ import { motion, useAnimation } from 'framer-motion';
 import { 
   Users, FileText, ShoppingCart, Settings,
   CreditCard, Package, Truck, ArrowRight,
-  Building2
+  Building2, Wrench
 } from 'lucide-react';
 import { useSidebar } from '../hooks/useSidebar';
 import { useFinancialYear } from "@/hooks/useFinancialYear";
@@ -15,7 +15,7 @@ import { SectionType } from '../contexts/SidebarContext';
 import { Calendar } from 'lucide-react';
 import { Select as AntdSelect } from 'antd';
 import Breadcrumb from './Breadcrumb';
-import OutputsCard from '@/pages/outputs/OutputsCard';
+import DeliveryCard from '@/pages/delivery/DeliveryCard';
 
 const ERP90Dashboard = () => {
   // السنة المالية من السياق العام
@@ -47,9 +47,8 @@ const ERP90Dashboard = () => {
     '/management/projects': 'projects',
     '/management/sales': 'sales',
     '/management/purchase': 'purchase',
-    '/management/contracts': 'contracts',
-    '/management/equipment': 'equipment',
-    '/management/outputs': 'default',
+    '/management/installation': 'equipment',
+    '/management/outputs': 'delivery',
   };
 
   const handleQuickActionClick = (route: string) => {
@@ -65,7 +64,7 @@ const ERP90Dashboard = () => {
     { title: "إدارة المشاريع", icon: <FileText className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-purple-500 to-purple-600", hoverColor: "hover:from-purple-600 hover:to-purple-700", bgColor: "bg-purple-50", borderColor: "border-purple-200", description: "متابعة وإدارة المشاريع", route: "/management/projects" },
     { title: "إدارة المبيعات والعملاء", icon: <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-rose-500 to-rose-600", hoverColor: "hover:from-rose-600 hover:to-rose-700", bgColor: "bg-rose-50", borderColor: "border-rose-200", description: "إدارة العملاء والمبيعات", route: "/management/sales" },
     { title: "إدارة المشتريات والموردين", icon: <Truck className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-teal-500 to-teal-600", hoverColor: "hover:from-teal-600 hover:to-teal-700", bgColor: "bg-teal-50", borderColor: "border-teal-200", description: "إدارة الموردين والمشتريات", route: "/management/purchase" },
-    { title: "إدارة المناقصات والعقود", icon: <FileText className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-indigo-500 to-indigo-600", hoverColor: "hover:from-indigo-600 hover:to-indigo-700", bgColor: "bg-indigo-50", borderColor: "border-indigo-200", description: "إدارة العقود والمناقصات", route: "/management/contracts" },
+    { title: "التركيب والصيانة", icon: <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-indigo-500 to-indigo-600", hoverColor: "hover:from-indigo-600 hover:to-indigo-700", bgColor: "bg-indigo-50", borderColor: "border-indigo-200", description: "إدارة أعمال التركيب والصيانة", route: "/management/installation" },
   ];
 
   useEffect(() => {
@@ -157,8 +156,9 @@ const ERP90Dashboard = () => {
               {quickActions.map((action, index) => (
                 <motion.button
                   key={index}
-                  disabled
-                  className={`flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] cursor-not-allowed opacity-50`}
+                  disabled={action.route !== '/management/installation'}
+                  onClick={() => action.route === '/management/installation' && handleQuickActionClick(action.route)}
+                  className={`flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] ${action.route === '/management/installation' ? 'cursor-pointer hover:shadow-xl hover:scale-105' : 'cursor-not-allowed opacity-50'}`}
                 >
                   {/* Background Pattern */}
                   <div className="absolute inset-0 opacity-5 transition-opacity">
@@ -186,7 +186,7 @@ const ERP90Dashboard = () => {
               ))}
               
               {/* Outputs Card */}
-              <OutputsCard onClick={() => handleQuickActionClick('/management/outputs')} />
+              <DeliveryCard onClick={() => handleQuickActionClick('/management/outputs')} />
             </div>
           </div>
         </motion.div>
