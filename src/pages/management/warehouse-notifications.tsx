@@ -56,7 +56,9 @@ const WarehouseNotifications: React.FC = () => {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
   const [selectedDeliveryDate, setSelectedDeliveryDate] = useState<dayjs.Dayjs | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('قيد الانتظار'); // الحالة الافتراضية
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('');
   const [allWarehousesList, setAllWarehousesList] = useState<{id: string; name: string}[]>([]);
+  const [allDriversList, setAllDriversList] = useState<{id: string; name: string}[]>([]);
 
   // بيانات الشركة
   const [companyData, setCompanyData] = useState<{
@@ -141,6 +143,15 @@ const WarehouseNotifications: React.FC = () => {
       // حفظ قائمة المستودعات للتصفية
       setAllWarehousesList(warehousesData.map(w => ({ id: w.id, name: w.name })));
       
+      // جلب قائمة السائقين من الطلبات
+      const driversMap = new Map<string, string>();
+      orders.forEach(order => {
+        if (order.driverId && order.driverName) {
+          driversMap.set(order.driverId, order.driverName);
+        }
+      });
+      setAllDriversList(Array.from(driversMap, ([id, name]) => ({ id, name })));
+      
       // تجميع الطلبات حسب المستودع
       const warehouseMap = new Map<string, WarehouseData>();
       
@@ -221,14 +232,27 @@ const WarehouseNotifications: React.FC = () => {
       }).filter(w => w.ordersCount > 0);
     }
 
+    // تصفية حسب السائق
+    if (selectedDriverId) {
+      filtered = filtered.map(warehouse => {
+        const filteredOrders = warehouse.orders.filter(order => order.driverId === selectedDriverId);
+        return {
+          ...warehouse,
+          orders: filteredOrders,
+          ordersCount: filteredOrders.length
+        };
+      }).filter(w => w.ordersCount > 0);
+    }
+
     setFilteredWarehouses(filtered);
-  }, [selectedWarehouseId, selectedDeliveryDate, selectedStatus, warehouses]);
+  }, [selectedWarehouseId, selectedDeliveryDate, selectedStatus, selectedDriverId, warehouses]);
 
   // إعادة تعيين التصفية
   const handleResetFilters = () => {
     setSelectedWarehouseId('');
     setSelectedDeliveryDate(null);
     setSelectedStatus('قيد الانتظار'); // إعادة للحالة الافتراضية
+    setSelectedDriverId('');
     setFilteredWarehouses(warehouses);
     message.success('تم إعادة تعيين التصفية');
   };
@@ -1065,7 +1089,7 @@ const WarehouseNotifications: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-700">تصفية البيانات</h3>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* تصفية المستودع */}
           <div className="flex flex-col">
             <label className="mb-2 text-sm font-medium text-gray-700">المستودع</label>
@@ -1088,6 +1112,33 @@ const WarehouseNotifications: React.FC = () => {
               {allWarehousesList.map(warehouse => (
                 <AntdSelect.Option key={warehouse.id} value={warehouse.id}>
                   {warehouse.name}
+                </AntdSelect.Option>
+              ))}
+            </AntdSelect>
+          </div>
+
+          {/* تصفية السائق */}
+          <div className="flex flex-col">
+            <label className="mb-2 text-sm font-medium text-gray-700">السائق</label>
+            <AntdSelect
+              value={selectedDriverId || undefined}
+              onChange={setSelectedDriverId}
+              placeholder="جميع السائقين"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+              }
+              style={{ 
+                width: '100%', 
+                height: 42,
+                borderRadius: 8,
+              }}
+              size="large"
+            >
+              {allDriversList.map(driver => (
+                <AntdSelect.Option key={driver.id} value={driver.id}>
+                  {driver.name}
                 </AntdSelect.Option>
               ))}
             </AntdSelect>
@@ -1139,7 +1190,7 @@ const WarehouseNotifications: React.FC = () => {
           <Button
             onClick={handleResetFilters}
             icon={<ReloadOutlined />}
-            disabled={!selectedWarehouseId && !selectedDeliveryDate && selectedStatus === 'قيد الانتظار'}
+            disabled={!selectedWarehouseId && !selectedDeliveryDate && !selectedDriverId && selectedStatus === 'قيد الانتظار'}
             className="bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300"
             size="large"
           >
@@ -1148,13 +1199,18 @@ const WarehouseNotifications: React.FC = () => {
         </div>
 
         {/* عرض نتائج التصفية */}
-        {(selectedWarehouseId || selectedDeliveryDate || selectedStatus) && (
+        {(selectedWarehouseId || selectedDeliveryDate || selectedDriverId || selectedStatus) && (
           <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
             <div className="flex items-center gap-2 text-sm flex-wrap">
               <span className="font-semibold text-purple-700">التصفية النشطة:</span>
               {selectedWarehouseId && (
                 <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
                   المستودع: {allWarehousesList.find(w => w.id === selectedWarehouseId)?.name}
+                </span>
+              )}
+              {selectedDriverId && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
+                  السائق: {allDriversList.find(d => d.id === selectedDriverId)?.name}
                 </span>
               )}
               {selectedDeliveryDate && (
