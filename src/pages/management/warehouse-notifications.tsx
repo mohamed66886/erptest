@@ -5,7 +5,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Table, Button, message, DatePicker } from "antd";
-import { WhatsAppOutlined, PrinterOutlined, ReloadOutlined, DownloadOutlined, FilterOutlined } from '@ant-design/icons';
+import { WhatsAppOutlined, PrinterOutlined, ReloadOutlined, DownloadOutlined, FilterOutlined, EyeOutlined } from '@ant-design/icons';
 import Breadcrumb from "@/components/Breadcrumb";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { Select as AntdSelect } from 'antd';
@@ -450,6 +450,255 @@ const WarehouseNotifications: React.FC = () => {
     }
   };
 
+  // معاينة قبل الطباعة
+  const handlePreview = (warehouse: WarehouseData) => {
+    const printWindow = window.open('', '', 'width=1200,height=900');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html dir="rtl">
+      <head>
+        <title>معاينة طلبات مستودع ${warehouse.name}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+          @page { size: A4 landscape; margin: 15mm; }
+          body { 
+            font-family: 'Tajawal', sans-serif; 
+            padding: 15px; 
+            color: #000;
+            font-size: 11px;
+            line-height: 1.4;
+            margin: 0;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #000;
+            padding-bottom: 15px;
+          }
+          .header h1 {
+            color: #000;
+            margin: 0 0 8px 0;
+            font-size: 24px;
+            font-weight: 700;
+          }
+          .header p {
+            margin: 0;
+            color: #6b7280;
+            font-size: 13px;
+          }
+          .warehouse-info {
+            background: #f3f4f6;
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+          }
+          .warehouse-info div {
+            margin: 3px 10px;
+            font-size: 13px;
+          }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 20px;
+            font-size: 10px;
+          }
+          th, td { 
+            border: 1px solid #d1d5db; 
+            padding: 8px 4px; 
+            text-align: center;
+            vertical-align: middle;
+          }
+          th { 
+            background-color: #bbbbbc;
+            color: #fff;
+            font-weight: 600;
+            font-size: 11px;
+          }
+          tbody tr:nth-child(even) {
+            background-color: #f9fafb;
+          }
+          tbody tr:hover {
+            background-color: #ede9fe;
+          }
+          .installation-badge {
+            background: #10b981;
+            color: white;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 600;
+          }
+          .status-pending { color: #f59e0b; font-weight: bold; }
+          .status-delivered { color: #10b981; font-weight: bold; }
+          .status-cancelled { color: #ef4444; font-weight: bold; }
+          .footer {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 11px;
+            color: #6b7280;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 10px;
+          }
+          .print-controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+          }
+          .btn {
+            background: #8b5cf6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Tajawal', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+          }
+          .btn:hover {
+            background: #7c3aed;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(139, 92, 246, 0.3);
+          }
+          .btn-print {
+            background: #10b981;
+          }
+          .btn-print:hover {
+            background: #059669;
+          }
+          .btn-close {
+            background: #ef4444;
+          }
+          .btn-close:hover {
+            background: #dc2626;
+          }
+          @media print {
+            .print-controls { display: none; }
+            body { padding: 10px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-controls">
+          <button class="btn btn-print" onclick="window.print()">
+            🖨️ طباعة
+          </button>
+          <button class="btn btn-close" onclick="window.close()">
+            ✖️ إغلاق
+          </button>
+        </div>
+        
+        <div class="header">
+          <h1>
+            <svg style="display: inline-block; vertical-align: middle; width: 28px; height: 28px; margin-left: 8px;" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            طلبات التوصيل - مستودع ${warehouse.name}
+          </h1>
+          <p>نظام إدارة الموارد ERP90</p>
+        </div>
+        
+        <div class="warehouse-info">
+          <div><strong>أمين المستودع:</strong> ${warehouse.keeper}</div>
+          <div><strong>رقم الهاتف:</strong> ${warehouse.phone || warehouse.mobile || 'غير متوفر'}</div>
+          <div><strong>عدد الطلبات:</strong> ${warehouse.ordersCount} طلب</div>
+          <div><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px;">م</th>
+              <th style="width: 90px;">رقم الفاتورة</th>
+              <th style="width: 120px;">اسم العميل</th>
+              <th style="width: 85px;">هاتف العميل</th>
+              <th style="width: 80px;">السائق</th>
+              <th style="width: 70px;">الحي</th>
+              <th style="width: 100px;">الملاحظات</th>
+              <th style="width: 50px;">التركيب</th>
+              <th style="width: 70px;">حالة الفرع</th>
+              <th style="width: 80px;">حالة التوصيل</th>
+              <th style="width: 80px;">تاريخ التسليم</th>
+              <th style="width: 80px;">وقت الإنشاء</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${warehouse.orders.map((order, index) => {
+              const formatDate = (dateStr) => {
+                if (!dateStr) return '-';
+                try {
+                  const date = new Date(dateStr);
+                  return date.toLocaleDateString('en-GB');
+                } catch {
+                  return dateStr;
+                }
+              };
+              
+              const formatDateTime = (dateStr) => {
+                if (!dateStr) return '-';
+                try {
+                  const date = new Date(dateStr);
+                  return date.toLocaleString('en-GB', { 
+                    year: 'numeric', 
+                    month: '2-digit', 
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  });
+                } catch {
+                  return dateStr;
+                }
+              };
+              
+              const getStatusClass = (status) => {
+                if (status === 'تم التوصيل') return 'status-delivered';
+                if (status === 'ملغي') return 'status-cancelled';
+                return 'status-pending';
+              };
+              
+              return `
+              <tr>
+                <td>${index + 1}</td>
+                <td><strong>${order.fullInvoiceNumber}</strong></td>
+                <td>${order.customerName || '-'}</td>
+                <td>${order.customerPhone || '-'}</td>
+                <td>${order.driverName || 'غير محدد'}</td>
+                <td>${order.districtName || '-'}</td>
+                <td style="font-size: 9px; text-align: right; padding-right: 6px;">${order.notes || '-'}</td>
+                <td>${order.requiresInstallation ? '<span class="installation-badge">نعم <svg style="display: inline-block; vertical-align: middle; width: 12px; height: 12px; margin-right: 2px;" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg></span>' : 'لا'}</td>
+                <td>${order.branchName || '-'}</td>
+                <td class="${getStatusClass(order.status)}">${order.status || 'قيد الانتظار'}</td>
+                <td>${formatDate(order.deliveryDate)}</td>
+                <td>${formatDateTime(order.createdAt)}</td>
+              </tr>
+            `;
+            }).join('')}
+          </tbody>
+        </table>
+        
+        <div class="footer">
+          <p><strong>نظام ERP90 - إدارة الموارد</strong> | تم الطباعة بواسطة: ${warehouse.keeper}</p>
+          <p style="margin-top: 5px; font-size: 10px;">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')} - ${new Date().toLocaleTimeString('en-GB')}</p>
+        </div>
+      </body>
+      </html>
+    `);
+    
+    printWindow.document.close();
+  };
+
   // طباعة طلبات المستودع
   const handlePrint = (warehouse: WarehouseData) => {
     const printWindow = window.open('', '', 'width=1200,height=900');
@@ -689,7 +938,7 @@ const WarehouseNotifications: React.FC = () => {
     {
       title: 'الإجراءات',
       key: 'actions',
-      width: 280,
+      width: 350,
       render: (_: unknown, record: WarehouseData) => (
         <div className="flex gap-2 justify-center flex-wrap">
           <Button
@@ -700,6 +949,15 @@ const WarehouseNotifications: React.FC = () => {
             size="middle"
           >
             واتساب
+          </Button>
+          <Button
+            icon={<EyeOutlined />}
+            onClick={() => handlePreview(record)}
+            size="middle"
+            type="default"
+            className="bg-purple-50 hover:bg-purple-100 text-purple-600 border-purple-300"
+          >
+            معاينة
           </Button>
           <Button
             icon={<PrinterOutlined />}
