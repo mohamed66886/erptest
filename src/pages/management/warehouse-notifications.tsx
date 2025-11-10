@@ -60,7 +60,6 @@ const WarehouseNotifications: React.FC = () => {
   const [allWarehousesList, setAllWarehousesList] = useState<{id: string; name: string}[]>([]);
   const [allDriversList, setAllDriversList] = useState<{id: string; name: string}[]>([]);
 
-  // بيانات الشركة
   const [companyData, setCompanyData] = useState<{
     arabicName?: string;
     englishName?: string;
@@ -78,7 +77,6 @@ const WarehouseNotifications: React.FC = () => {
     logoUrl?: string;
   }>({});
 
-  // السنة المالية
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
 
