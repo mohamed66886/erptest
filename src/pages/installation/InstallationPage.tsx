@@ -1,188 +1,301 @@
-import { motion } from "framer-motion";
-import { Wrench, Construction, Clock, ArrowRight, ClipboardList, Calendar, BarChart3 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from 'react';
+import { useFinancialYear } from "@/hooks/useFinancialYear";
+import { usePermissions } from "@/hooks/usePermissions";
+import { Select as AntdSelect } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import Breadcrumb from "@/components/Breadcrumb";
+import { Helmet } from "react-helmet";
+import { Tooltip } from 'antd';
 
-const InstallationPage = () => {
+import { 
+  Settings, 
+  FileText, 
+  Wrench,
+  HardHat,
+  ClipboardList,
+  CheckCircle,
+  Archive,
+  FileBarChart,
+  Package,
+  PackageCheck,
+  UserCog,
+  Users,
+  Calendar,
+  Clock,
+  ShoppingCart
+} from 'lucide-react';
+
+const InstallationPage: React.FC = () => {
+  // السنة المالية
+  const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
+  const { hasPermission, currentUser } = usePermissions();
+  const [fiscalYear, setFiscalYear] = useState<string>("");
+
+  // عرض بيانات المستخدم الحالي للتأكد من الصلاحيات
+  useEffect(() => {
+    console.log('👤 Current User in InstallationPage:', currentUser);
+    console.log('📋 User Permissions:', currentUser?.permissions);
+    console.log('💼 User Position:', currentUser?.position);
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentFinancialYear) {
+      setFiscalYear(currentFinancialYear.year.toString());
+    }
+  }, [currentFinancialYear]);
+
+  const handleFiscalYearChange = (value: string) => {
+    setFiscalYear(value);
+    const selectedYear = activeYears.find(y => y.year.toString() === value);
+    if (selectedYear) {
+      setCurrentFinancialYear(selectedYear);
+    }
+  };
   const navigate = useNavigate();
 
+  const settingsCards = [
+    {
+      title: "إدارة الفنيين",
+      description: "إضافة وتعديل بيانات الفنيين",
+      icon: <Users className="h-6 w-6" />,
+      color: "bg-blue-500",
+      permissionId: "technicians",
+      onClick: () => {
+        navigate('/installation/technicians');
+        window.scrollTo(0, 0);
+      }
+    }
+  ];
+
+  const operationsCards = [
+    {
+      title: "الطلبات",
+      description: "عرض جميع طلبات التركيب",
+      icon: <Package className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-purple-600",
+      permissionId: "installation-orders",
+      onClick: () => {
+        navigate('/installation/orders');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "تأكيد الطلبات",
+      description: "تأكيد ومراجعة طلبات التركيب",
+      icon: <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-emerald-600",
+      permissionId: "installation-confirm-orders",
+      onClick: () => {
+        navigate('/installation/confirm-orders');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "الطلبات المكتملة",
+      description: "عرض طلبات التركيب المكتملة",
+      icon: <PackageCheck className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-teal-600",
+      permissionId: "installation-completed-orders",
+      onClick: () => {
+        navigate('/installation/completed-orders');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "الطلبات المؤرشفة",
+      description: "أرشيف طلبات التركيب القديمة",
+      icon: <Archive className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-gray-600",
+      permissionId: "installation-archived-orders",
+      onClick: () => {
+        navigate('/installation/archived-orders');
+        window.scrollTo(0, 0);
+      }
+    }
+  ];
+
+  const reportsCards = [
+    {
+      title: "التقارير الشاملة",
+      description: "تقارير شاملة عن جميع عمليات التركيب",
+      icon: <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6" />,
+      color: "bg-blue-700",
+      permissionId: "installation-comprehensive-reports",
+      onClick: () => {
+        navigate('/reports/installation-comprehensive-reports');
+        window.scrollTo(0, 0);
+      }
+    }
+  ];
+
+  interface CardType {
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    color: string;
+    permissionId?: string;
+    onClick?: () => void;
+  }
+
+  const CardComponent = ({ card, index }: { card: CardType, index: number }) => {
+    // التحقق من الصلاحية: إذا كان هناك permissionId، يجب أن يكون لديه الصلاحية
+    const isAllowed = card.permissionId ? hasPermission(card.permissionId) : true;
+    
+    console.log(`🎴 Card: ${card.title}, permissionId: ${card.permissionId}, isAllowed: ${isAllowed}`);
+    
+    const cardContent = (
+      <Card 
+        key={index}
+        className={`group transition-all duration-300 ${
+          isAllowed 
+            ? 'hover:shadow-lg cursor-pointer hover:scale-105' 
+            : 'opacity-50 cursor-not-allowed bg-gray-100'
+        }`}
+        onClick={isAllowed ? card.onClick : undefined}
+      >
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex items-center space-x-2 space-x-reverse">
+            <div className={`p-1 sm:p-2 rounded-lg ${card.color} text-white flex items-center justify-center ${!isAllowed && 'grayscale'}`}>
+              {card.icon}
+            </div>
+            <CardTitle className="text-xs sm:text-sm text-right">{card.title}</CardTitle>
+          </div>
+        </CardContent>
+      </Card>
+    );
+
+    if (!isAllowed) {
+      return (
+        <Tooltip title="ليس لديك صلاحية للوصول إلى هذه الصفحة" placement="top">
+          {cardContent}
+        </Tooltip>
+      );
+    }
+
+    return cardContent;
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 rtl" dir="rtl">
-      <main className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
-        {/* Breadcrumb */}
-        <Breadcrumb
-          items={[
-            { label: "الرئيسية", to: "/" },
-            { label: "التركيب والصيانة", to: "/management/installation" },
-          ]}
-        />
+    <div className="w-full p-4 sm:p-6 space-y-8 min-h-screen" dir="rtl">
+      {/* Header */}
+      <Helmet>
+        <title>إدارة التركيب | ERP90 Dashboard</title>
+        <meta name="description" content="إدارة طلبات التركيب والفنيين ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, تركيب, فنيين, طلبات, Installation, Technicians, Orders" />
+      </Helmet>
 
-        {/* Main Content */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex flex-col items-center justify-center min-h-[70vh]"
-        >
-          {/* Icon Container */}
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ 
-              delay: 0.2, 
-              type: "spring", 
-              stiffness: 200, 
-              damping: 15 
-            }}
-            className="relative mb-8"
-          >
-            {/* Background Glow */}
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full blur-3xl opacity-20 scale-150"></div>
-            
-            {/* Main Icon Circle */}
-            <div className="relative bg-gradient-to-br from-indigo-500 to-indigo-600 p-8 rounded-full shadow-2xl">
-              <Wrench className="w-20 h-20 text-white" strokeWidth={1.5} />
-              
-              {/* Floating Icons */}
-              <motion.div
-                animate={{ 
-                  y: [0, -10, 0],
-                  rotate: [0, 5, 0]
-                }}
-                transition={{ 
-                  duration: 2, 
-                  repeat: Infinity, 
-                  ease: "easeInOut" 
-                }}
-                className="absolute -top-2 -right-2 bg-white p-2 rounded-full shadow-lg"
-              >
-                <Construction className="w-6 h-6 text-indigo-600" />
-              </motion.div>
-              
-              <motion.div
-                animate={{ 
-                  y: [0, 10, 0],
-                  rotate: [0, -5, 0]
-                }}
-                transition={{ 
-                  duration: 2.5, 
-                  repeat: Infinity, 
-                  ease: "easeInOut",
-                  delay: 0.3
-                }}
-                className="absolute -bottom-2 -left-2 bg-white p-2 rounded-full shadow-lg"
-              >
-                <Clock className="w-6 h-6 text-purple-600" />
-              </motion.div>
+      <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-900 rounded-lg">
+              <Wrench className="h-8 w-8 text-indigo-600 dark:text-indigo-300" />
             </div>
-          </motion.div>
-
-          {/* Title */}
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="text-4xl md:text-5xl font-bold text-gray-800 mb-4 text-center"
-          >
-            التركيب والصيانة
-          </motion.h1>
-
-          {/* Subtitle */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="flex items-center gap-3 mb-6"
-          >
-            <div className="h-1 w-12 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"></div>
-            <p className="text-xl md:text-2xl text-gray-600 font-medium">
-              تحت الإنشاء
-            </p>
-            <div className="h-1 w-12 bg-gradient-to-l from-indigo-500 to-purple-500 rounded-full"></div>
-          </motion.div>
-
-          {/* Description */}
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="text-gray-600 text-center max-w-2xl mb-8 text-lg leading-relaxed px-4"
-          >
-            نعمل حالياً على تطوير نظام شامل لإدارة عمليات التركيب والصيانة.
-            <br />
-            سيتضمن النظام إدارة الطلبات، جدولة الفنيين، متابعة الأعمال، والتقارير التفصيلية.
-          </motion.p>
-
-          {/* Features Coming Soon */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12 w-full max-w-4xl px-4"
-          >
-            {[
-              { title: "إدارة طلبات التركيب", icon: ClipboardList, color: "text-blue-600", bgColor: "bg-blue-100" },
-              { title: "جدولة الصيانة الدورية", icon: Calendar, color: "text-green-600", bgColor: "bg-green-100" },
-              { title: "تقارير الأداء", icon: BarChart3, color: "text-purple-600", bgColor: "bg-purple-100" },
-            ].map((feature, index) => {
-              const IconComponent = feature.icon;
-              return (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.7 + index * 0.1 }}
-                  className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center hover:shadow-md transition-shadow"
-                >
-                  <div className={`${feature.bgColor} w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4`}>
-                    <IconComponent className={`w-8 h-8 ${feature.color}`} />
-                  </div>
-                  <p className="text-gray-700 font-medium">{feature.title}</p>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-
-          {/* Back Button */}
-          <motion.button
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9 }}
-            onClick={() => navigate("/")}
-            className="group flex items-center gap-3 bg-gradient-to-br from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white px-8 py-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-          >
-            <span className="text-lg font-medium">العودة للرئيسية</span>
-            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </motion.button>
-
-          {/* Progress Indicator */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1 }}
-            className="mt-12 flex items-center gap-2"
-          >
-            <div className="flex gap-1">
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  animate={{ 
-                    scale: [1, 1.2, 1],
-                    opacity: [0.5, 1, 0.5]
-                  }}
-                  transition={{ 
-                    duration: 1.5, 
-                    repeat: Infinity,
-                    delay: i * 0.2
-                  }}
-                  className="w-2 h-2 bg-indigo-500 rounded-full"
-                />
-              ))}
+            <div className="flex flex-col">
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">إدارة التركيب</h1>
+              <p className="text-gray-600 dark:text-gray-400">إدارة طلبات التركيب والفنيين والتقارير</p>
             </div>
-            <span className="text-sm text-gray-500 mr-2">جاري العمل على التطوير</span>
-          </motion.div>
-        </motion.div>
-      </main>
+          </div>
+          
+          {/* السنة المالية Dropdown */}
+          <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+            <span className="flex items-center gap-2">
+              <Wrench className="text-indigo-600 dark:text-indigo-300 w-6 h-6" />
+              <label className="text-base font-medium text-gray-700 dark:text-gray-300">السنة المالية:</label>
+            </span>
+            <div className="min-w-[160px]">
+              <AntdSelect
+                value={fiscalYear}
+                onChange={handleFiscalYearChange}
+                style={{ 
+                  width: 160, 
+                  height: 40, 
+                  fontSize: 16, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  textAlign: 'right', 
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.07)', 
+                  border: '1px solid #e2e8f0'
+                }}
+                dropdownStyle={{ textAlign: 'right', fontSize: 16 }}
+                size="middle"
+                placeholder="السنة المالية"
+              >
+                {activeYears && activeYears.map(y => (
+                  <AntdSelect.Option key={y.id} value={y.year.toString()}>{y.year}</AntdSelect.Option>
+                ))}
+              </AntdSelect>
+            </div>
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-400 to-purple-500"></div>
+      </div>
+
+      {/* Breadcrumb */}
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة التركيب" }, 
+        ]}
+      />
+
+      {/* الإعدادات Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-blue-100 rounded-lg">
+            <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">الإعدادات</h2>
+            <p className="text-sm sm:text-base text-gray-600">إعدادات الفنيين وإدارة التركيب</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {settingsCards.map((card, index) => (
+            <CardComponent key={`settings-${index}`} card={card} index={index} />
+          ))}
+        </div>
+      </div>
+
+      {/* العمليات Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <Package className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">العمليات</h2>
+            <p className="text-sm sm:text-base text-gray-600">عمليات طلبات التركيب اليومية</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {operationsCards.map((card, index) => (
+            <CardComponent key={`operations-${index}`} card={card} index={index} />
+          ))}
+        </div>
+      </div>
+
+      {/* التقارير Section */}
+      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">التقارير</h2>
+            <p className="text-sm sm:text-base text-gray-600">تقارير التركيب والفنيين والطلبات</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {reportsCards.map((card, index) => (
+            <CardComponent key={`reports-${index}`} card={card} index={index} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 };

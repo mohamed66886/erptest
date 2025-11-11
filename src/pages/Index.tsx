@@ -122,6 +122,8 @@ import DriverNotifications from "./management/driver-notifications";
 import ComprehensiveReports from "./reports/ComprehensiveReports";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import InstallationPage from "./installation/InstallationPage";
+import Technicians from "./installation/technicians";
+import InstallationOrders from "./installation/orders";
 
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -351,6 +353,16 @@ const Index = () => {
               <Route path="/management/purchase" element={<PurchaseManagement />} />
               <Route path="/management/equipment" element={<EquipmentManagement />} />
               <Route path="/management/installation" element={<InstallationPage />} />
+              <Route path="/installation/technicians" element={
+                <ProtectedRoute requiredPermission="technicians">
+                  <Technicians />
+                </ProtectedRoute>
+              } />
+              <Route path="/installation/orders" element={
+                <ProtectedRoute requiredPermission="installation-orders">
+                  <InstallationOrders />
+                </ProtectedRoute>
+              } />
               <Route path="/management/discounts-offers" element={<DiscountsOffers />} />
               <Route path="/management/add-sales-accounts" element={<AddSalesAccounts />} />
               <Route path="/management/tax-settings" element={<TaxSettings />} />
@@ -424,6 +436,8 @@ const Index = () => {
                   <ArchivedOrders />
                 </ProtectedRoute>
               } />
+              
+
               
               {/* Financial Management Sub-Routes */}
               <Route path="/accounting/accounts-settlement" element={<AccountsSettlementPage />} />
