@@ -6,11 +6,7 @@ import {
   Input, 
   Select, 
   message, 
-  DatePicker,
-  Checkbox,
-  Modal,
-  Table,
-  Badge
+  DatePicker
 } from 'antd';
 import { 
   SaveOutlined,
@@ -21,8 +17,7 @@ import {
   ToolOutlined,
   SettingOutlined,
   BuildOutlined,
-  SyncOutlined,
-  ImportOutlined
+  SyncOutlined
 } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
 import { 
@@ -80,25 +75,6 @@ interface District {
   governorateName?: string;
 }
 
-interface DeliveryOrder {
-  id: string;
-  fullInvoiceNumber: string;
-  branchName: string;
-  customerName: string;
-  customerPhone: string;
-  districtId?: string;
-  districtName: string;
-  regionId?: string;
-  regionName: string;
-  governorateId?: string;
-  governorateName: string;
-  status: string;
-  requiresInstallation: boolean;
-  deliveryDate?: string;
-  completedAt?: string;
-  archivedAt?: string;
-}
-
 const AddInstallationOrder: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -126,12 +102,6 @@ const AddInstallationOrder: React.FC = () => {
   const [governorateId, setGovernorateId] = useState<string>("");
   const [serviceType, setServiceType] = useState<string[]>([]);
   const [notes, setNotes] = useState<string>("");
-
-  // Import modal states
-  const [importModalVisible, setImportModalVisible] = useState(false);
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [importedOrderIds, setImportedOrderIds] = useState<string[]>([]);
 
   // Financial Year
   const financialYearContext = useContext(FinancialYearContext);
@@ -178,8 +148,6 @@ const AddInstallationOrder: React.FC = () => {
     fetchGovernorates();
     fetchRegions();
     fetchDistricts();
-    fetchDeliveryOrders(); // تحميل طلبات التوصيل عند تحميل الصفحة
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -272,33 +240,6 @@ const AddInstallationOrder: React.FC = () => {
     }
   };
 
-  // Fetch delivery orders with installation requirement
-  const fetchDeliveryOrders = async () => {
-    setLoadingOrders(true);
-    try {
-      const ordersSnapshot = await getDocs(collection(db, 'delivery_orders'));
-      const ordersData = ordersSnapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as DeliveryOrder[];
-      
-      // فلترة الطلبات المكتملة أو المؤرشفة التي تحتاج تركيب ولم يتم استيرادها
-      const filteredOrders = ordersData.filter(order => 
-        (order.status === 'مكتمل' || order.status === 'مؤرشف') &&
-        order.requiresInstallation === true &&
-        !importedOrderIds.includes(order.id)
-      );
-      
-      setDeliveryOrders(filteredOrders);
-    } catch (error) {
-      console.error('Error fetching delivery orders:', error);
-      message.error('حدث خطأ في جلب طلبات التوصيل');
-    } finally {
-      setLoadingOrders(false);
-    }
-  };
-
   // Handle phone change
   const handlePhoneChange = (value: string, setter: (val: string) => void) => {
     const numbersOnly = value.replace(/[^0-9]/g, '').slice(0, 10);
@@ -327,54 +268,8 @@ const AddInstallationOrder: React.FC = () => {
 
   // Handle service type change
   const handleServiceTypeChange = (type: string) => {
-    const newServiceType = serviceType.includes(type)
-      ? serviceType.filter(t => t !== type)
-      : [...serviceType, type];
-    setServiceType(newServiceType);
-  };
-
-  // Import order data
-  const handleImportOrder = (order: DeliveryOrder) => {
-    setDocumentNumber(order.fullInvoiceNumber);
-    setResponsibleEntity(order.branchName);
-    setCustomerName(order.customerName);
-    setPhone(order.customerPhone);
-    
-    let addressImported = false;
-    
-    // Set address data
-    if (order.districtId) {
-      setDistrictId(order.districtId);
-      addressImported = true;
-    } else if (order.districtName) {
-      // إذا لم يكن هناك districtId، ابحث عن الحي بالاسم
-      const district = districts.find(d => 
-        (d.nameAr === order.districtName || d.name === order.districtName)
-      );
-      if (district) {
-        setDistrictId(district.id);
-        addressImported = true;
-      }
-    }
-    
-    if (order.regionId) {
-      setRegionId(order.regionId);
-    }
-    
-    if (order.governorateId) {
-      setGovernorateId(order.governorateId);
-    }
-    
-    // إضافة الطلب للقائمة المستوردة
-    setImportedOrderIds([...importedOrderIds, order.id]);
-    
-    setImportModalVisible(false);
-    
-    if (addressImported) {
-      message.success(`تم استيراد بيانات الطلب بنجاح: ${order.fullInvoiceNumber}`);
-    } else {
-      message.warning(`تم استيراد بيانات الطلب: ${order.fullInvoiceNumber} - يرجى تحديد العنوان يدوياً`);
-    }
+    // اختيار نوع واحد فقط
+    setServiceType([type]);
   };
 
   // عند اختيار الحي
@@ -421,16 +316,8 @@ const AddInstallationOrder: React.FC = () => {
       message.error('يرجى إدخال رقم المستند');
       return;
     }
-    if (!installationDate) {
-      message.error('يرجى تحديد تاريخ التركيب');
-      return;
-    }
     if (!responsibleEntity) {
       message.error('يرجى اختيار الجهة المسؤولة');
-      return;
-    }
-    if (!customerName) {
-      message.error('يرجى إدخال اسم العميل');
       return;
     }
     if (!phone || phone.length !== 10) {
@@ -449,14 +336,6 @@ const AddInstallationOrder: React.FC = () => {
       message.error('يرجى اختيار المحافظة');
       return;
     }
-    if (!technicianName) {
-      message.error('يرجى اختيار الفني');
-      return;
-    }
-    if (!technicianPhone) {
-      message.error('يرجى اختيار رقم هاتف الفني');
-      return;
-    }
     if (serviceType.length === 0) {
       message.error('يرجى اختيار نوع الخدمة');
       return;
@@ -470,13 +349,13 @@ const AddInstallationOrder: React.FC = () => {
         date: date?.format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD'),
         createdTime,
         documentNumber,
-        installationDate: installationDate.format('YYYY-MM-DD'),
+        installationDate: installationDate ? installationDate.format('YYYY-MM-DD') : '',
         responsibleEntity,
-        customerName,
+        customerName: customerName || '',
         phone,
-        technicianId,
-        technicianName,
-        technicianPhone,
+        technicianId: technicianId || '',
+        technicianName: technicianName || '',
+        technicianPhone: technicianPhone || '',
         districtId,
         districtName: districts.find(d => d.id === districtId)?.nameAr || districts.find(d => d.id === districtId)?.name || '',
         regionId,
@@ -621,39 +500,19 @@ const AddInstallationOrder: React.FC = () => {
             <label style={labelStyle} className="mb-2">
               رقم المستند <span className="text-red-500">*</span>
             </label>
-            <div className="flex gap-2">
-              <Input
-                value={documentNumber}
-                onChange={(e) => setDocumentNumber(e.target.value)}
-                placeholder="أدخل رقم المستند"
-                style={{...largeControlStyle, flex: 1}}
-                size="large"
-              />
-              <Badge 
-                count={deliveryOrders.filter(order => !importedOrderIds.includes(order.id)).length} 
-                showZero
-                style={{ backgroundColor: '#059669' }}
-              >
-                <Button
-                  type="primary"
-                  icon={<ImportOutlined />}
-                  onClick={() => {
-                    setImportModalVisible(true);
-                    fetchDeliveryOrders();
-                  }}
-                  className="bg-green-600 hover:bg-green-700"
-                  style={{ height: 48, fontSize: 16 }}
-                >
-                  استيراد من طلب توصيل
-                </Button>
-              </Badge>
-            </div>
+            <Input
+              value={documentNumber}
+              onChange={(e) => setDocumentNumber(e.target.value)}
+              placeholder="أدخل رقم المستند"
+              style={largeControlStyle}
+              size="large"
+            />
           </div>
 
           {/* تاريخ التركيب */}
           <div className="flex flex-col">
             <label style={labelStyle} className="mb-2">
-              تاريخ التركيب <span className="text-red-500">*</span>
+              تاريخ التركيب
             </label>
             <DatePicker
               value={installationDate}
@@ -699,7 +558,7 @@ const AddInstallationOrder: React.FC = () => {
             {/* اسم العميل */}
             <div className="flex flex-col">
               <label style={labelStyle} className="mb-2">
-                اسم العميل <span className="text-red-500">*</span>
+                اسم العميل
               </label>
               <Input
                 value={customerName}
@@ -803,7 +662,7 @@ const AddInstallationOrder: React.FC = () => {
           {technicians.length === 0 && (
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-yellow-800 text-base">
-                ⚠️ لا يوجد فنيين نشطين متاحين حالياً. يرجى إضافة فني من صفحة <a href="/installation/technicians" className="text-blue-600 underline font-semibold">إدارة الفنيين</a>
+                ℹ️ لا يوجد فنيين نشطين متاحين حالياً. يمكنك إضافة فني من صفحة <a href="/installation/technicians" className="text-blue-600 underline font-semibold">إدارة الفنيين</a>
               </p>
             </div>
           )}
@@ -812,7 +671,7 @@ const AddInstallationOrder: React.FC = () => {
             {/* اسم الفني */}
             <div className="flex flex-col">
               <label style={labelStyle} className="mb-2">
-                اسم الفني <span className="text-red-500">*</span>
+                اسم الفني
               </label>
               <Select
                 value={technicianName || undefined}
@@ -834,7 +693,7 @@ const AddInstallationOrder: React.FC = () => {
             {/* هاتف الفني */}
             <div className="flex flex-col">
               <label style={labelStyle} className="mb-2">
-                هاتف الفني <span className="text-red-500">*</span>
+                هاتف الفني
               </label>
               <Select
                 value={technicianPhone || undefined}
@@ -871,16 +730,10 @@ const AddInstallationOrder: React.FC = () => {
               }`}
               onClick={() => handleServiceTypeChange('تركيب')}
             >
-              <Checkbox
-                checked={serviceType.includes('تركيب')}
-                onChange={() => handleServiceTypeChange('تركيب')}
-                className="w-full"
-              >
-                <div className="flex flex-col items-center gap-2">
-                  <BuildOutlined style={{ fontSize: 40, color: serviceType.includes('تركيب') ? '#667eea' : '#888' }} />
-                  <span className="text-lg font-semibold">تركيب</span>
-                </div>
-              </Checkbox>
+              <div className="flex flex-col items-center gap-2">
+                <BuildOutlined style={{ fontSize: 40, color: serviceType.includes('تركيب') ? '#667eea' : '#888' }} />
+                <span className="text-lg font-semibold">تركيب</span>
+              </div>
             </div>
 
             {/* فك */}
@@ -892,16 +745,10 @@ const AddInstallationOrder: React.FC = () => {
               }`}
               onClick={() => handleServiceTypeChange('فك')}
             >
-              <Checkbox
-                checked={serviceType.includes('فك')}
-                onChange={() => handleServiceTypeChange('فك')}
-                className="w-full"
-              >
-                <div className="flex flex-col items-center gap-2">
-                  <ToolOutlined style={{ fontSize: 40, color: serviceType.includes('فك') ? '#667eea' : '#888' }} />
-                  <span className="text-lg font-semibold">فك</span>
-                </div>
-              </Checkbox>
+              <div className="flex flex-col items-center gap-2">
+                <ToolOutlined style={{ fontSize: 40, color: serviceType.includes('فك') ? '#667eea' : '#888' }} />
+                <span className="text-lg font-semibold">فك</span>
+              </div>
             </div>
 
             {/* فك وتركيب */}
@@ -913,16 +760,10 @@ const AddInstallationOrder: React.FC = () => {
               }`}
               onClick={() => handleServiceTypeChange('فك وتركيب')}
             >
-              <Checkbox
-                checked={serviceType.includes('فك وتركيب')}
-                onChange={() => handleServiceTypeChange('فك وتركيب')}
-                className="w-full"
-              >
-                <div className="flex flex-col items-center gap-2">
-                  <SyncOutlined style={{ fontSize: 40, color: serviceType.includes('فك وتركيب') ? '#667eea' : '#888' }} />
-                  <span className="text-lg font-semibold">فك وتركيب</span>
-                </div>
-              </Checkbox>
+              <div className="flex flex-col items-center gap-2">
+                <SyncOutlined style={{ fontSize: 40, color: serviceType.includes('فك وتركيب') ? '#667eea' : '#888' }} />
+                <span className="text-lg font-semibold">فك وتركيب</span>
+              </div>
             </div>
           </div>
         </div>
@@ -972,140 +813,6 @@ const AddInstallationOrder: React.FC = () => {
           </Button>
         </div>
       </motion.div>
-
-      {/* Import Modal */}
-      <Modal
-        title={
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xl">
-              <ImportOutlined style={{ color: '#059669' }} />
-              <span>استيراد من طلبات التوصيل المكتملة</span>
-            </div>
-            <Badge 
-              count={deliveryOrders.filter(order => !importedOrderIds.includes(order.id)).length}
-              showZero
-              style={{ backgroundColor: '#059669' }}
-            />
-          </div>
-        }
-        open={importModalVisible}
-        onCancel={() => setImportModalVisible(false)}
-        footer={null}
-        width={1200}
-        style={{ top: 20 }}
-      >
-        <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-base text-gray-700">
-              ✨ اختر طلب توصيل مكتمل أو مؤرشف يحتاج تركيب لاستيراد بياناته إلى نموذج إضافة طلب التركيب
-            </p>
-            <p className="text-sm text-gray-600 mt-2">
-              💡 سيتم نقل: رقم الفاتورة، الفرع، اسم العميل، رقم الهاتف، والعنوان الكامل
-            </p>
-          </div>
-
-          <Table
-            dataSource={deliveryOrders.filter(order => !importedOrderIds.includes(order.id))}
-            loading={loadingOrders}
-            rowKey="id"
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: true,
-              pageSizeOptions: ['10', '20', '30'],
-              showTotal: (total) => `إجمالي ${total} طلب`,
-            }}
-            locale={{
-              emptyText: 'لا توجد طلبات توصيل متاحة للاستيراد',
-            }}
-            scroll={{ x: 1000 }}
-            columns={[
-              {
-                title: '#',
-                key: 'index',
-                width: 50,
-                render: (_text, _record, index) => index + 1,
-              },
-              {
-                title: 'رقم الفاتورة',
-                dataIndex: 'fullInvoiceNumber',
-                key: 'fullInvoiceNumber',
-                width: 180,
-                render: (text: string) => (
-                  <span className="font-semibold text-blue-600">{text}</span>
-                ),
-              },
-              {
-                title: 'الفرع',
-                dataIndex: 'branchName',
-                key: 'branchName',
-                width: 120,
-              },
-              {
-                title: 'اسم العميل',
-                dataIndex: 'customerName',
-                key: 'customerName',
-                width: 150,
-              },
-              {
-                title: 'رقم الهاتف',
-                dataIndex: 'customerPhone',
-                key: 'customerPhone',
-                width: 120,
-                render: (text: string) => (
-                  <span className="font-mono">{text}</span>
-                ),
-              },
-              {
-                title: 'العنوان',
-                key: 'address',
-                width: 200,
-                render: (_text, record: DeliveryOrder) => (
-                  <div className="text-sm">
-                    <div>{record.districtName}</div>
-                    <div className="text-gray-500">{record.regionName} - {record.governorateName}</div>
-                  </div>
-                ),
-              },
-              {
-                title: 'الحالة',
-                dataIndex: 'status',
-                key: 'status',
-                width: 100,
-                render: (status: string) => {
-                  const color = status === 'مكتمل' ? 'green' : 'gray';
-                  return <Badge status={color === 'green' ? 'success' : 'default'} text={status} />;
-                },
-              },
-              {
-                title: 'التاريخ',
-                key: 'date',
-                width: 120,
-                render: (_text, record: DeliveryOrder) => {
-                  const date = record.completedAt || record.archivedAt || record.deliveryDate;
-                  return date ? dayjs(date).format('DD/MM/YYYY') : '-';
-                },
-              },
-              {
-                title: 'الإجراء',
-                key: 'action',
-                width: 120,
-                fixed: 'right' as const,
-                render: (_text, record: DeliveryOrder) => (
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<ImportOutlined />}
-                    onClick={() => handleImportOrder(record)}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    استيراد
-                  </Button>
-                ),
-              },
-            ]}
-          />
-        </div>
-      </Modal>
     </div>
   );
 };
