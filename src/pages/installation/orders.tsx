@@ -29,7 +29,9 @@ import {
   FileExcelOutlined,
   BellOutlined,
   CheckCircleOutlined,
-  SearchOutlined
+  SearchOutlined,
+  ImportOutlined,
+  SyncOutlined
 } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
 import { 
@@ -98,6 +100,25 @@ interface InstallationOrder {
   notes: string;
   status?: string;
   createdAt?: Timestamp | FieldValue | string;
+  sourceType?: 'manual' | 'delivery'; // لتمييز مصدر الطلب
+  deliveryOrderId?: string; // معرف طلب التوصيل الأصلي
+}
+
+interface DeliveryOrder {
+  id: string;
+  fullInvoiceNumber: string;
+  branchName: string;
+  customerName: string;
+  customerPhone: string;
+  districtName: string;
+  regionName: string;
+  governorateName: string;
+  status: string;
+  requiresInstallation: boolean;
+  deliveryDate?: string;
+  completedAt?: string;
+  archivedAt?: string;
+  createdAt?: Timestamp | FieldValue | string;
 }
 
 const InstallationOrders: React.FC = () => {
@@ -120,6 +141,8 @@ const InstallationOrders: React.FC = () => {
   useEffect(() => {
     fetchOrders();
     fetchBranches();
+    fetchAndCreateInstallationOrdersFromDelivery();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch branches
@@ -170,6 +193,84 @@ const InstallationOrders: React.FC = () => {
     } catch (error) {
       console.error('Error generating order number:', error);
       return `INS-${Date.now()}`;
+    }
+  };
+
+  // Fetch delivery orders and create installation orders automatically
+  const fetchAndCreateInstallationOrdersFromDelivery = async () => {
+    try {
+      setLoading(true);
+      // جلب طلبات التوصيل المكتملة/المؤرشفة التي تحتاج تركيب
+      const deliveryOrdersSnapshot = await getDocs(collection(db, 'delivery_orders'));
+      const deliveryOrders = deliveryOrdersSnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as DeliveryOrder[];
+      
+      // فلترة الطلبات المكتملة/المؤرشفة التي تحتاج تركيب
+      const ordersNeedingInstallation = deliveryOrders.filter(order => 
+        (order.status === 'مكتمل' || order.status === 'مؤرشف') &&
+        order.requiresInstallation === true
+      );
+
+      // جلب طلبات التركيب الموجودة
+      const existingInstallationOrders = await getDocs(collection(db, 'installation_orders'));
+      const existingDeliveryOrderIds = existingInstallationOrders.docs
+        .map(doc => doc.data().deliveryOrderId)
+        .filter(id => id); // فقط الطلبات التي لها deliveryOrderId
+
+      let createdCount = 0;
+      
+      // إنشاء طلبات تركيب للطلبات الجديدة فقط
+      for (const deliveryOrder of ordersNeedingInstallation) {
+        // تحقق إذا كان الطلب موجود مسبقاً
+        if (!existingDeliveryOrderIds.includes(deliveryOrder.id)) {
+          const orderNumber = await generateOrderNumber();
+          const currentTime = dayjs();
+          
+          const installationOrderData = {
+            orderNumber,
+            date: currentTime.format('YYYY-MM-DD'),
+            createdTime: currentTime.format('HH:mm:ss'),
+            documentNumber: deliveryOrder.fullInvoiceNumber, // رقم الفاتورة
+            installationDate: '', // سيتم تحديده لاحقاً
+            responsibleEntity: deliveryOrder.branchName, // الفرع
+            customerName: deliveryOrder.customerName,
+            phone: deliveryOrder.customerPhone,
+            technicianName: '', // سيتم تحديده لاحقاً
+            technicianPhone: '', // سيتم تحديده لاحقاً
+            district: deliveryOrder.districtName,
+            region: deliveryOrder.regionName,
+            governorate: deliveryOrder.governorateName,
+            serviceType: ['تركيب'], // نوع الخدمة الافتراضي
+            notes: `تم إنشاؤه تلقائياً من طلب توصيل: ${deliveryOrder.fullInvoiceNumber}`,
+            status: 'جديد',
+            sourceType: 'delivery',
+            deliveryOrderId: deliveryOrder.id,
+            createdAt: serverTimestamp()
+          };
+
+          // إضافة طلب التركيب
+          await addDoc(collection(db, 'installation_orders'), installationOrderData);
+          createdCount++;
+          console.log(`تم إنشاء طلب تركيب: ${orderNumber} من طلب التوصيل: ${deliveryOrder.fullInvoiceNumber}`);
+        }
+      }
+
+      // إعادة تحميل الطلبات بعد الإضافة
+      await fetchOrders();
+      
+      if (createdCount > 0) {
+        message.success(`تم إنشاء ${createdCount} طلب تركيب جديد من طلبات التوصيل`);
+      } else {
+        message.info('جميع طلبات التوصيل موجودة مسبقاً');
+      }
+    } catch (error) {
+      console.error('Error creating installation orders from delivery:', error);
+      message.error('حدث خطأ في مزامنة طلبات التوصيل');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -323,7 +424,18 @@ const InstallationOrders: React.FC = () => {
       key: 'orderNumber',
       width: 130,
       fixed: 'left' as const,
-      render: (text: string) => <Text strong style={{ color: '#1890ff' }}>{text}</Text>
+      render: (text: string, record: InstallationOrder) => (
+        <div>
+          <Text strong style={{ color: '#1890ff' }}>{text}</Text>
+          {record.sourceType === 'delivery' && (
+            <div>
+              <Tag color="green" style={{ fontSize: 10, marginTop: 4 }}>
+                مستورد تلقائياً
+              </Tag>
+            </div>
+          )}
+        </div>
+      )
     },
     {
       title: 'التاريخ',
@@ -349,7 +461,7 @@ const InstallationOrders: React.FC = () => {
       dataIndex: 'installationDate',
       key: 'installationDate',
       width: 130,
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD')
+      render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : <Tag color="orange">لم يحدد بعد</Tag>
     },
     {
       title: 'الجهة المسؤولة',
@@ -374,6 +486,7 @@ const InstallationOrders: React.FC = () => {
       dataIndex: 'technicianName',
       key: 'technicianName',
       width: 150,
+      render: (name: string) => name || <Tag color="orange">لم يحدد بعد</Tag>
     },
     {
       title: 'الحي',
@@ -474,9 +587,34 @@ const InstallationOrders: React.FC = () => {
       >
         <Card>
           <div style={{ marginBottom: 24 }}>
-            <Title level={2} style={{ marginBottom: 16 }}>
-              📦 طلبات التركيب
-            </Title>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Title level={2} style={{ marginBottom: 0 }}>
+                📦 طلبات التركيب
+              </Title>
+              <div style={{ display: 'flex', gap: 16 }}>
+                <Tag color="blue" style={{ fontSize: 14, padding: '6px 12px' }}>
+                  إجمالي الطلبات: {orders.length}
+                </Tag>
+                <Tag color="green" style={{ fontSize: 14, padding: '6px 12px' }}>
+                  مستوردة تلقائياً: {orders.filter(o => o.sourceType === 'delivery').length}
+                </Tag>
+                <Tag color="purple" style={{ fontSize: 14, padding: '6px 12px' }}>
+                  يدوية: {orders.filter(o => o.sourceType !== 'delivery').length}
+                </Tag>
+              </div>
+            </div>
+
+            <div style={{ 
+              background: '#e6f7ff', 
+              border: '1px solid #91d5ff', 
+              borderRadius: 8, 
+              padding: 12, 
+              marginBottom: 16 
+            }}>
+              <Text style={{ fontSize: 14, color: '#0050b3' }}>
+                ℹ️ <strong>ملاحظة:</strong> يتم استيراد طلبات التركيب تلقائياً من طلبات التوصيل المكتملة والمؤرشفة التي تحتاج تركيب. يمكنك الضغط على زر "مزامنة طلبات التوصيل" لتحديث القائمة.
+              </Text>
+            </div>
 
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
               <Col xs={24} sm={24} md={12} lg={8}>
@@ -498,6 +636,15 @@ const InstallationOrders: React.FC = () => {
                 size="large"
               >
                 إضافة طلب جديد
+              </Button>
+              <Button
+                type="default"
+                icon={<SyncOutlined />}
+                onClick={fetchAndCreateInstallationOrdersFromDelivery}
+                size="large"
+                style={{ borderColor: '#52c41a', color: '#52c41a' }}
+              >
+                مزامنة طلبات التوصيل
               </Button>
               <Button
                 icon={<FileExcelOutlined />}

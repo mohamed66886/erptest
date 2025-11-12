@@ -7,7 +7,10 @@ import {
   Select, 
   message, 
   DatePicker,
-  Checkbox
+  Checkbox,
+  Modal,
+  Table,
+  Badge
 } from 'antd';
 import { 
   SaveOutlined,
@@ -18,7 +21,8 @@ import {
   ToolOutlined,
   SettingOutlined,
   BuildOutlined,
-  SyncOutlined
+  SyncOutlined,
+  ImportOutlined
 } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
 import { 
@@ -45,11 +49,65 @@ interface Branch {
   address?: string;
 }
 
+interface Technician {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  status: string;
+}
+
+interface Governorate {
+  id: string;
+  name?: string;
+  nameAr?: string;
+}
+
+interface Region {
+  id: string;
+  name?: string;
+  nameAr?: string;
+  governorate?: string;
+}
+
+interface District {
+  id: string;
+  name?: string;
+  nameAr?: string;
+  regionId?: string;
+  regionName?: string;
+  governorateId?: string;
+  governorateName?: string;
+}
+
+interface DeliveryOrder {
+  id: string;
+  fullInvoiceNumber: string;
+  branchName: string;
+  customerName: string;
+  customerPhone: string;
+  districtId?: string;
+  districtName: string;
+  regionId?: string;
+  regionName: string;
+  governorateId?: string;
+  governorateName: string;
+  status: string;
+  requiresInstallation: boolean;
+  deliveryDate?: string;
+  completedAt?: string;
+  archivedAt?: string;
+}
+
 const AddInstallationOrder: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [governorates, setGovernorates] = useState<Governorate[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
   
   // Form states
   const [orderNumber, setOrderNumber] = useState<string>("");
@@ -60,13 +118,20 @@ const AddInstallationOrder: React.FC = () => {
   const [responsibleEntity, setResponsibleEntity] = useState<string>("");
   const [customerName, setCustomerName] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
+  const [technicianId, setTechnicianId] = useState<string>("");
   const [technicianName, setTechnicianName] = useState<string>("");
   const [technicianPhone, setTechnicianPhone] = useState<string>("");
-  const [district, setDistrict] = useState<string>("");
-  const [region, setRegion] = useState<string>("");
-  const [governorate, setGovernorate] = useState<string>("");
+  const [districtId, setDistrictId] = useState<string>("");
+  const [regionId, setRegionId] = useState<string>("");
+  const [governorateId, setGovernorateId] = useState<string>("");
   const [serviceType, setServiceType] = useState<string[]>([]);
   const [notes, setNotes] = useState<string>("");
+
+  // Import modal states
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [importedOrderIds, setImportedOrderIds] = useState<string[]>([]);
 
   // Financial Year
   const financialYearContext = useContext(FinancialYearContext);
@@ -89,45 +154,6 @@ const AddInstallationOrder: React.FC = () => {
   };
   const labelStyle = { fontSize: 18, fontWeight: 500 };
 
-  // Districts, Regions, Governorates data
-  const districts = [
-    'حي النهضة', 
-    'حي الملك فهد', 
-    'حي الروضة', 
-    'حي العليا', 
-    'حي السليمانية',
-    'حي الملز',
-    'حي المروج',
-    'حي اليرموك',
-    'حي الربوة',
-    'حي الواحة'
-  ];
-  
-  const regions = [
-    'الشمال', 
-    'الجنوب', 
-    'الشرق', 
-    'الغرب', 
-    'الوسط'
-  ];
-  
-  const governorates = [
-    'الرياض', 
-    'جدة', 
-    'الدمام', 
-    'مكة المكرمة', 
-    'المدينة المنورة', 
-    'الخبر', 
-    'الطائف',
-    'تبوك',
-    'القصيم',
-    'حائل',
-    'جازان',
-    'نجران',
-    'الباحة',
-    'عسير'
-  ];
-
   // Generate order number
   const generateOrderNumber = async () => {
     try {
@@ -148,6 +174,12 @@ const AddInstallationOrder: React.FC = () => {
     
     init();
     fetchBranches();
+    fetchTechnicians();
+    fetchGovernorates();
+    fetchRegions();
+    fetchDistricts();
+    fetchDeliveryOrders(); // تحميل طلبات التوصيل عند تحميل الصفحة
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -181,10 +213,116 @@ const AddInstallationOrder: React.FC = () => {
     }
   };
 
+  // Fetch technicians
+  const fetchTechnicians = async () => {
+    try {
+      const techniciansSnapshot = await getDocs(collection(db, 'technicians'));
+      const techniciansData = techniciansSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Technician[];
+      // فقط الفنيين النشطين
+      const activeTechnicians = techniciansData.filter(t => t.status === 'نشط');
+      setTechnicians(activeTechnicians);
+    } catch (error) {
+      console.error('Error fetching technicians:', error);
+      message.error('حدث خطأ في جلب بيانات الفنيين');
+    }
+  };
+
+  // Fetch governorates
+  const fetchGovernorates = async () => {
+    try {
+      const governoratesSnapshot = await getDocs(collection(db, 'governorates'));
+      const governoratesData = governoratesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Governorate[];
+      setGovernorates(governoratesData);
+    } catch (error) {
+      console.error('Error fetching governorates:', error);
+    }
+  };
+
+  // Fetch regions
+  const fetchRegions = async () => {
+    try {
+      const regionsSnapshot = await getDocs(collection(db, 'regions'));
+      const regionsData = regionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Region[];
+      setRegions(regionsData);
+    } catch (error) {
+      console.error('Error fetching regions:', error);
+    }
+  };
+
+  // Fetch districts
+  const fetchDistricts = async () => {
+    try {
+      const districtsSnapshot = await getDocs(collection(db, 'districts'));
+      const districtsData = districtsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as District[];
+      setDistricts(districtsData);
+    } catch (error) {
+      console.error('Error fetching districts:', error);
+    }
+  };
+
+  // Fetch delivery orders with installation requirement
+  const fetchDeliveryOrders = async () => {
+    setLoadingOrders(true);
+    try {
+      const ordersSnapshot = await getDocs(collection(db, 'delivery_orders'));
+      const ordersData = ordersSnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as DeliveryOrder[];
+      
+      // فلترة الطلبات المكتملة أو المؤرشفة التي تحتاج تركيب ولم يتم استيرادها
+      const filteredOrders = ordersData.filter(order => 
+        (order.status === 'مكتمل' || order.status === 'مؤرشف') &&
+        order.requiresInstallation === true &&
+        !importedOrderIds.includes(order.id)
+      );
+      
+      setDeliveryOrders(filteredOrders);
+    } catch (error) {
+      console.error('Error fetching delivery orders:', error);
+      message.error('حدث خطأ في جلب طلبات التوصيل');
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
   // Handle phone change
   const handlePhoneChange = (value: string, setter: (val: string) => void) => {
     const numbersOnly = value.replace(/[^0-9]/g, '').slice(0, 10);
     setter(numbersOnly);
+  };
+
+  // Handle technician name change
+  const handleTechnicianNameChange = (name: string) => {
+    const selectedTechnician = technicians.find(t => t.name === name);
+    if (selectedTechnician) {
+      setTechnicianId(selectedTechnician.id);
+      setTechnicianName(selectedTechnician.name);
+      setTechnicianPhone(selectedTechnician.phone);
+    }
+  };
+
+  // Handle technician phone change
+  const handleTechnicianPhoneChange = (phone: string) => {
+    const selectedTechnician = technicians.find(t => t.phone === phone);
+    if (selectedTechnician) {
+      setTechnicianId(selectedTechnician.id);
+      setTechnicianName(selectedTechnician.name);
+      setTechnicianPhone(selectedTechnician.phone);
+    }
   };
 
   // Handle service type change
@@ -194,6 +332,83 @@ const AddInstallationOrder: React.FC = () => {
       : [...serviceType, type];
     setServiceType(newServiceType);
   };
+
+  // Import order data
+  const handleImportOrder = (order: DeliveryOrder) => {
+    setDocumentNumber(order.fullInvoiceNumber);
+    setResponsibleEntity(order.branchName);
+    setCustomerName(order.customerName);
+    setPhone(order.customerPhone);
+    
+    let addressImported = false;
+    
+    // Set address data
+    if (order.districtId) {
+      setDistrictId(order.districtId);
+      addressImported = true;
+    } else if (order.districtName) {
+      // إذا لم يكن هناك districtId، ابحث عن الحي بالاسم
+      const district = districts.find(d => 
+        (d.nameAr === order.districtName || d.name === order.districtName)
+      );
+      if (district) {
+        setDistrictId(district.id);
+        addressImported = true;
+      }
+    }
+    
+    if (order.regionId) {
+      setRegionId(order.regionId);
+    }
+    
+    if (order.governorateId) {
+      setGovernorateId(order.governorateId);
+    }
+    
+    // إضافة الطلب للقائمة المستوردة
+    setImportedOrderIds([...importedOrderIds, order.id]);
+    
+    setImportModalVisible(false);
+    
+    if (addressImported) {
+      message.success(`تم استيراد بيانات الطلب بنجاح: ${order.fullInvoiceNumber}`);
+    } else {
+      message.warning(`تم استيراد بيانات الطلب: ${order.fullInvoiceNumber} - يرجى تحديد العنوان يدوياً`);
+    }
+  };
+
+  // عند اختيار الحي
+  useEffect(() => {
+    if (!districtId || !districts.length) {
+      // إعادة تعيين المنطقة والمحافظة إذا لم يتم اختيار حي
+      setRegionId('');
+      setGovernorateId('');
+      return;
+    }
+
+    const selectedDistrict = districts.find(d => d.id === districtId);
+    console.log('Selected District:', selectedDistrict);
+    
+    if (selectedDistrict) {
+      // تعيين المنطقة تلقائياً
+      if (selectedDistrict.regionId) {
+        console.log('Setting regionId:', selectedDistrict.regionId);
+        setRegionId(selectedDistrict.regionId);
+      } else {
+        console.log('No regionId found in district');
+        setRegionId('');
+      }
+      
+      // تعيين المحافظة تلقائياً
+      if (selectedDistrict.governorateId) {
+        console.log('Setting governorateId:', selectedDistrict.governorateId);
+        setGovernorateId(selectedDistrict.governorateId);
+      } else {
+        console.log('No governorateId found in district');
+        setGovernorateId('');
+      }
+    }
+  }, [districtId, districts]);
 
   // Handle submit
   const handleSave = async () => {
@@ -222,24 +437,24 @@ const AddInstallationOrder: React.FC = () => {
       message.error('يرجى إدخال رقم هاتف صحيح (10 أرقام)');
       return;
     }
-    if (!district) {
+    if (!districtId) {
       message.error('يرجى اختيار الحي');
       return;
     }
-    if (!region) {
+    if (!regionId) {
       message.error('يرجى اختيار المنطقة');
       return;
     }
-    if (!governorate) {
+    if (!governorateId) {
       message.error('يرجى اختيار المحافظة');
       return;
     }
     if (!technicianName) {
-      message.error('يرجى إدخال اسم الفني');
+      message.error('يرجى اختيار الفني');
       return;
     }
-    if (!technicianPhone || technicianPhone.length !== 10) {
-      message.error('يرجى إدخال رقم هاتف الفني صحيح (10 أرقام)');
+    if (!technicianPhone) {
+      message.error('يرجى اختيار رقم هاتف الفني');
       return;
     }
     if (serviceType.length === 0) {
@@ -259,11 +474,15 @@ const AddInstallationOrder: React.FC = () => {
         responsibleEntity,
         customerName,
         phone,
+        technicianId,
         technicianName,
         technicianPhone,
-        district,
-        region,
-        governorate,
+        districtId,
+        districtName: districts.find(d => d.id === districtId)?.nameAr || districts.find(d => d.id === districtId)?.name || '',
+        regionId,
+        regionName: regions.find(r => r.id === regionId)?.nameAr || regions.find(r => r.id === regionId)?.name || '',
+        governorateId,
+        governorateName: governorates.find(g => g.id === governorateId)?.nameAr || governorates.find(g => g.id === governorateId)?.name || '',
         serviceType,
         notes,
         status: 'جديد',
@@ -402,13 +621,33 @@ const AddInstallationOrder: React.FC = () => {
             <label style={labelStyle} className="mb-2">
               رقم المستند <span className="text-red-500">*</span>
             </label>
-            <Input
-              value={documentNumber}
-              onChange={(e) => setDocumentNumber(e.target.value)}
-              placeholder="أدخل رقم المستند"
-              style={largeControlStyle}
-              size="large"
-            />
+            <div className="flex gap-2">
+              <Input
+                value={documentNumber}
+                onChange={(e) => setDocumentNumber(e.target.value)}
+                placeholder="أدخل رقم المستند"
+                style={{...largeControlStyle, flex: 1}}
+                size="large"
+              />
+              <Badge 
+                count={deliveryOrders.filter(order => !importedOrderIds.includes(order.id)).length} 
+                showZero
+                style={{ backgroundColor: '#059669' }}
+              >
+                <Button
+                  type="primary"
+                  icon={<ImportOutlined />}
+                  onClick={() => {
+                    setImportModalVisible(true);
+                    fetchDeliveryOrders();
+                  }}
+                  className="bg-green-600 hover:bg-green-700"
+                  style={{ height: 48, fontSize: 16 }}
+                >
+                  استيراد من طلب توصيل
+                </Button>
+              </Badge>
+            </div>
           </div>
 
           {/* تاريخ التركيب */}
@@ -502,8 +741,8 @@ const AddInstallationOrder: React.FC = () => {
                 الحي <span className="text-red-500">*</span>
               </label>
               <Select
-                value={district || undefined}
-                onChange={setDistrict}
+                value={districtId || undefined}
+                onChange={setDistrictId}
                 placeholder="اختر الحي"
                 style={largeControlStyle}
                 size="large"
@@ -511,7 +750,9 @@ const AddInstallationOrder: React.FC = () => {
                 optionFilterProp="children"
               >
                 {districts.map(dist => (
-                  <Option key={dist} value={dist}>{dist}</Option>
+                  <Option key={dist.id} value={dist.id}>
+                    {dist.nameAr || dist.name}
+                  </Option>
                 ))}
               </Select>
             </div>
@@ -519,41 +760,35 @@ const AddInstallationOrder: React.FC = () => {
             {/* المنطقة */}
             <div className="flex flex-col">
               <label style={labelStyle} className="mb-2">
-                المنطقة <span className="text-red-500">*</span>
+                المنطقة
               </label>
-              <Select
-                value={region || undefined}
-                onChange={setRegion}
-                placeholder="اختر المنطقة"
-                style={largeControlStyle}
+              <Input
+                value={
+                  regionId 
+                    ? (regions.find(r => r.id === regionId)?.nameAr || regions.find(r => r.id === regionId)?.name || 'غير محدد') 
+                    : 'يتم تحديدها تلقائياً عند اختيار الحي'
+                }
+                disabled
+                style={{...largeControlStyle, backgroundColor: '#f9fafb', color: regionId ? '#059669' : '#6b7280', fontWeight: regionId ? 600 : 400}}
                 size="large"
-                showSearch
-                optionFilterProp="children"
-              >
-                {regions.map(reg => (
-                  <Option key={reg} value={reg}>{reg}</Option>
-                ))}
-              </Select>
+              />
             </div>
 
             {/* المحافظة */}
             <div className="flex flex-col">
               <label style={labelStyle} className="mb-2">
-                المحافظة <span className="text-red-500">*</span>
+                المحافظة
               </label>
-              <Select
-                value={governorate || undefined}
-                onChange={setGovernorate}
-                placeholder="اختر المحافظة"
-                style={largeControlStyle}
+              <Input
+                value={
+                  governorateId 
+                    ? (governorates.find(g => g.id === governorateId)?.nameAr || governorates.find(g => g.id === governorateId)?.name || 'غير محدد') 
+                    : 'يتم تحديدها تلقائياً عند اختيار الحي'
+                }
+                disabled
+                style={{...largeControlStyle, backgroundColor: '#f9fafb', color: governorateId ? '#059669' : '#6b7280', fontWeight: governorateId ? 600 : 400}}
                 size="large"
-                showSearch
-                optionFilterProp="children"
-              >
-                {governorates.map(gov => (
-                  <Option key={gov} value={gov}>{gov}</Option>
-                ))}
-              </Select>
+              />
             </div>
           </div>
         </div>
@@ -564,19 +799,36 @@ const AddInstallationOrder: React.FC = () => {
             <ToolOutlined style={{ fontSize: 24, color: '#667eea' }} />
             بيانات الفني
           </h3>
+          
+          {technicians.length === 0 && (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800 text-base">
+                ⚠️ لا يوجد فنيين نشطين متاحين حالياً. يرجى إضافة فني من صفحة <a href="/installation/technicians" className="text-blue-600 underline font-semibold">إدارة الفنيين</a>
+              </p>
+            </div>
+          )}
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* اسم الفني */}
             <div className="flex flex-col">
               <label style={labelStyle} className="mb-2">
                 اسم الفني <span className="text-red-500">*</span>
               </label>
-              <Input
-                value={technicianName}
-                onChange={(e) => setTechnicianName(e.target.value)}
-                placeholder="أدخل اسم الفني"
+              <Select
+                value={technicianName || undefined}
+                onChange={handleTechnicianNameChange}
+                placeholder="اختر الفني"
                 style={largeControlStyle}
                 size="large"
-              />
+                showSearch
+                optionFilterProp="children"
+              >
+                {technicians.map(technician => (
+                  <Option key={technician.id} value={technician.name}>
+                    {technician.name}
+                  </Option>
+                ))}
+              </Select>
             </div>
 
             {/* هاتف الفني */}
@@ -584,15 +836,21 @@ const AddInstallationOrder: React.FC = () => {
               <label style={labelStyle} className="mb-2">
                 هاتف الفني <span className="text-red-500">*</span>
               </label>
-              <Input
-                value={technicianPhone}
-                onChange={(e) => handlePhoneChange(e.target.value, setTechnicianPhone)}
-                placeholder="05xxxxxxxx (10 أرقام)"
+              <Select
+                value={technicianPhone || undefined}
+                onChange={handleTechnicianPhoneChange}
+                placeholder="اختر رقم هاتف الفني"
                 style={largeControlStyle}
                 size="large"
-                maxLength={10}
-                dir="ltr"
-              />
+                showSearch
+                optionFilterProp="children"
+              >
+                {technicians.map(technician => (
+                  <Option key={technician.id} value={technician.phone}>
+                    {technician.phone} - {technician.name}
+                  </Option>
+                ))}
+              </Select>
             </div>
           </div>
         </div>
@@ -714,6 +972,140 @@ const AddInstallationOrder: React.FC = () => {
           </Button>
         </div>
       </motion.div>
+
+      {/* Import Modal */}
+      <Modal
+        title={
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xl">
+              <ImportOutlined style={{ color: '#059669' }} />
+              <span>استيراد من طلبات التوصيل المكتملة</span>
+            </div>
+            <Badge 
+              count={deliveryOrders.filter(order => !importedOrderIds.includes(order.id)).length}
+              showZero
+              style={{ backgroundColor: '#059669' }}
+            />
+          </div>
+        }
+        open={importModalVisible}
+        onCancel={() => setImportModalVisible(false)}
+        footer={null}
+        width={1200}
+        style={{ top: 20 }}
+      >
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-base text-gray-700">
+              ✨ اختر طلب توصيل مكتمل أو مؤرشف يحتاج تركيب لاستيراد بياناته إلى نموذج إضافة طلب التركيب
+            </p>
+            <p className="text-sm text-gray-600 mt-2">
+              💡 سيتم نقل: رقم الفاتورة، الفرع، اسم العميل، رقم الهاتف، والعنوان الكامل
+            </p>
+          </div>
+
+          <Table
+            dataSource={deliveryOrders.filter(order => !importedOrderIds.includes(order.id))}
+            loading={loadingOrders}
+            rowKey="id"
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '30'],
+              showTotal: (total) => `إجمالي ${total} طلب`,
+            }}
+            locale={{
+              emptyText: 'لا توجد طلبات توصيل متاحة للاستيراد',
+            }}
+            scroll={{ x: 1000 }}
+            columns={[
+              {
+                title: '#',
+                key: 'index',
+                width: 50,
+                render: (_text, _record, index) => index + 1,
+              },
+              {
+                title: 'رقم الفاتورة',
+                dataIndex: 'fullInvoiceNumber',
+                key: 'fullInvoiceNumber',
+                width: 180,
+                render: (text: string) => (
+                  <span className="font-semibold text-blue-600">{text}</span>
+                ),
+              },
+              {
+                title: 'الفرع',
+                dataIndex: 'branchName',
+                key: 'branchName',
+                width: 120,
+              },
+              {
+                title: 'اسم العميل',
+                dataIndex: 'customerName',
+                key: 'customerName',
+                width: 150,
+              },
+              {
+                title: 'رقم الهاتف',
+                dataIndex: 'customerPhone',
+                key: 'customerPhone',
+                width: 120,
+                render: (text: string) => (
+                  <span className="font-mono">{text}</span>
+                ),
+              },
+              {
+                title: 'العنوان',
+                key: 'address',
+                width: 200,
+                render: (_text, record: DeliveryOrder) => (
+                  <div className="text-sm">
+                    <div>{record.districtName}</div>
+                    <div className="text-gray-500">{record.regionName} - {record.governorateName}</div>
+                  </div>
+                ),
+              },
+              {
+                title: 'الحالة',
+                dataIndex: 'status',
+                key: 'status',
+                width: 100,
+                render: (status: string) => {
+                  const color = status === 'مكتمل' ? 'green' : 'gray';
+                  return <Badge status={color === 'green' ? 'success' : 'default'} text={status} />;
+                },
+              },
+              {
+                title: 'التاريخ',
+                key: 'date',
+                width: 120,
+                render: (_text, record: DeliveryOrder) => {
+                  const date = record.completedAt || record.archivedAt || record.deliveryDate;
+                  return date ? dayjs(date).format('DD/MM/YYYY') : '-';
+                },
+              },
+              {
+                title: 'الإجراء',
+                key: 'action',
+                width: 120,
+                fixed: 'right' as const,
+                render: (_text, record: DeliveryOrder) => (
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<ImportOutlined />}
+                    onClick={() => handleImportOrder(record)}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    استيراد
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        </div>
+      </Modal>
     </div>
   );
 };
