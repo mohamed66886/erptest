@@ -124,6 +124,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import InstallationPage from "./installation/InstallationPage";
 import Technicians from "./installation/technicians";
 import InstallationOrders from "./installation/orders";
+import AddInstallationOrder from "./installation/add-order";
 
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -361,6 +362,11 @@ const Index = () => {
               <Route path="/installation/orders" element={
                 <ProtectedRoute requiredPermission="installation-orders">
                   <InstallationOrders />
+                </ProtectedRoute>
+              } />
+              <Route path="/installation/add-order" element={
+                <ProtectedRoute requiredPermission="installation-orders">
+                  <AddInstallationOrder />
                 </ProtectedRoute>
               } />
               <Route path="/management/discounts-offers" element={<DiscountsOffers />} />
