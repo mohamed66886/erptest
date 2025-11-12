@@ -312,10 +312,6 @@ const AddInstallationOrder: React.FC = () => {
       message.error('يرجى إدخال رقم الطلب');
       return;
     }
-    if (!documentNumber) {
-      message.error('يرجى إدخال رقم المستند');
-      return;
-    }
     if (!responsibleEntity) {
       message.error('يرجى اختيار الجهة المسؤولة');
       return;
@@ -348,7 +344,7 @@ const AddInstallationOrder: React.FC = () => {
         orderNumber,
         date: date?.format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD'),
         createdTime,
-        documentNumber,
+        documentNumber: documentNumber || '',
         installationDate: installationDate ? installationDate.format('YYYY-MM-DD') : '',
         responsibleEntity,
         customerName: customerName || '',
@@ -498,7 +494,7 @@ const AddInstallationOrder: React.FC = () => {
           {/* رقم المستند */}
           <div className="flex flex-col">
             <label style={labelStyle} className="mb-2">
-              رقم المستند <span className="text-red-500">*</span>
+              رقم المستند
             </label>
             <Input
               value={documentNumber}
