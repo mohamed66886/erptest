@@ -933,7 +933,7 @@ const AddDeliveryOrder: React.FC = () => {
               placeholder="أدخل رقم الفاتورة (مثال: 201)"
               style={largeControlStyle}
               size="large"
-              maxLength={6}
+              maxLength={10}
             />
           </div>
 
