@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Helmet } from "react-helmet";
-import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs, doc, deleteDoc } from "firebase/firestore";
+import { db, storage } from "@/lib/firebase";
+import { ref, deleteObject } from "firebase/storage";
 import { Table, Card, Tag, Image, Space, Button, Input, DatePicker, Select, message, Modal, Descriptions, Row, Col } from "antd";
 import { 
   SearchOutlined, 
@@ -10,13 +11,13 @@ import {
   UserOutlined,
   PhoneOutlined,
   CalendarOutlined,
-  EnvironmentOutlined,
   ToolOutlined,
   FileTextOutlined,
-  CheckCircleOutlined,
-  FileExcelOutlined,
   InboxOutlined,
-  ExclamationCircleOutlined
+  FileExcelOutlined,
+  DeleteOutlined,
+  ExclamationCircleOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from "framer-motion";
 import dayjs from 'dayjs';
@@ -51,11 +52,12 @@ interface InstallationOrder {
   beforeImageFileName?: string;
   afterImageFileName?: string;
   imagesUploadedAt?: string;
+  archivedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-const CompletedOrders: React.FC = () => {
+const ArchivedOrders: React.FC = () => {
   const { currentFinancialYear } = useFinancialYear();
   const [orders, setOrders] = useState<InstallationOrder[]>([]);
   const [filteredOrders, setFilteredOrders] = useState<InstallationOrder[]>([]);
@@ -67,7 +69,7 @@ const CompletedOrders: React.FC = () => {
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<InstallationOrder | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [archiving, setArchiving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Advanced search filters
   const [searchOrderNumber, setSearchOrderNumber] = useState('');
@@ -88,23 +90,22 @@ const CompletedOrders: React.FC = () => {
   // جلب البيانات
   useEffect(() => {
     if (currentFinancialYear) {
-      fetchCompletedOrders();
+      fetchArchivedOrders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFinancialYear]);
 
-  const fetchCompletedOrders = async () => {
+  const fetchArchivedOrders = async () => {
     if (!currentFinancialYear) return;
     
     setLoading(true);
     try {
       const ordersRef = collection(db, "installation_orders");
       
-      // استعلام بدون orderBy لتجنب مشكلة الفهرس
-      // نجلب فقط الطلبات المكتملة
+      // جلب الطلبات المؤرشفة فقط
       const q = query(
         ordersRef,
-        where("status", "==", "مكتمل")
+        where("status", "==", "مؤرشف")
       );
 
       const querySnapshot = await getDocs(q);
@@ -118,11 +119,10 @@ const CompletedOrders: React.FC = () => {
           ...data,
         } as InstallationOrder;
         
-        // فقط الطلبات التي تحتوي على صور قبل وبعد
-        // وتطابق السنة المالية الحالية (إذا كانت موجودة)
+        // فلترة حسب السنة المالية إذا كانت موجودة
         const matchesFinancialYear = !data.financialYearId || data.financialYearId === currentFinancialYear.id;
         
-        if (order.beforeImageUrl && order.afterImageUrl && matchesFinancialYear) {
+        if (matchesFinancialYear) {
           ordersData.push(order);
           
           if (data.technicianName) {
@@ -131,21 +131,21 @@ const CompletedOrders: React.FC = () => {
         }
       });
 
-      // ترتيب البيانات في الذاكرة بدلاً من قاعدة البيانات
+      // ترتيب البيانات حسب تاريخ الأرشفة (الأحدث أولاً)
       ordersData.sort((a, b) => {
-        const dateA = new Date(a.createdAt).getTime();
-        const dateB = new Date(b.createdAt).getTime();
-        return dateB - dateA; // ترتيب تنازلي (الأحدث أولاً)
+        const dateA = new Date(a.archivedAt || a.updatedAt).getTime();
+        const dateB = new Date(b.archivedAt || b.updatedAt).getTime();
+        return dateB - dateA;
       });
 
       setOrders(ordersData);
       setFilteredOrders(ordersData);
       setTechnicians(Array.from(techniciansList));
       
-      console.log('✅ Completed orders loaded:', ordersData.length);
+      console.log('📦 Archived orders loaded:', ordersData.length);
     } catch (error) {
-      console.error("Error fetching completed orders:", error);
-      message.error("حدث خطأ في تحميل الطلبات المكتملة");
+      console.error("Error fetching archived orders:", error);
+      message.error("حدث خطأ في تحميل الطلبات المؤرشفة");
     } finally {
       setLoading(false);
     }
@@ -243,54 +243,121 @@ const CompletedOrders: React.FC = () => {
     setDetailsModalVisible(true);
   };
 
-  // Archive selected orders
-  const handleArchiveOrders = () => {
+  // حذف صورة من Firebase Storage
+  const deleteImageFromStorage = async (imageUrl?: string) => {
+    if (!imageUrl) return;
+    
+    try {
+      // استخراج المسار من الـ URL
+      const imageRef = ref(storage, imageUrl);
+      await deleteObject(imageRef);
+      console.log('✅ Image deleted from storage:', imageUrl);
+    } catch (error) {
+      // إذا كانت الصورة غير موجودة، نتجاهل الخطأ
+      const firebaseError = error as { code?: string };
+      if (firebaseError.code === 'storage/object-not-found') {
+        console.log('ℹ️ Image not found in storage, skipping:', imageUrl);
+      } else {
+        console.error('❌ Error deleting image:', error);
+        throw error;
+      }
+    }
+  };
+
+  // حذف الطلبات نهائياً
+  const handleDeleteOrders = () => {
     if (selectedRowKeys.length === 0) {
-      message.warning('الرجاء تحديد طلب واحد على الأقل للأرشفة');
+      message.warning('الرجاء تحديد طلب واحد على الأقل للحذف');
       return;
     }
 
     Modal.confirm({
-      title: 'تأكيد الأرشفة',
-      icon: <ExclamationCircleOutlined />,
-      content: `هل أنت متأكد من أرشفة ${selectedRowKeys.length} طلب؟`,
-      okText: 'نعم، أرشفة',
+      title: 'تحذير: حذف نهائي',
+      icon: <WarningOutlined className="text-red-600" />,
+      content: (
+        <div className="space-y-2">
+          <p className="text-red-600 font-semibold">
+            ⚠️ هذا الإجراء لا يمكن التراجع عنه!
+          </p>
+          <p>
+            سيتم حذف <strong>{selectedRowKeys.length}</strong> طلب نهائياً من قاعدة البيانات.
+          </p>
+          <p className="text-sm text-red-600">
+            📷 سيتم حذف جميع الصور المرفقة أيضاً.
+          </p>
+          <p className="text-sm text-gray-600">
+            هل أنت متأكد من المتابعة؟
+          </p>
+        </div>
+      ),
+      okText: 'نعم، احذف نهائياً',
       cancelText: 'إلغاء',
       okButtonProps: { danger: true },
       onOk: async () => {
-        setArchiving(true);
+        setDeleting(true);
+        const hideLoading = message.loading('جاري الحذف...', 0);
+        
         try {
-          const archivePromises = selectedRowKeys.map(async (orderId) => {
-            const orderRef = doc(db, 'installation_orders', orderId as string);
-            await updateDoc(orderRef, {
-              status: 'مؤرشف',
-              archivedAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            });
-          });
+          let deletedCount = 0;
+          let errorCount = 0;
 
-          await Promise.all(archivePromises);
+          // حذف كل طلب مع الصور
+          for (const orderId of selectedRowKeys) {
+            try {
+              // البحث عن بيانات الطلب
+              const order = orders.find(o => o.id === orderId);
+              
+              if (order) {
+                // حذف الصور إن وجدت
+                const deleteImagePromises = [];
+                
+                if (order.beforeImageUrl) {
+                  deleteImagePromises.push(deleteImageFromStorage(order.beforeImageUrl));
+                }
+                
+                if (order.afterImageUrl) {
+                  deleteImagePromises.push(deleteImageFromStorage(order.afterImageUrl));
+                }
+                
+                // انتظار حذف جميع الصور
+                if (deleteImagePromises.length > 0) {
+                  await Promise.allSettled(deleteImagePromises);
+                }
+              }
+              
+              // حذف المستند من Firestore
+              const orderRef = doc(db, 'installation_orders', orderId as string);
+              await deleteDoc(orderRef);
+              
+              deletedCount++;
+              console.log(`✅ Order ${orderId} deleted successfully with images`);
+            } catch (error) {
+              console.error(`❌ Error deleting order ${orderId}:`, error);
+              errorCount++;
+            }
+          }
+
+          hideLoading();
 
           // تحديث القوائم المحلية
-          const updatedOrders = orders.map(order => 
-            selectedRowKeys.includes(order.id) 
-              ? { ...order, status: 'مؤرشف' }
-              : order
-          );
+          const updatedOrders = orders.filter(order => !selectedRowKeys.includes(order.id));
           setOrders(updatedOrders);
-          setFilteredOrders(filteredOrders.map(order => 
-            selectedRowKeys.includes(order.id) 
-              ? { ...order, status: 'مؤرشف' }
-              : order
-          ));
+          setFilteredOrders(filteredOrders.filter(order => !selectedRowKeys.includes(order.id)));
 
           setSelectedRowKeys([]);
-          message.success(`تم أرشفة ${selectedRowKeys.length} طلب بنجاح`);
+          
+          // رسالة النجاح
+          if (errorCount === 0) {
+            message.success(`تم حذف ${deletedCount} طلب مع الصور بنجاح 🎉`);
+          } else {
+            message.warning(`تم حذف ${deletedCount} طلب، فشل حذف ${errorCount} طلب`);
+          }
         } catch (error) {
-          console.error('Error archiving orders:', error);
-          message.error('حدث خطأ في أرشفة الطلبات');
+          hideLoading();
+          console.error('Error deleting orders:', error);
+          message.error('حدث خطأ في حذف الطلبات');
         } finally {
-          setArchiving(false);
+          setDeleting(false);
         }
       },
     });
@@ -313,13 +380,13 @@ const CompletedOrders: React.FC = () => {
         'نوع الخدمة': order.serviceType.join(', '),
         'الملاحظات': order.notes || '',
         'الحالة': order.status,
-        'تاريخ رفع الصور': order.imagesUploadedAt ? dayjs(order.imagesUploadedAt).format('YYYY-MM-DD HH:mm') : '',
+        'تاريخ الأرشفة': order.archivedAt ? dayjs(order.archivedAt).format('YYYY-MM-DD HH:mm') : '',
       }));
 
       const ws = XLSX.utils.json_to_sheet(dataToExport);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'الطلبات المكتملة');
-      XLSX.writeFile(wb, `completed_orders_${dayjs().format('YYYY-MM-DD')}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, 'الطلبات المؤرشفة');
+      XLSX.writeFile(wb, `archived_orders_${dayjs().format('YYYY-MM-DD')}.xlsx`);
       message.success('تم تصدير البيانات بنجاح');
     } catch (error) {
       console.error('Error exporting to Excel:', error);
@@ -348,7 +415,7 @@ const CompletedOrders: React.FC = () => {
       width: 120,
       fixed: 'left',
       render: (text: string) => (
-        <span className="font-semibold text-blue-600">{text}</span>
+        <span className="font-semibold text-gray-600">{text}</span>
       ),
     },
     {
@@ -450,18 +517,18 @@ const CompletedOrders: React.FC = () => {
       ),
     },
     {
-      title: "تاريخ رفع الصور",
-      dataIndex: "imagesUploadedAt",
-      key: "imagesUploadedAt",
+      title: "تاريخ الأرشفة",
+      dataIndex: "archivedAt",
+      key: "archivedAt",
       width: 150,
       render: (date: string) => (
         date ? (
           <div className="flex items-center gap-2">
-            <CheckCircleOutlined className="text-green-600" />
+            <InboxOutlined className="text-gray-600" />
             <span className="text-xs">{dayjs(date).format('DD/MM/YYYY HH:mm')}</span>
           </div>
         ) : (
-          <Tag color="warning">غير محدد</Tag>
+          <Tag color="default">غير محدد</Tag>
         )
       ),
     },
@@ -472,10 +539,7 @@ const CompletedOrders: React.FC = () => {
       width: 100,
       fixed: 'right',
       render: (status: string) => (
-        <Tag 
-          color={status === 'مؤرشف' ? 'default' : 'success'} 
-          icon={status === 'مؤرشف' ? <InboxOutlined /> : <CheckCircleOutlined />}
-        >
+        <Tag color="default" icon={<InboxOutlined />}>
           {status}
         </Tag>
       ),
@@ -488,7 +552,7 @@ const CompletedOrders: React.FC = () => {
       align: 'center',
       render: (_: unknown, record: InstallationOrder) => (
         <Button
-          type="primary"
+          type="default"
           size="small"
           icon={<EyeOutlined />}
           onClick={() => showOrderDetails(record)}
@@ -502,9 +566,9 @@ const CompletedOrders: React.FC = () => {
   return (
     <>
       <Helmet>
-        <title>الطلبات المكتملة | ERP90 Dashboard</title>
-        <meta name="description" content="عرض وإدارة طلبات التركيب المكتملة مع الصور، ERP90 Dashboard" />
-        <meta name="keywords" content="ERP, تركيب, طلبات مكتملة, صور, فني, عملاء, Installation, Completed Orders" />
+        <title>الطلبات المؤرشفة | ERP90 Dashboard</title>
+        <meta name="description" content="عرض وإدارة طلبات التركيب المؤرشفة، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, تركيب, طلبات مؤرشفة, أرشيف, Installation, Archived Orders" />
       </Helmet>
 
       <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50" dir="rtl">
@@ -512,30 +576,30 @@ const CompletedOrders: React.FC = () => {
         <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-6">
-              <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
-                <CheckCircleOutlined style={{ fontSize: 32, color: '#16a34a' }} />
+              <div className="p-2 bg-gray-100 dark:bg-gray-900 rounded-lg">
+                <InboxOutlined style={{ fontSize: 32, color: '#6b7280' }} />
               </div>
               <div className="flex flex-col">
-                <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">الطلبات المكتملة مع الصور</h1>
-                <p className="text-gray-600 dark:text-gray-400">عرض طلبات التركيب المكتملة التي تم رفع الصور لها</p>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">الطلبات المؤرشفة</h1>
+                <p className="text-gray-600 dark:text-gray-400">عرض وإدارة طلبات التركيب المؤرشفة</p>
               </div>
             </div>
             
             {/* Statistics Tags */}
             <div className="flex items-center gap-3">
-              <div className="bg-green-50 dark:bg-green-900/20 px-4 py-2 rounded-lg border border-green-200 dark:border-green-800">
-                <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+              <div className="bg-gray-50 dark:bg-gray-900/20 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-800">
+                <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
                   إجمالي: {filteredOrders.length}
                 </span>
               </div>
-              <div className="bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg border border-blue-200 dark:border-blue-800">
-                <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+              <div className="bg-purple-50 dark:bg-purple-900/20 px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-800">
+                <span className="text-sm text-purple-600 dark:text-purple-400 font-medium">
                   فنيين: {technicians.length}
                 </span>
               </div>
             </div>
           </div>
-          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-200"></div>
+          <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-gray-500 to-gray-300"></div>
         </div>
 
         {/* Breadcrumb */}
@@ -543,15 +607,15 @@ const CompletedOrders: React.FC = () => {
           items={[
             { label: "الرئيسية", to: "/" },
             { label: "إدارة التركيب", to: "/installation" },
-            { label: "الطلبات المكتملة" },
+            { label: "الطلبات المؤرشفة" },
           ]}
         />
 
         {/* Info Alert */}
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-          <FileImageOutlined className="text-xl text-green-600 mt-0.5 flex-shrink-0" />
-          <div className="text-sm text-green-800">
-            <strong>ملاحظة:</strong> يعرض هذا القسم فقط طلبات التركيب المكتملة التي تم رفع صور قبل وبعد التركيب لها
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+          <WarningOutlined className="text-xl text-yellow-600 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-yellow-800">
+            <strong>تحذير:</strong> الطلبات المحذوفة من هذا القسم سيتم حذفها نهائياً مع جميع الصور المرفقة ولا يمكن استرجاعها مرة أخرى!
           </div>
         </div>
 
@@ -560,12 +624,12 @@ const CompletedOrders: React.FC = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
+          className="w-full bg-white p-2 sm:p-4 rounded-lg border border-gray-100 flex flex-col gap-4 shadow-sm relative"
         >
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-200"></div>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-gray-500 to-gray-300"></div>
           
           <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
-            <SearchOutlined className="text-emerald-600" /> خيارات البحث
+            <SearchOutlined className="text-gray-600" /> خيارات البحث
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -746,7 +810,7 @@ const CompletedOrders: React.FC = () => {
             <Button
               type="link"
               onClick={() => setShowMoreFilters(!showMoreFilters)}
-              className="text-emerald-600 hover:text-emerald-700 font-medium"
+              className="text-gray-600 hover:text-gray-700 font-medium"
             >
               {showMoreFilters ? '▲ إخفاء الخيارات الإضافية' : '▼ إظهار المزيد من الخيارات'}
             </Button>
@@ -813,7 +877,7 @@ const CompletedOrders: React.FC = () => {
       {/* Table Card */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-700">قائمة الطلبات المكتملة</h3>
+          <h3 className="text-lg font-semibold text-gray-700">قائمة الطلبات المؤرشفة</h3>
           
           {selectedRowKeys.length > 0 && (
             <div className="flex items-center gap-3">
@@ -823,12 +887,13 @@ const CompletedOrders: React.FC = () => {
               <Button
                 type="primary"
                 danger
-                icon={<InboxOutlined />}
-                onClick={handleArchiveOrders}
-                loading={archiving}
+                icon={<DeleteOutlined />}
+                onClick={handleDeleteOrders}
+                loading={deleting}
                 size="large"
+                className="bg-red-600 hover:bg-red-700"
               >
-                أرشفة المحدد ({selectedRowKeys.length})
+                حذف نهائي ({selectedRowKeys.length})
               </Button>
             </div>
           )}
@@ -847,7 +912,7 @@ const CompletedOrders: React.FC = () => {
             position: ['bottomCenter'],
           }}
           locale={{
-            emptyText: "لا توجد طلبات مكتملة بها صور",
+            emptyText: "لا توجد طلبات مؤرشفة",
           }}
           rowSelection={{
             type: 'checkbox',
@@ -855,9 +920,6 @@ const CompletedOrders: React.FC = () => {
             onChange: (selectedKeys) => {
               setSelectedRowKeys(selectedKeys);
             },
-            getCheckboxProps: (record) => ({
-              disabled: record.status === 'مؤرشف',
-            }),
           }}
         />
       </div>
@@ -866,8 +928,8 @@ const CompletedOrders: React.FC = () => {
       <Modal
         title={
           <div className="flex items-center gap-2">
-            <FileTextOutlined className="text-blue-600" />
-            <span>تفاصيل الطلب</span>
+            <FileTextOutlined className="text-gray-600" />
+            <span>تفاصيل الطلب المؤرشف</span>
           </div>
         }
         open={detailsModalVisible}
@@ -880,7 +942,7 @@ const CompletedOrders: React.FC = () => {
           <div className="space-y-4">
             <Descriptions bordered column={{ xs: 1, sm: 2 }}>
               <Descriptions.Item label="رقم الطلب" span={1}>
-                <span className="font-semibold text-blue-600">{selectedOrder.orderNumber}</span>
+                <span className="font-semibold text-gray-600">{selectedOrder.orderNumber}</span>
               </Descriptions.Item>
               <Descriptions.Item label="رقم المستند" span={1}>
                 {selectedOrder.documentNumber}
@@ -901,7 +963,7 @@ const CompletedOrders: React.FC = () => {
                 {dayjs(selectedOrder.installationDate).format('DD/MM/YYYY')}
               </Descriptions.Item>
               <Descriptions.Item label="الحالة" span={1}>
-                <Tag color="success" icon={<CheckCircleOutlined />}>
+                <Tag color="default" icon={<InboxOutlined />}>
                   {selectedOrder.status}
                 </Tag>
               </Descriptions.Item>
@@ -916,9 +978,9 @@ const CompletedOrders: React.FC = () => {
                   {selectedOrder.notes}
                 </Descriptions.Item>
               )}
-              {selectedOrder.imagesUploadedAt && (
-                <Descriptions.Item label="تاريخ رفع الصور" span={2}>
-                  {dayjs(selectedOrder.imagesUploadedAt).format('DD/MM/YYYY HH:mm')}
+              {selectedOrder.archivedAt && (
+                <Descriptions.Item label="تاريخ الأرشفة" span={2}>
+                  {dayjs(selectedOrder.archivedAt).format('DD/MM/YYYY HH:mm')}
                 </Descriptions.Item>
               )}
             </Descriptions>
@@ -926,7 +988,7 @@ const CompletedOrders: React.FC = () => {
             {/* Images Section */}
             <div className="mt-6">
               <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <FileImageOutlined className="text-blue-600" />
+                <FileImageOutlined className="text-gray-600" />
                 صور التركيب
               </h3>
               <Row gutter={[16, 16]}>
@@ -934,7 +996,7 @@ const CompletedOrders: React.FC = () => {
                   <Card 
                     title="صورة قبل التركيب"
                     className="shadow-md"
-                    headStyle={{ backgroundColor: '#f0f9ff', color: '#1e40af', fontWeight: 'bold' }}
+                    headStyle={{ backgroundColor: '#f9fafb', color: '#374151', fontWeight: 'bold' }}
                   >
                     {selectedOrder.beforeImageUrl ? (
                       <Image
@@ -957,7 +1019,7 @@ const CompletedOrders: React.FC = () => {
                   <Card 
                     title="صورة بعد التركيب"
                     className="shadow-md"
-                    headStyle={{ backgroundColor: '#f0fdf4', color: '#15803d', fontWeight: 'bold' }}
+                    headStyle={{ backgroundColor: '#f9fafb', color: '#374151', fontWeight: 'bold' }}
                   >
                     {selectedOrder.afterImageUrl ? (
                       <Image
@@ -990,18 +1052,18 @@ const CompletedOrders: React.FC = () => {
         
         /* تخصيص رأس الجدول */
         .ant-table-thead > tr > th {
-          background-color: #c0dbfe !important;
-          color: #1e40af !important;
+          background-color: #f3f4f6 !important;
+          color: #374151 !important;
           font-weight: 600 !important;
-          border-bottom: 2px solid #93c5fd !important;
+          border-bottom: 2px solid #d1d5db !important;
         }
         
         .ant-table-thead > tr > th::before {
-          background-color: #1e40af !important;
+          background-color: #374151 !important;
         }
       `}</style>
     </>
   );
 };
 
-export default CompletedOrders;
+export default ArchivedOrders;

@@ -127,6 +127,7 @@ import InstallationOrders from "./installation/orders";
 import AddInstallationOrder from "./installation/add-order";
 import ConfirmedOrders from "./installation/confirmed-orders";
 import CompletedInstallationOrders from "./installation/CompletedOrders";
+import ArchivedInstallationOrders from "./installation/ArchivedOrders";
 
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -374,6 +375,11 @@ const Index = () => {
               <Route path="/installation/completed-orders" element={
                 <ProtectedRoute requiredPermission="installation-completed-orders">
                   <CompletedInstallationOrders />
+                </ProtectedRoute>
+              } />
+              <Route path="/installation/archived-orders" element={
+                <ProtectedRoute requiredPermission="installation-archived-orders">
+                  <ArchivedInstallationOrders />
                 </ProtectedRoute>
               } />
               <Route path="/installation/add-order" element={

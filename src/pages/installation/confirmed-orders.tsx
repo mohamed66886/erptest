@@ -14,7 +14,8 @@ import {
   Col,
   Switch,
   Select,
-  Modal
+  Modal,
+  DatePicker
 } from 'antd';
 
 const { Option } = Select;
@@ -27,6 +28,8 @@ import {
   CheckSquareOutlined,
   WhatsAppOutlined
 } from '@ant-design/icons';
+import { motion, AnimatePresence } from "framer-motion";
+import Breadcrumb from "@/components/Breadcrumb";
 import { db } from '@/lib/firebase';
 import { 
   collection, 
@@ -41,8 +44,6 @@ import {
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
-import { motion } from 'framer-motion';
-import Breadcrumb from '@/components/Breadcrumb';
 
 const { Title, Text } = Typography;
 
@@ -86,6 +87,23 @@ const ConfirmedOrders: React.FC = () => {
   const [selectedOrderIds, setSelectedOrderIds] = useState<React.Key[]>([]);
   const [confirmationLoading, setConfirmationLoading] = useState(false);
   const [selectedTechnicianFilter, setSelectedTechnicianFilter] = useState<string>('');
+
+  // Search filters
+  const [searchOrderNumber, setSearchOrderNumber] = useState('');
+  const [searchDocumentNumber, setSearchDocumentNumber] = useState('');
+  const [searchPhone, setSearchPhone] = useState('');
+  const [searchCustomerName, setSearchCustomerName] = useState('');
+  const [searchTechnician, setSearchTechnician] = useState('');
+  const [searchDistrict, setSearchDistrict] = useState('');
+  const [searchRegion, setSearchRegion] = useState('');
+  const [searchGovernorate, setSearchGovernorate] = useState('');
+  const [searchInstallationDate, setSearchInstallationDate] = useState<dayjs.Dayjs | null>(null);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+
+  // Districts, Regions, Governorates data
+  const districts = ['حي النهضة', 'حي الملك فهد', 'حي الروضة', 'حي العليا', 'حي السليمانية'];
+  const regions = ['الشمال', 'الجنوب', 'الشرق', 'الغرب', 'الوسط'];
+  const governorates = ['الرياض', 'جدة', 'الدمام', 'مكة المكرمة', 'المدينة المنورة', 'الخبر', 'الطائف'];
 
   useEffect(() => {
     fetchConfirmedOrders();
@@ -200,13 +218,58 @@ const ConfirmedOrders: React.FC = () => {
     }
   };
 
-  // Filter orders
-  const filteredOrders = orders.filter(order =>
-    order.orderNumber.toLowerCase().includes(searchText.toLowerCase()) ||
-    order.customerName.toLowerCase().includes(searchText.toLowerCase()) ||
-    order.phone.includes(searchText) ||
-    order.documentNumber.toLowerCase().includes(searchText.toLowerCase())
-  );
+  // Filter orders with advanced filters
+  const filteredOrders = orders.filter(order => {
+    // البحث العام
+    const generalSearch = !searchText || 
+      order.orderNumber.toLowerCase().includes(searchText.toLowerCase()) ||
+      order.customerName.toLowerCase().includes(searchText.toLowerCase()) ||
+      order.phone.includes(searchText) ||
+      order.documentNumber.toLowerCase().includes(searchText.toLowerCase());
+
+    // البحث برقم الطلب
+    const orderNumberMatch = !searchOrderNumber || 
+      order.orderNumber.toLowerCase().includes(searchOrderNumber.toLowerCase());
+
+    // البحث برقم المستند
+    const documentNumberMatch = !searchDocumentNumber || 
+      order.documentNumber.toLowerCase().includes(searchDocumentNumber.toLowerCase());
+
+    // البحث برقم الهاتف
+    const phoneMatch = !searchPhone || 
+      order.phone.includes(searchPhone);
+
+    // البحث باسم العميل
+    const customerNameMatch = !searchCustomerName || 
+      order.customerName.toLowerCase().includes(searchCustomerName.toLowerCase());
+
+    // البحث بالفني
+    const technicianMatch = !searchTechnician || 
+      (order.technicianName && order.technicianName.toLowerCase().includes(searchTechnician.toLowerCase()));
+
+    // البحث بالحي
+    const districtMatch = !searchDistrict || 
+      (order.districtName && order.districtName === searchDistrict) ||
+      (order.district && order.district === searchDistrict);
+
+    // البحث بالمنطقة
+    const regionMatch = !searchRegion || 
+      (order.regionName && order.regionName === searchRegion) ||
+      (order.region && order.region === searchRegion);
+
+    // البحث بالمحافظة
+    const governorateMatch = !searchGovernorate || 
+      (order.governorateName && order.governorateName === searchGovernorate) ||
+      (order.governorate && order.governorate === searchGovernorate);
+
+    // البحث بتاريخ التركيب
+    const installationDateMatch = !searchInstallationDate || 
+      (order.installationDate && dayjs(order.installationDate).isSame(searchInstallationDate, 'day'));
+
+    return generalSearch && orderNumberMatch && documentNumberMatch && phoneMatch && 
+           customerNameMatch && technicianMatch && districtMatch && regionMatch && 
+           governorateMatch && installationDateMatch;
+  });
 
   // Filter orders with assigned technicians
   const ordersWithTechnicians = orders.filter(order => 
@@ -546,13 +609,28 @@ const ConfirmedOrders: React.FC = () => {
     },
   ];
 
+  // ستايل موحد لعناصر الإدخال والدروب داون
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: '8px 16px',
+    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+    background: '#fff',
+    border: '1.5px solid #d9d9d9',
+    transition: 'border-color 0.3s',
+  };
+  const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
+
   return (
     <>
       <Helmet>
-        <title>الطلبات المؤكدة - ERP90</title>
+        <title>الطلبات المؤكدة | ERP90 Dashboard</title>
+        <meta name="description" content="عرض وإدارة طلبات التركيب المؤكدة، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, تركيب, طلبات مؤكدة, فني, عملاء, Installation, Confirmed Orders" />
       </Helmet>
 
-      <div className="p-4 space-y-6 font-['Tajawal'] bg-gray-50 min-h-screen">
+      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50" dir="rtl">
         {/* Header */}
         <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -561,18 +639,29 @@ const ConfirmedOrders: React.FC = () => {
                 <CheckCircleOutlined style={{ fontSize: 32, color: '#16a34a' }} />
               </div>
               <div className="flex flex-col">
-                <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-1">
-                  الطلبات المؤكدة
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400 text-base">
-                  عرض جميع طلبات التركيب المؤكدة
-                </p>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">الطلبات المؤكدة</h1>
+                <p className="text-gray-600 dark:text-gray-400">عرض وإدارة طلبات التركيب المؤكدة</p>
+              </div>
+            </div>
+            
+            {/* Statistics Tags */}
+            <div className="flex items-center gap-3">
+              <div className="bg-green-50 dark:bg-green-900/20 px-4 py-2 rounded-lg border border-green-200 dark:border-green-800">
+                <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+                  إجمالي: {orders.length}
+                </span>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg border border-blue-200 dark:border-blue-800">
+                <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                  لها فني: {ordersWithTechnicians.length}
+                </span>
               </div>
             </div>
           </div>
           <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-200"></div>
         </div>
 
+        {/* Breadcrumb */}
         <Breadcrumb
           items={[
             { label: "الرئيسية", to: "/" },
@@ -581,125 +670,329 @@ const ConfirmedOrders: React.FC = () => {
           ]}
         />
 
-        <motion.div
+        {/* Info Alert */}
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+          <svg className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="text-sm text-green-800">
+            <strong>ملاحظة:</strong> هذه الصفحة تعرض جميع طلبات التركيب التي تم تأكيدها (لها تاريخ تركيب محدد).
+          </div>
+        </div>
+
+        {/* Search Filters Card */}
+        <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.3 }}
+          className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
         >
-          <Card>
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <Title level={2} style={{ marginBottom: 0 }}>
-                  ✅ الطلبات المؤكدة
-                </Title>
-                <div style={{ display: 'flex', gap: 16 }}>
-                  <Tag color="green" style={{ fontSize: 14, padding: '6px 12px' }}>
-                    إجمالي الطلبات المؤكدة: {orders.length}
-                  </Tag>
-                </div>
-              </div>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-200"></div>
+          
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+            <SearchOutlined className="text-emerald-600" /> خيارات البحث
+          </h3>
 
-              <div style={{ 
-                background: '#f0fdf4', 
-                border: '1px solid #86efac', 
-                borderRadius: 8, 
-                padding: 12, 
-                marginBottom: 16 
-              }}>
-                <Text style={{ fontSize: 14, color: '#16a34a' }}>
-                  ℹ️ <strong>ملاحظة:</strong> هذه الصفحة تعرض جميع طلبات التركيب التي تم تأكيدها (لها تاريخ تركيب محدد).
-                </Text>
-              </div>
-
-              <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                <Col xs={24} sm={24} md={12} lg={8}>
-                  <Input
-                    placeholder="البحث برقم الطلب، اسم العميل، رقم الهاتف..."
-                    prefix={<SearchOutlined />}
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
-                    size="large"
-                  />
-                </Col>
-              </Row>
-
-              <Space wrap style={{ marginBottom: 16 }}>
-                <Button
-                  icon={<FileExcelOutlined />}
-                  onClick={exportToExcel}
-                  size="large"
-                  type="primary"
-                  style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
-                >
-                  تصدير Excel
-                </Button>
-
-                <Button
-                  icon={<CheckSquareOutlined />}
-                  onClick={openConfirmationModal}
-                  size="large"
-                  type="primary"
-                  style={{ backgroundColor: '#1890ff', borderColor: '#1890ff' }}
-                >
-                  تأكيد الطلبات ({ordersWithTechnicians.length})
-                </Button>
-                
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 12,
-                  padding: '8px 16px',
-                  background: assignTechnicianMode ? '#e6f7ff' : '#f5f5f5',
-                  borderRadius: 8,
-                  border: assignTechnicianMode ? '2px solid #1890ff' : '2px solid #d9d9d9',
-                  transition: 'all 0.3s'
-                }}>
-                  <UserSwitchOutlined 
-                    style={{ 
-                      fontSize: 20, 
-                      color: assignTechnicianMode ? '#1890ff' : '#8c8c8c' 
-                    }} 
-                  />
-                  <span style={{ 
-                    fontSize: 16, 
-                    fontWeight: 500,
-                    color: assignTechnicianMode ? '#1890ff' : '#595959'
-                  }}>
-                    وضع تعيين الفني
-                  </span>
-                  <Switch
-                    checked={assignTechnicianMode}
-                    onChange={(checked) => {
-                      setAssignTechnicianMode(checked);
-                      if (checked) {
-                        message.info('تم تفعيل وضع تعيين الفني. اختر فني من القائمة لتعيينه للطلبات.');
-                      } else {
-                        message.info('تم إلغاء وضع تعيين الفني.');
-                      }
-                    }}
-                    checkedChildren="مفعل"
-                    unCheckedChildren="معطل"
-                    size="default"
-                  />
-                </div>
-              </Space>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="flex flex-col">
+              <span style={labelStyle}>رقم الطلب</span>
+              <Input 
+                value={searchOrderNumber}
+                onChange={e => setSearchOrderNumber(e.target.value)}
+                placeholder="ادخل رقم الطلب"
+                style={largeControlStyle}
+                size="large"
+                allowClear
+              />
             </div>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>رقم المستند</span>
+              <Input 
+                value={searchDocumentNumber}
+                onChange={e => setSearchDocumentNumber(e.target.value)}
+                placeholder="ادخل رقم المستند"
+                style={largeControlStyle}
+                size="large"
+                allowClear
+              />
+            </div>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>رقم الهاتف</span>
+              <Input 
+                value={searchPhone}
+                onChange={e => setSearchPhone(e.target.value)}
+                placeholder="ادخل رقم الهاتف"
+                style={largeControlStyle}
+                size="large"
+                allowClear
+              />
+            </div>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>اسم العميل</span>
+              <Input 
+                value={searchCustomerName}
+                onChange={e => setSearchCustomerName(e.target.value)}
+                placeholder="ادخل اسم العميل"
+                style={largeControlStyle}
+                size="large"
+                allowClear
+              />
+            </div>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>الفني</span>
+              <Input 
+                value={searchTechnician}
+                onChange={e => setSearchTechnician(e.target.value)}
+                placeholder="ادخل اسم الفني"
+                style={largeControlStyle}
+                size="large"
+                allowClear
+              />
+            </div>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>المحافظة</span>
+              <Select
+                value={searchGovernorate || undefined}
+                onChange={setSearchGovernorate}
+                placeholder="اختر المحافظة"
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                allowClear
+                showSearch
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
+              >
+                {governorates.map(gov => (
+                  <Option key={gov} value={gov}>
+                    {gov}
+                  </Option>
+                ))}
+              </Select>
+            </div>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>المنطقة</span>
+              <Select
+                value={searchRegion || undefined}
+                onChange={setSearchRegion}
+                placeholder="اختر المنطقة"
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                allowClear
+                showSearch
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
+              >
+                {regions.map(region => (
+                  <Option key={region} value={region}>
+                    {region}
+                  </Option>
+                ))}
+              </Select>
+            </div>
+            
+            <div className="flex flex-col">
+              <span style={labelStyle}>الحي</span>
+              <Select
+                value={searchDistrict || undefined}
+                onChange={setSearchDistrict}
+                placeholder="اختر الحي"
+                style={{ width: '100%', ...largeControlStyle }}
+                size="large"
+                allowClear
+                showSearch
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
+              >
+                {districts.map(district => (
+                  <Option key={district} value={district}>
+                    {district}
+                  </Option>
+                ))}
+              </Select>
+            </div>
+          </div>
+          
+          <AnimatePresence>
+            {showMoreFilters && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-hidden"
+              >
+                <div className="flex flex-col">
+                  <span style={labelStyle}>تاريخ التركيب</span>
+                  <DatePicker
+                    value={searchInstallationDate}
+                    onChange={setSearchInstallationDate}
+                    placeholder="اختر التاريخ"
+                    style={{ width: '100%', ...largeControlStyle }}
+                    size="large"
+                    format="YYYY-MM-DD"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+            <Button
+              type="link"
+              onClick={() => setShowMoreFilters(!showMoreFilters)}
+              className="text-emerald-600 hover:text-emerald-700 font-medium"
+            >
+              {showMoreFilters ? '▲ إخفاء الخيارات الإضافية' : '▼ إظهار المزيد من الخيارات'}
+            </Button>
+            
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                icon={<FileExcelOutlined />}
+                onClick={exportToExcel}
+                size="large"
+                style={{ 
+                  backgroundColor: '#c0dbfe', 
+                  borderColor: '#c0dbfe',
+                  color: '#1e40af',
+                  fontWeight: 600
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#93c5fd';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#c0dbfe';
+                  e.currentTarget.style.borderColor = '#c0dbfe';
+                }}
+              >
+                تصدير Excel
+              </Button>
 
-            <Table
-              columns={columns}
-              dataSource={filteredOrders}
-              rowKey="id"
-              loading={loading}
-              scroll={{ x: 1800, y: 600 }}
-              pagination={{
-                pageSize: 10,
-                showSizeChanger: true,
-                showTotal: (total) => `إجمالي ${total} طلب مؤكد`,
-              }}
-              bordered
-            />
-          </Card>
+              <Button
+                icon={<CheckSquareOutlined />}
+                onClick={openConfirmationModal}
+                size="large"
+                style={{ 
+                  backgroundColor: '#c0dbfe', 
+                  borderColor: '#c0dbfe',
+                  color: '#1e40af',
+                  fontWeight: 600
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#93c5fd';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#c0dbfe';
+                  e.currentTarget.style.borderColor = '#c0dbfe';
+                }}
+              >
+                تأكيد الطلبات ({ordersWithTechnicians.length})
+              </Button>
+              
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 12,
+                padding: '8px 16px',
+                background: assignTechnicianMode ? '#e6f7ff' : '#f5f5f5',
+                borderRadius: 8,
+                border: assignTechnicianMode ? '2px solid #1890ff' : '2px solid #d9d9d9',
+                transition: 'all 0.3s'
+              }}>
+                <UserSwitchOutlined 
+                  style={{ 
+                    fontSize: 20, 
+                    color: assignTechnicianMode ? '#1890ff' : '#8c8c8c' 
+                  }} 
+                />
+                <span style={{ 
+                  fontSize: 16, 
+                  fontWeight: 500,
+                  color: assignTechnicianMode ? '#1890ff' : '#595959'
+                }}>
+                  وضع تعيين الفني
+                </span>
+                <Switch
+                  checked={assignTechnicianMode}
+                  onChange={(checked) => {
+                    setAssignTechnicianMode(checked);
+                    if (checked) {
+                      message.info('تم تفعيل وضع تعيين الفني. اختر فني من القائمة لتعيينه للطلبات.');
+                    } else {
+                      message.info('تم إلغاء وضع تعيين الفني.');
+                    }
+                  }}
+                  checkedChildren="مفعل"
+                  unCheckedChildren="معطل"
+                  size="default"
+                />
+              </div>
+
+              <Button
+                onClick={() => {
+                  setSearchText('');
+                  setSearchOrderNumber('');
+                  setSearchDocumentNumber('');
+                  setSearchPhone('');
+                  setSearchCustomerName('');
+                  setSearchTechnician('');
+                  setSearchDistrict('');
+                  setSearchRegion('');
+                  setSearchGovernorate('');
+                  setSearchInstallationDate(null);
+                }}
+                size="large"
+                style={{ 
+                  backgroundColor: '#c0dbfe', 
+                  borderColor: '#c0dbfe',
+                  color: '#1e40af',
+                  fontWeight: 600
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#93c5fd';
+                  e.currentTarget.style.borderColor = '#93c5fd';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#c0dbfe';
+                  e.currentTarget.style.borderColor = '#c0dbfe';
+                }}
+              >
+                مسح الفلاتر
+              </Button>
+            </div>
+          </div>
         </motion.div>
+
+        {/* Table Card */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b border-gray-100">
+            <h3 className="text-lg font-semibold text-gray-700">قائمة الطلبات المؤكدة</h3>
+          </div>
+
+          <Table
+            columns={columns}
+            dataSource={filteredOrders}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: 1800, y: 600 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `إجمالي ${total} طلب مؤكد`,
+            }}
+            bordered
+          />
+        </div>
 
         {/* Confirmation Modal */}
         <Modal
@@ -831,6 +1124,18 @@ const ConfirmedOrders: React.FC = () => {
       <style>{`
         .ant-table-wrapper {
           direction: rtl;
+        }
+        
+        /* تخصيص رأس الجدول */
+        .ant-table-thead > tr > th {
+          background-color: #c0dbfe !important;
+          color: #1e40af !important;
+          font-weight: 600 !important;
+          border-bottom: 2px solid #93c5fd !important;
+        }
+        
+        .ant-table-thead > tr > th::before {
+          background-color: #1e40af !important;
         }
       `}</style>
     </>

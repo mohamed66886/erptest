@@ -33,6 +33,8 @@ import {
   ImportOutlined,
   SyncOutlined
 } from '@ant-design/icons';
+import { motion, AnimatePresence } from "framer-motion";
+import Breadcrumb from "@/components/Breadcrumb";
 import { db } from '@/lib/firebase';
 import { 
   collection, 
@@ -49,7 +51,6 @@ import {
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
-import { motion } from 'framer-motion';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -140,6 +141,19 @@ const InstallationOrders: React.FC = () => {
   const districts = ['حي النهضة', 'حي الملك فهد', 'حي الروضة', 'حي العليا', 'حي السليمانية'];
   const regions = ['الشمال', 'الجنوب', 'الشرق', 'الغرب', 'الوسط'];
   const governorates = ['الرياض', 'جدة', 'الدمام', 'مكة المكرمة', 'المدينة المنورة', 'الخبر', 'الطائف'];
+
+  // Search filters
+  const [searchOrderNumber, setSearchOrderNumber] = useState('');
+  const [searchDocumentNumber, setSearchDocumentNumber] = useState('');
+  const [searchPhone, setSearchPhone] = useState('');
+  const [searchNotes, setSearchNotes] = useState('');
+  const [searchTechnician, setSearchTechnician] = useState('');
+  const [searchDistrict, setSearchDistrict] = useState('');
+  const [searchRegion, setSearchRegion] = useState('');
+  const [searchGovernorate, setSearchGovernorate] = useState('');
+  const [searchInstallationDate, setSearchInstallationDate] = useState<dayjs.Dayjs | null>(null);
+  const [searchStatus, setSearchStatus] = useState<string>('');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -467,13 +481,62 @@ ${confirmationUrl}
     window.print();
   };
 
-  // Filter orders
-  const filteredOrders = orders.filter(order =>
-    order.orderNumber.toLowerCase().includes(searchText.toLowerCase()) ||
-    order.customerName.toLowerCase().includes(searchText.toLowerCase()) ||
-    order.phone.includes(searchText) ||
-    order.documentNumber.toLowerCase().includes(searchText.toLowerCase())
-  );
+  // Filter orders with advanced filters
+  const filteredOrders = orders.filter(order => {
+    // البحث العام
+    const generalSearch = !searchText || 
+      order.orderNumber.toLowerCase().includes(searchText.toLowerCase()) ||
+      order.customerName.toLowerCase().includes(searchText.toLowerCase()) ||
+      order.phone.includes(searchText) ||
+      order.documentNumber.toLowerCase().includes(searchText.toLowerCase());
+
+    // البحث برقم الطلب
+    const orderNumberMatch = !searchOrderNumber || 
+      order.orderNumber.toLowerCase().includes(searchOrderNumber.toLowerCase());
+
+    // البحث برقم المستند
+    const documentNumberMatch = !searchDocumentNumber || 
+      order.documentNumber.toLowerCase().includes(searchDocumentNumber.toLowerCase());
+
+    // البحث برقم الهاتف
+    const phoneMatch = !searchPhone || 
+      order.phone.includes(searchPhone);
+
+    // البحث في الملاحظات
+    const notesMatch = !searchNotes || 
+      (order.notes && order.notes.toLowerCase().includes(searchNotes.toLowerCase()));
+
+    // البحث بالفني
+    const technicianMatch = !searchTechnician || 
+      (order.technicianName && order.technicianName.toLowerCase().includes(searchTechnician.toLowerCase()));
+
+    // البحث بالحي
+    const districtMatch = !searchDistrict || 
+      (order.districtName && order.districtName === searchDistrict) ||
+      (order.district && order.district === searchDistrict);
+
+    // البحث بالمنطقة
+    const regionMatch = !searchRegion || 
+      (order.regionName && order.regionName === searchRegion) ||
+      (order.region && order.region === searchRegion);
+
+    // البحث بالمحافظة
+    const governorateMatch = !searchGovernorate || 
+      (order.governorateName && order.governorateName === searchGovernorate) ||
+      (order.governorate && order.governorate === searchGovernorate);
+
+    // البحث بتاريخ التركيب
+    const installationDateMatch = !searchInstallationDate || 
+      (order.installationDate && dayjs(order.installationDate).isSame(searchInstallationDate, 'day'));
+
+    // البحث بحالة التركيب
+    const statusMatch = !searchStatus || 
+      (order.status || 'جديد') === searchStatus;
+
+    return generalSearch && orderNumberMatch && documentNumberMatch && phoneMatch && 
+           notesMatch && technicianMatch && districtMatch && regionMatch && 
+           governorateMatch && installationDateMatch && statusMatch;
+  });
 
   // Table columns
   const columns = [
@@ -652,103 +715,400 @@ ${confirmationUrl}
     },
   ];
 
+  // ستايل موحد لعناصر الإدخال والدروب داون مثل صفحة طلبات التوصيل
+  const largeControlStyle = {
+    height: 48,
+    fontSize: 18,
+    borderRadius: 8,
+    padding: '8px 16px',
+    boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
+    background: '#fff',
+    border: '1.5px solid #d9d9d9',
+    transition: 'border-color 0.3s',
+  };
+  const labelStyle = { fontSize: 18, fontWeight: 500, marginBottom: 2, display: 'block' };
+
   return (
     <>
       <Helmet>
-        <title>طلبات التركيب - ERP90</title>
+        <title>طلبات التركيب | ERP90 Dashboard</title>
+        <meta name="description" content="إدارة طلبات التركيب والصيانة، متابعة حالة التركيب، ERP90 Dashboard" />
+        <meta name="keywords" content="ERP, تركيب, صيانة, طلبات, فني, عملاء, Installation, Orders" />
       </Helmet>
+      <div className="w-full min-h-screen p-4 md:p-6 flex flex-col gap-6 bg-gray-50" dir="rtl">
 
-      <motion.div
+      {/* Header */}
+      <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+              <svg className="h-8 w-8 text-blue-600 dark:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+            </div>
+            <div className="flex flex-col">
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">طلبات التركيب</h1>
+              <p className="text-gray-600 dark:text-gray-400">إدارة ومتابعة طلبات التركيب والصيانة</p>
+            </div>
+          </div>
+          
+          {/* Statistics Tags */}
+          <div className="flex items-center gap-3">
+            <div className="bg-orange-50 dark:bg-orange-900/20 px-4 py-2 rounded-lg border border-orange-200 dark:border-orange-800">
+              <span className="text-sm text-orange-600 dark:text-orange-400 font-medium">
+                إجمالي: {orders.length}
+              </span>
+            </div>
+            <div className="bg-green-50 dark:bg-green-900/20 px-4 py-2 rounded-lg border border-green-200 dark:border-green-800">
+              <span className="text-sm text-green-600 dark:text-green-400 font-medium">
+                تلقائي: {orders.filter(o => o.sourceType === 'delivery').length}
+              </span>
+            </div>
+            <div className="bg-purple-50 dark:bg-purple-900/20 px-4 py-2 rounded-lg border border-purple-200 dark:border-purple-800">
+              <span className="text-sm text-purple-600 dark:text-purple-400 font-medium">
+                يدوي: {orders.filter(o => o.sourceType !== 'delivery').length}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-200"></div>
+      </div>
+
+      {/* Breadcrumb */}
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة التركيبات", to: "/installation" },
+          { label: "طلبات التركيب" }
+        ]}
+      />
+
+      {/* Info Alert */}
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+        <svg className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <div className="text-sm text-yellow-800">
+          <strong>ملاحظة:</strong> هذه الصفحة تعرض فقط الطلبات الجديدة (التي لم يتم تأكيدها بعد). يتم استيراد الطلبات تلقائياً من طلبات التوصيل المكتملة والمؤرشفة التي تحتاج تركيب.
+        </div>
+      </div>
+
+      {/* Search Filters Card */}
+      <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        style={{ padding: '24px' }}
+        transition={{ duration: 0.3 }}
+        className="w-full bg-white p-2 sm:p-4 rounded-lg border border-emerald-100 flex flex-col gap-4 shadow-sm relative"
       >
-        <Card>
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Title level={2} style={{ marginBottom: 0 }}>
-                📦 الطلبات الجديدة
-              </Title>
-              <div style={{ display: 'flex', gap: 16 }}>
-                <Tag color="orange" style={{ fontSize: 14, padding: '6px 12px' }}>
-                  إجمالي الطلبات الجديدة: {orders.length}
-                </Tag>
-                <Tag color="green" style={{ fontSize: 14, padding: '6px 12px' }}>
-                  مستوردة تلقائياً: {orders.filter(o => o.sourceType === 'delivery').length}
-                </Tag>
-                <Tag color="purple" style={{ fontSize: 14, padding: '6px 12px' }}>
-                  يدوية: {orders.filter(o => o.sourceType !== 'delivery').length}
-                </Tag>
-              </div>
-            </div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-200"></div>
+        
+        <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+          <SearchOutlined className="text-emerald-600" /> خيارات البحث
+        </h3>
 
-            <div style={{ 
-              background: '#fff7e6', 
-              border: '1px solid #ffd591', 
-              borderRadius: 8, 
-              padding: 12, 
-              marginBottom: 16 
-            }}>
-              <Text style={{ fontSize: 14, color: '#d46b08' }}>
-                ℹ️ <strong>ملاحظة:</strong> هذه الصفحة تعرض فقط الطلبات الجديدة (التي لم يتم تأكيدها بعد). يتم استيراد الطلبات تلقائياً من طلبات التوصيل المكتملة والمؤرشفة التي تحتاج تركيب.
-              </Text>
-            </div>
-
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-              <Col xs={24} sm={24} md={12} lg={8}>
-                <Input
-                  placeholder="البحث برقم الطلب، اسم العميل، رقم الهاتف..."
-                  prefix={<SearchOutlined />}
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  size="large"
-                />
-              </Col>
-            </Row>
-
-            <Space wrap>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={navigateToAddOrder}
-                size="large"
-              >
-                إضافة طلب جديد
-              </Button>
-              <Button
-                type="default"
-                icon={<SyncOutlined />}
-                onClick={fetchAndCreateInstallationOrdersFromDelivery}
-                size="large"
-                style={{ borderColor: '#52c41a', color: '#52c41a' }}
-              >
-                مزامنة طلبات التوصيل
-              </Button>
-              <Button
-                icon={<FileExcelOutlined />}
-                onClick={exportToExcel}
-                size="large"
-              >
-                تصدير Excel
-              </Button>
-            </Space>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="flex flex-col">
+            <span style={labelStyle}>رقم الطلب</span>
+            <Input 
+              value={searchOrderNumber}
+              onChange={e => setSearchOrderNumber(e.target.value)}
+              placeholder="ادخل رقم الطلب"
+              style={largeControlStyle}
+              size="large"
+              allowClear
+            />
           </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>رقم المستند</span>
+            <Input 
+              value={searchDocumentNumber}
+              onChange={e => setSearchDocumentNumber(e.target.value)}
+              placeholder="ادخل رقم المستند"
+              style={largeControlStyle}
+              size="large"
+              allowClear
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>رقم الهاتف</span>
+            <Input 
+              value={searchPhone}
+              onChange={e => setSearchPhone(e.target.value)}
+              placeholder="ادخل رقم الهاتف"
+              style={largeControlStyle}
+              size="large"
+              allowClear
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>الملاحظات</span>
+            <Input 
+              value={searchNotes}
+              onChange={e => setSearchNotes(e.target.value)}
+              placeholder="ادخل الملاحظات"
+              style={largeControlStyle}
+              size="large"
+              allowClear
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>الفني</span>
+            <Input 
+              value={searchTechnician}
+              onChange={e => setSearchTechnician(e.target.value)}
+              placeholder="ادخل اسم الفني"
+              style={largeControlStyle}
+              size="large"
+              allowClear
+            />
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>المحافظة</span>
+            <Select
+              value={searchGovernorate || undefined}
+              onChange={setSearchGovernorate}
+              placeholder="اختر المحافظة"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {governorates.map(gov => (
+                <Option key={gov} value={gov}>
+                  {gov}
+                </Option>
+              ))}
+            </Select>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>المنطقة</span>
+            <Select
+              value={searchRegion || undefined}
+              onChange={setSearchRegion}
+              placeholder="اختر المنطقة"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {regions.map(region => (
+                <Option key={region} value={region}>
+                  {region}
+                </Option>
+              ))}
+            </Select>
+          </div>
+          
+          <div className="flex flex-col">
+            <span style={labelStyle}>الحي</span>
+            <Select
+              value={searchDistrict || undefined}
+              onChange={setSearchDistrict}
+              placeholder="اختر الحي"
+              style={{ width: '100%', ...largeControlStyle }}
+              size="large"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {districts.map(district => (
+                <Option key={district} value={district}>
+                  {district}
+                </Option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        
+        <AnimatePresence>
+          {showMoreFilters && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-hidden"
+            >
+              <div className="flex flex-col">
+                <span style={labelStyle}>تاريخ التركيب</span>
+                <DatePicker
+                  value={searchInstallationDate}
+                  onChange={setSearchInstallationDate}
+                  placeholder="اختر التاريخ"
+                  style={{ width: '100%', ...largeControlStyle }}
+                  size="large"
+                  format="YYYY-MM-DD"
+                />
+              </div>
+              
+              <div className="flex flex-col">
+                <span style={labelStyle}>حالة التركيب</span>
+                <Select
+                  value={searchStatus || undefined}
+                  onChange={setSearchStatus}
+                  placeholder="اختر الحالة"
+                  style={{ width: '100%', ...largeControlStyle }}
+                  size="large"
+                  allowClear
+                >
+                  <Option value="جديد">جديد</Option>
+                  <Option value="مؤكد">مؤكد</Option>
+                  <Option value="ملغي">ملغي</Option>
+                  <Option value="مكتمل">مكتمل</Option>
+                </Select>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+          <Button
+            type="link"
+            onClick={() => setShowMoreFilters(!showMoreFilters)}
+            className="text-emerald-600 hover:text-emerald-700 font-medium"
+          >
+            {showMoreFilters ? '▲ إخفاء الخيارات الإضافية' : '▼ إظهار المزيد من الخيارات'}
+          </Button>
+          
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={navigateToAddOrder}
+              size="large"
+              style={{ 
+                backgroundColor: '#c0dbfe', 
+                borderColor: '#c0dbfe',
+                color: '#1e40af',
+                fontWeight: 600
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#93c5fd';
+                e.currentTarget.style.borderColor = '#93c5fd';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#c0dbfe';
+                e.currentTarget.style.borderColor = '#c0dbfe';
+              }}
+            >
+              إضافة طلب جديد
+            </Button>
+            <Button
+              icon={<SyncOutlined />}
+              onClick={fetchAndCreateInstallationOrdersFromDelivery}
+              size="large"
+              style={{ 
+                backgroundColor: '#c0dbfe', 
+                borderColor: '#c0dbfe',
+                color: '#1e40af',
+                fontWeight: 600
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#93c5fd';
+                e.currentTarget.style.borderColor = '#93c5fd';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#c0dbfe';
+                e.currentTarget.style.borderColor = '#c0dbfe';
+              }}
+            >
+              مزامنة طلبات التوصيل
+            </Button>
+            <Button
+              icon={<FileExcelOutlined />}
+              onClick={exportToExcel}
+              size="large"
+              style={{ 
+                backgroundColor: '#c0dbfe', 
+                borderColor: '#c0dbfe',
+                color: '#1e40af',
+                fontWeight: 600
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#93c5fd';
+                e.currentTarget.style.borderColor = '#93c5fd';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#c0dbfe';
+                e.currentTarget.style.borderColor = '#c0dbfe';
+              }}
+            >
+              تصدير Excel
+            </Button>
+            <Button
+              onClick={() => {
+                setSearchText('');
+                setSearchOrderNumber('');
+                setSearchDocumentNumber('');
+                setSearchPhone('');
+                setSearchNotes('');
+                setSearchTechnician('');
+                setSearchDistrict('');
+                setSearchRegion('');
+                setSearchGovernorate('');
+                setSearchInstallationDate(null);
+                setSearchStatus('');
+              }}
+              size="large"
+              style={{ 
+                backgroundColor: '#c0dbfe', 
+                borderColor: '#c0dbfe',
+                color: '#1e40af',
+                fontWeight: 600
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#93c5fd';
+                e.currentTarget.style.borderColor = '#93c5fd';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#c0dbfe';
+                e.currentTarget.style.borderColor = '#c0dbfe';
+              }}
+            >
+              مسح الفلاتر
+            </Button>
+          </div>
+        </div>
+      </motion.div>
 
-          <Table
-            columns={columns}
-            dataSource={filteredOrders}
-            rowKey="id"
-            loading={loading}
-            scroll={{ x: 2200, y: 600 }}
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: true,
-              showTotal: (total) => `إجمالي ${total} طلب`,
-            }}
-            bordered
-          />
-        </Card>
+      {/* Table Card */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+
+      {/* Table Card */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-700">قائمة طلبات التركيب</h3>
+        </div>
+
+        <Table
+          columns={columns}
+          dataSource={filteredOrders}
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 2200, y: 600 }}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showTotal: (total) => `إجمالي ${total} طلب`,
+          }}
+          bordered
+        />
+      </div>
+    </div>
 
         {/* Edit Modal */}
         <Modal
@@ -1171,7 +1531,7 @@ ${confirmationUrl}
             </div>
           )}
         </Modal>
-      </motion.div>
+      </div>
 
       <style>{`
         .installation-order-form .ant-form-item-label > label {
@@ -1181,6 +1541,18 @@ ${confirmationUrl}
         
         .ant-table-wrapper {
           direction: rtl;
+        }
+        
+        /* تخصيص رأس الجدول */
+        .ant-table-thead > tr > th {
+          background-color: #c0dbfe !important;
+          color: #1e40af !important;
+          font-weight: 600 !important;
+          border-bottom: 2px solid #93c5fd !important;
+        }
+        
+        .ant-table-thead > tr > th::before {
+          background-color: #1e40af !important;
         }
         
         @media print {
