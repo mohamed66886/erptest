@@ -92,17 +92,7 @@ const InstallationPage: React.FC = () => {
         window.scrollTo(0, 0);
       }
     },
-    {
-      title: "تأكيد الطلبات",
-      description: "تأكيد ومراجعة طلبات التركيب",
-      icon: <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />,
-      color: "bg-emerald-600",
-      permissionId: "installation-confirm-orders",
-      onClick: () => {
-        navigate('/installation/confirm-orders');
-        window.scrollTo(0, 0);
-      }
-    },
+
     {
       title: "الطلبات المكتملة",
       description: "عرض طلبات التركيب المكتملة",
