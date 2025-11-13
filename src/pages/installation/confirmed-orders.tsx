@@ -11,13 +11,21 @@ import {
   Tag,
   Typography,
   Row,
-  Col
+  Col,
+  Switch,
+  Select,
+  Modal
 } from 'antd';
+
+const { Option } = Select;
 import { 
   EyeOutlined,
   FileExcelOutlined,
   CheckCircleOutlined,
-  SearchOutlined
+  SearchOutlined,
+  UserSwitchOutlined,
+  CheckSquareOutlined,
+  WhatsAppOutlined
 } from '@ant-design/icons';
 import { db } from '@/lib/firebase';
 import { 
@@ -27,7 +35,9 @@ import {
   where,
   orderBy,
   Timestamp,
-  FieldValue
+  FieldValue,
+  doc,
+  updateDoc
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
@@ -68,9 +78,18 @@ const ConfirmedOrders: React.FC = () => {
   const [orders, setOrders] = useState<InstallationOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [assignTechnicianMode, setAssignTechnicianMode] = useState(false);
+  const [technicians, setTechnicians] = useState<{id: string; name: string; nameAr?: string; phone?: string}[]>([]);
+  
+  // States for confirmation modal
+  const [confirmationModalVisible, setConfirmationModalVisible] = useState(false);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<React.Key[]>([]);
+  const [confirmationLoading, setConfirmationLoading] = useState(false);
+  const [selectedTechnicianFilter, setSelectedTechnicianFilter] = useState<string>('');
 
   useEffect(() => {
     fetchConfirmedOrders();
+    fetchTechnicians();
   }, []);
 
   // Fetch confirmed orders
@@ -103,6 +122,49 @@ const ConfirmedOrders: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Fetch technicians
+  const fetchTechnicians = async () => {
+    try {
+      const techniciansSnapshot = await getDocs(collection(db, 'technicians'));
+      const techniciansData = techniciansSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name || doc.data().nameAr || '',
+        nameAr: doc.data().nameAr || doc.data().name || '',
+        phone: doc.data().phone || doc.data().mobile || ''
+      }));
+      setTechnicians(techniciansData);
+    } catch (error) {
+      console.error('Error fetching technicians:', error);
+      message.error('حدث خطأ في جلب قائمة الفنيين');
+    }
+  };
+
+  // Handle assign technician
+  const handleAssignTechnician = async (orderId: string, technicianId: string, technicianName: string, technicianPhone: string) => {
+    Modal.confirm({
+      title: 'تأكيد تعيين الفني',
+      content: `هل تريد تعيين الفني "${technicianName}" لهذا الطلب؟`,
+      okText: 'تأكيد',
+      cancelText: 'إلغاء',
+      onOk: async () => {
+        try {
+          const orderRef = doc(db, 'installation_orders', orderId);
+          await updateDoc(orderRef, {
+            technicianName: technicianName,
+            technicianPhone: technicianPhone || '',
+            updatedAt: new Date().toISOString()
+          });
+          
+          message.success(`تم تعيين الفني "${technicianName}" بنجاح`);
+          fetchConfirmedOrders(); // Refresh the list
+        } catch (error) {
+          console.error('Error assigning technician:', error);
+          message.error('حدث خطأ في تعيين الفني');
+        }
+      }
+    });
   };
 
   // Export to Excel
@@ -145,6 +207,178 @@ const ConfirmedOrders: React.FC = () => {
     order.phone.includes(searchText) ||
     order.documentNumber.toLowerCase().includes(searchText.toLowerCase())
   );
+
+  // Filter orders with assigned technicians
+  const ordersWithTechnicians = orders.filter(order => 
+    order.technicianName && order.technicianName.trim() !== ''
+  );
+
+  // Filter orders by selected technician in modal
+  const filteredOrdersByTechnician = selectedTechnicianFilter 
+    ? ordersWithTechnicians.filter(order => order.technicianName === selectedTechnicianFilter)
+    : ordersWithTechnicians;
+
+  // Get unique technicians from orders
+  const uniqueTechnicians = Array.from(new Set(ordersWithTechnicians.map(order => order.technicianName)))
+    .filter(name => name && name.trim() !== '')
+    .sort();
+
+  // Open confirmation modal
+  const openConfirmationModal = () => {
+    if (ordersWithTechnicians.length === 0) {
+      message.warning('لا توجد طلبات بها فني معين');
+      return;
+    }
+    setSelectedTechnicianFilter('');
+    setSelectedOrderIds([]);
+    setConfirmationModalVisible(true);
+  };
+
+  // Send WhatsApp messages
+  const sendWhatsAppMessages = () => {
+    if (selectedOrderIds.length === 0) {
+      message.warning('الرجاء تحديد طلب واحد على الأقل');
+      return;
+    }
+
+    setConfirmationLoading(true);
+    
+    const selectedOrders = filteredOrdersByTechnician.filter(order => 
+      selectedOrderIds.includes(order.id || '')
+    );
+
+    // Group orders by technician
+    const ordersByTechnician = selectedOrders.reduce((acc, order) => {
+      const techName = order.technicianName;
+      if (!acc[techName]) {
+        acc[techName] = {
+          phone: order.technicianPhone,
+          orders: []
+        };
+      }
+      acc[techName].orders.push(order);
+      return acc;
+    }, {} as Record<string, { phone: string; orders: InstallationOrder[] }>);
+
+    let successCount = 0;
+    
+    Object.entries(ordersByTechnician).forEach(([technicianName, data]) => {
+      let phone = data.phone?.replace(/\D/g, '');
+      // إضافة كود الدولة السعودية وإزالة الصفر الأول
+      if (phone) {
+        if (phone.startsWith('0')) {
+          phone = phone.substring(1); // إزالة الصفر الأول
+        }
+        if (!phone.startsWith('966')) {
+          phone = '966' + phone; // إضافة كود الدولة السعودية
+        }
+      }
+      if (phone) {
+        const ordersCount = data.orders.length;
+        
+        let messageText = `أهلاً *${technicianName}*\n`;
+        messageText += `لديك عدد ${ordersCount} طلب\n\n`;
+        
+        data.orders.forEach((order, index) => {
+          const orderNum = index + 1;
+          const uploadImagesUrl = `${window.location.origin}/installation/upload-images?id=${order.id}`;
+          
+          messageText += `━━━━━━━━━━━━━━━━━━\n`;
+          messageText += `*الطلب ${orderNum}*\n\n`;
+          messageText += `*رقم الطلب:* ${order.orderNumber}\n`;
+          if (order.documentNumber) {
+            messageText += `*رقم المستند:* ${order.documentNumber}\n`;
+          }
+          messageText += `*العنوان:* ${order.governorateName || order.governorate} - ${order.regionName || order.region} - ${order.districtName || order.district}\n`;
+          messageText += `*العميل:* ${order.customerName}\n`;
+          messageText += `*هاتف العميل:* ${order.phone}\n`;
+          messageText += `*تاريخ التركيب:* ${dayjs(order.installationDate).format('YYYY-MM-DD')}\n`;
+          messageText += `*نوع الخدمة:* ${order.serviceType.join(', ')}\n`;
+          if (order.notes) {
+            messageText += `*ملاحظات:* ${order.notes}\n`;
+          }
+          messageText += `\n*رابط رفع الصور (قبل وبعد التركيب):*\n${uploadImagesUrl}\n`;
+          
+          if (index < data.orders.length - 1) {
+            messageText += `\n`;
+          }
+        });
+        
+        messageText += `━━━━━━━━━━━━━━━━━━\n`;
+        messageText += `شكراً لك`;
+
+        const encodedMessage = encodeURIComponent(messageText);
+        const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
+        window.open(whatsappUrl, '_blank');
+        successCount++;
+      }
+    });
+
+    setTimeout(() => {
+      setConfirmationLoading(false);
+      if (successCount > 0) {
+        message.success(`تم فتح ${successCount} محادثة واتساب`);
+        setSelectedOrderIds([]);
+        setConfirmationModalVisible(false);
+      } else {
+        message.error('لم يتم العثور على أرقام هواتف صحيحة');
+      }
+    }, 1000);
+  };
+
+  // Columns for confirmation modal table
+  const confirmationColumns = [
+    {
+      title: 'رقم الطلب',
+      dataIndex: 'orderNumber',
+      key: 'orderNumber',
+      width: 120,
+    },
+    {
+      title: 'اسم العميل',
+      dataIndex: 'customerName',
+      key: 'customerName',
+      width: 150,
+    },
+    {
+      title: 'تاريخ التركيب',
+      dataIndex: 'installationDate',
+      key: 'installationDate',
+      width: 130,
+      render: (date: string) => dayjs(date).format('YYYY-MM-DD')
+    },
+    {
+      title: 'الفني',
+      dataIndex: 'technicianName',
+      key: 'technicianName',
+      width: 150,
+    },
+    {
+      title: 'هاتف الفني',
+      dataIndex: 'technicianPhone',
+      key: 'technicianPhone',
+      width: 130,
+    },
+    {
+      title: 'الموقع',
+      key: 'location',
+      width: 200,
+      render: (_: unknown, record: InstallationOrder) => (
+        <div style={{ fontSize: 12 }}>
+          <div>{record.governorateName || record.governorate}</div>
+          <div>{record.regionName || record.region}</div>
+          <div>{record.districtName || record.district}</div>
+        </div>
+      )
+    },
+    {
+      title: 'نوع الخدمة',
+      dataIndex: 'serviceType',
+      key: 'serviceType',
+      width: 150,
+      render: (types: string[]) => types.join(', ')
+    },
+  ];
 
   // Table columns
   const columns = [
@@ -214,8 +448,51 @@ const ConfirmedOrders: React.FC = () => {
       title: 'الفني',
       dataIndex: 'technicianName',
       key: 'technicianName',
-      width: 150,
-      render: (name: string) => name || <Tag color="orange">لم يحدد بعد</Tag>
+      width: 200,
+      render: (name: string, record: InstallationOrder) => {
+        if (assignTechnicianMode) {
+          return (
+            <Select
+              placeholder="اختر الفني"
+              style={{ width: '100%' }}
+              value={name || undefined}
+              onChange={(value) => {
+                const selectedTech = technicians.find(t => t.id === value);
+                if (selectedTech && record.id) {
+                  handleAssignTechnician(
+                    record.id,
+                    selectedTech.id,
+                    selectedTech.nameAr || selectedTech.name,
+                    selectedTech.phone || ''
+                  );
+                }
+              }}
+              showSearch
+              optionFilterProp="children"
+              filterOption={(input, option) => {
+                const label = String(option?.children || '');
+                return label.toLowerCase().includes(input.toLowerCase());
+              }}
+            >
+              {technicians.map(tech => (
+                <Option key={tech.id} value={tech.id}>
+                  {tech.nameAr || tech.name} {tech.phone ? `- ${tech.phone}` : ''}
+                </Option>
+              ))}
+            </Select>
+          );
+        }
+        return name ? (
+          <div>
+            <div>{name}</div>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {record.technicianPhone || ''}
+            </Text>
+          </div>
+        ) : (
+          <Tag color="orange">لم يحدد بعد</Tag>
+        );
+      }
     },
     {
       title: 'الحي',
@@ -346,7 +623,7 @@ const ConfirmedOrders: React.FC = () => {
                 </Col>
               </Row>
 
-              <Space wrap>
+              <Space wrap style={{ marginBottom: 16 }}>
                 <Button
                   icon={<FileExcelOutlined />}
                   onClick={exportToExcel}
@@ -356,6 +633,55 @@ const ConfirmedOrders: React.FC = () => {
                 >
                   تصدير Excel
                 </Button>
+
+                <Button
+                  icon={<CheckSquareOutlined />}
+                  onClick={openConfirmationModal}
+                  size="large"
+                  type="primary"
+                  style={{ backgroundColor: '#1890ff', borderColor: '#1890ff' }}
+                >
+                  تأكيد الطلبات ({ordersWithTechnicians.length})
+                </Button>
+                
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 12,
+                  padding: '8px 16px',
+                  background: assignTechnicianMode ? '#e6f7ff' : '#f5f5f5',
+                  borderRadius: 8,
+                  border: assignTechnicianMode ? '2px solid #1890ff' : '2px solid #d9d9d9',
+                  transition: 'all 0.3s'
+                }}>
+                  <UserSwitchOutlined 
+                    style={{ 
+                      fontSize: 20, 
+                      color: assignTechnicianMode ? '#1890ff' : '#8c8c8c' 
+                    }} 
+                  />
+                  <span style={{ 
+                    fontSize: 16, 
+                    fontWeight: 500,
+                    color: assignTechnicianMode ? '#1890ff' : '#595959'
+                  }}>
+                    وضع تعيين الفني
+                  </span>
+                  <Switch
+                    checked={assignTechnicianMode}
+                    onChange={(checked) => {
+                      setAssignTechnicianMode(checked);
+                      if (checked) {
+                        message.info('تم تفعيل وضع تعيين الفني. اختر فني من القائمة لتعيينه للطلبات.');
+                      } else {
+                        message.info('تم إلغاء وضع تعيين الفني.');
+                      }
+                    }}
+                    checkedChildren="مفعل"
+                    unCheckedChildren="معطل"
+                    size="default"
+                  />
+                </div>
               </Space>
             </div>
 
@@ -374,6 +700,132 @@ const ConfirmedOrders: React.FC = () => {
             />
           </Card>
         </motion.div>
+
+        {/* Confirmation Modal */}
+        <Modal
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <CheckSquareOutlined style={{ fontSize: 24, color: '#1890ff' }} />
+              <span style={{ fontSize: 20, fontWeight: 600 }}>تأكيد وإرسال الطلبات للفنيين</span>
+            </div>
+          }
+          open={confirmationModalVisible}
+          onCancel={() => {
+            setConfirmationModalVisible(false);
+            setSelectedOrderIds([]);
+            setSelectedTechnicianFilter('');
+          }}
+          width={1200}
+          footer={null}
+          style={{ top: 20 }}
+        >
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ 
+              background: '#e6f7ff', 
+              border: '1px solid #91d5ff', 
+              borderRadius: 8, 
+              padding: 12,
+              marginBottom: 16
+            }}>
+              <Text style={{ fontSize: 14, color: '#0050b3' }}>
+                 <strong>ملاحظة:</strong> اختر فني محدد أو اترك الحقل فارغاً لعرض جميع الطلبات. يمكنك إرسال إشعار واتساب للطلبات المحددة.
+              </Text>
+            </div>
+
+            {/* Technician Filter */}
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col xs={24} sm={12} md={8}>
+                <Select
+                  placeholder="فلترة حسب الفني"
+                  style={{ width: '100%' }}
+                  size="large"
+                  allowClear
+                  value={selectedTechnicianFilter || undefined}
+                  onChange={(value) => {
+                    setSelectedTechnicianFilter(value || '');
+                    setSelectedOrderIds([]); // Clear selection when filter changes
+                  }}
+                  showSearch
+                  optionFilterProp="children"
+                  filterOption={(input, option) => {
+                    const label = String(option?.children || '');
+                    return label.toLowerCase().includes(input.toLowerCase());
+                  }}
+                >
+                  {uniqueTechnicians.map((techName) => (
+                    <Option key={techName} value={techName}>
+                      {techName}
+                    </Option>
+                  ))}
+                </Select>
+              </Col>
+            </Row>
+
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Space>
+                <Tag color="blue" style={{ fontSize: 14, padding: '6px 12px' }}>
+                  {selectedTechnicianFilter ? `طلبات ${selectedTechnicianFilter}` : 'جميع الطلبات'}: {filteredOrdersByTechnician.length}
+                </Tag>
+                <Tag color="green" style={{ fontSize: 14, padding: '6px 12px' }}>
+                  المحدد: {selectedOrderIds.length}
+                </Tag>
+              </Space>
+
+              <Button
+                type="primary"
+                icon={<WhatsAppOutlined />}
+                size="large"
+                loading={confirmationLoading}
+                disabled={selectedOrderIds.length === 0}
+                onClick={sendWhatsAppMessages}
+                style={{ 
+                  backgroundColor: '#25D366', 
+                  borderColor: '#25D366',
+                  fontWeight: 600
+                }}
+              >
+                إرسال واتساب ({selectedOrderIds.length})
+              </Button>
+            </div>
+          </div>
+
+          <Table
+            columns={confirmationColumns}
+            dataSource={filteredOrdersByTechnician}
+            rowKey="id"
+            loading={confirmationLoading}
+            scroll={{ x: 1000, y: 500 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `إجمالي ${total} طلب`,
+            }}
+            rowSelection={{
+              type: 'checkbox',
+              selectedRowKeys: selectedOrderIds,
+              onChange: (selectedKeys) => {
+                setSelectedOrderIds(selectedKeys);
+              },
+              selections: [
+                {
+                  key: 'all',
+                  text: 'تحديد الكل',
+                  onSelect: () => {
+                    setSelectedOrderIds(filteredOrdersByTechnician.map(order => order.id || ''));
+                  },
+                },
+                {
+                  key: 'none',
+                  text: 'إلغاء التحديد',
+                  onSelect: () => {
+                    setSelectedOrderIds([]);
+                  },
+                },
+              ],
+            }}
+            bordered
+          />
+        </Modal>
       </div>
 
       <style>{`

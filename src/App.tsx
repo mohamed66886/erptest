@@ -16,6 +16,7 @@ import FirebaseDirectTest from "./pages/accounting/FirebaseDirectTest";
 import ViewOrder from "./pages/orders/ViewOrder";
 import CompleteOrder from "./pages/orders/CompleteOrder";
 import ConfirmInstallationOrder from "./pages/installation/confirm-order";
+import UploadInstallationImages from "./pages/installation/UploadInstallationImages";
 
 
 const queryClient = new QueryClient();
@@ -42,6 +43,9 @@ const App = () => (
                 
                 {/* صفحة تأكيد طلب التركيب */}
                 <Route path="/installation/confirm/:orderId" element={<ConfirmInstallationOrder />} />
+                
+                {/* صفحة رفع صور التركيب */}
+                <Route path="/installation/upload-images" element={<UploadInstallationImages />} />
                 
                 {/* صفحة طباعة طلبات المستودع */}
      

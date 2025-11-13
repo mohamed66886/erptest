@@ -48,6 +48,7 @@
     "antd": "^5.26.7",
     "aos": "^2.3.4",
     "axios": "^1.11.0",
+    "browser-image-compression": "^2.0.2",
     "canvg": "^4.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
