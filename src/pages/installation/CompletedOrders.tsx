@@ -78,9 +78,9 @@ const CompletedOrders: React.FC = () => {
       const ordersRef = collection(db, "installation_orders");
       
       // استعلام بدون orderBy لتجنب مشكلة الفهرس
+      // نجلب فقط الطلبات المكتملة
       const q = query(
         ordersRef,
-        where("financialYearId", "==", currentFinancialYear.id),
         where("status", "==", "مكتمل")
       );
 
@@ -96,7 +96,10 @@ const CompletedOrders: React.FC = () => {
         } as InstallationOrder;
         
         // فقط الطلبات التي تحتوي على صور قبل وبعد
-        if (order.beforeImageUrl && order.afterImageUrl) {
+        // وتطابق السنة المالية الحالية (إذا كانت موجودة)
+        const matchesFinancialYear = !data.financialYearId || data.financialYearId === currentFinancialYear.id;
+        
+        if (order.beforeImageUrl && order.afterImageUrl && matchesFinancialYear) {
           ordersData.push(order);
           
           if (data.technicianName) {
@@ -115,6 +118,8 @@ const CompletedOrders: React.FC = () => {
       setOrders(ordersData);
       setFilteredOrders(ordersData);
       setTechnicians(Array.from(techniciansList));
+      
+      console.log('✅ Completed orders loaded:', ordersData.length);
     } catch (error) {
       console.error("Error fetching completed orders:", error);
       message.error("حدث خطأ في تحميل الطلبات المكتملة");
