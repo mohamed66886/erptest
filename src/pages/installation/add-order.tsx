@@ -360,7 +360,7 @@ const AddInstallationOrder: React.FC = () => {
         governorateName: governorates.find(g => g.id === governorateId)?.nameAr || governorates.find(g => g.id === governorateId)?.name || '',
         serviceType,
         notes,
-        status: 'جديد',
+        status: installationDate ? 'مؤكد' : 'جديد',
         createdAt: serverTimestamp(),
         updatedAt: new Date().toISOString(),
       };

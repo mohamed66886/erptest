@@ -94,8 +94,11 @@ interface InstallationOrder {
   technicianName: string;
   technicianPhone: string;
   district: string;
+  districtName?: string;
   region: string;
+  regionName?: string;
   governorate: string;
+  governorateName?: string;
   serviceType: string[];
   notes: string;
   status?: string;
@@ -167,15 +170,29 @@ const InstallationOrders: React.FC = () => {
     setLoading(true);
     try {
       const ordersQuery = query(
-        collection(db, 'installation_orders'),
-        orderBy('createdAt', 'desc')
+        collection(db, 'installation_orders')
       );
       const querySnapshot = await getDocs(ordersQuery);
       const ordersData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as InstallationOrder[];
-      setOrders(ordersData);
+      
+      // فلترة الطلبات التي حالتها "جديد" فقط
+      const newOrders = ordersData.filter(order => 
+        !order.status || order.status === 'جديد'
+      );
+      
+      // ترتيب يدوي حسب تاريخ الإنشاء (الأحدث أولاً)
+      newOrders.sort((a, b) => {
+        const aTime = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 
+                      typeof a.createdAt === 'string' ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 
+                      typeof b.createdAt === 'string' ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+      
+      setOrders(newOrders);
     } catch (error) {
       console.error('Error fetching orders:', error);
       message.error('حدث خطأ في جلب الطلبات');
@@ -311,11 +328,14 @@ const InstallationOrders: React.FC = () => {
         technicianName: values.technicianName,
         technicianPhone: values.technicianPhone,
         district: values.district,
+        districtName: values.district, // حفظ اسم الحي
         region: values.region,
+        regionName: values.region, // حفظ اسم المنطقة
         governorate: values.governorate,
+        governorateName: values.governorate, // حفظ اسم المحافظة
         serviceType: values.serviceType,
         notes: values.notes || '',
-        status: 'جديد',
+        status: values.installationDate ? 'مؤكد' : 'جديد',
         createdAt: serverTimestamp()
       };
 
@@ -532,18 +552,21 @@ ${confirmationUrl}
       dataIndex: 'district',
       key: 'district',
       width: 120,
+      render: (_text: unknown, record: InstallationOrder) => record.districtName || record.district || '-'
     },
     {
       title: 'المنطقة',
       dataIndex: 'region',
       key: 'region',
       width: 100,
+      render: (_text: unknown, record: InstallationOrder) => record.regionName || record.region || '-'
     },
     {
       title: 'المحافظة',
       dataIndex: 'governorate',
       key: 'governorate',
       width: 120,
+      render: (_text: unknown, record: InstallationOrder) => record.governorateName || record.governorate || '-'
     },
     {
       title: 'نوع الخدمة',
@@ -645,11 +668,11 @@ ${confirmationUrl}
           <div style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Title level={2} style={{ marginBottom: 0 }}>
-                📦 طلبات التركيب
+                📦 الطلبات الجديدة
               </Title>
               <div style={{ display: 'flex', gap: 16 }}>
-                <Tag color="blue" style={{ fontSize: 14, padding: '6px 12px' }}>
-                  إجمالي الطلبات: {orders.length}
+                <Tag color="orange" style={{ fontSize: 14, padding: '6px 12px' }}>
+                  إجمالي الطلبات الجديدة: {orders.length}
                 </Tag>
                 <Tag color="green" style={{ fontSize: 14, padding: '6px 12px' }}>
                   مستوردة تلقائياً: {orders.filter(o => o.sourceType === 'delivery').length}
@@ -661,14 +684,14 @@ ${confirmationUrl}
             </div>
 
             <div style={{ 
-              background: '#e6f7ff', 
-              border: '1px solid #91d5ff', 
+              background: '#fff7e6', 
+              border: '1px solid #ffd591', 
               borderRadius: 8, 
               padding: 12, 
               marginBottom: 16 
             }}>
-              <Text style={{ fontSize: 14, color: '#0050b3' }}>
-                ℹ️ <strong>ملاحظة:</strong> يتم استيراد طلبات التركيب تلقائياً من طلبات التوصيل المكتملة والمؤرشفة التي تحتاج تركيب. يمكنك الضغط على زر "مزامنة طلبات التوصيل" لتحديث القائمة.
+              <Text style={{ fontSize: 14, color: '#d46b08' }}>
+                ℹ️ <strong>ملاحظة:</strong> هذه الصفحة تعرض فقط الطلبات الجديدة (التي لم يتم تأكيدها بعد). يتم استيراد الطلبات تلقائياً من طلبات التوصيل المكتملة والمؤرشفة التي تحتاج تركيب.
               </Text>
             </div>
 
