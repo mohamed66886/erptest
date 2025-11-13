@@ -15,6 +15,7 @@ import FirebaseTestPage from "./pages/accounting/FirebaseTestPage";
 import FirebaseDirectTest from "./pages/accounting/FirebaseDirectTest";
 import ViewOrder from "./pages/orders/ViewOrder";
 import CompleteOrder from "./pages/orders/CompleteOrder";
+import ConfirmInstallationOrder from "./pages/installation/confirm-order";
 
 
 const queryClient = new QueryClient();
@@ -38,6 +39,9 @@ const App = () => (
                 {/* صفحات الطلبات المنفصلة للسائقين */}
                 <Route path="/orders/view" element={<ViewOrder />} />
                 <Route path="/orders/complete" element={<CompleteOrder />} />
+                
+                {/* صفحة تأكيد طلب التركيب */}
+                <Route path="/installation/confirm/:orderId" element={<ConfirmInstallationOrder />} />
                 
                 {/* صفحة طباعة طلبات المستودع */}
      

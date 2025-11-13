@@ -389,6 +389,45 @@ const InstallationOrders: React.FC = () => {
     message.info(`سيتم إرسال إشعار للعميل ${order.customerName} على رقم ${order.phone}`);
   };
 
+  // Send WhatsApp notification
+  const sendWhatsAppNotification = (order: InstallationOrder) => {
+    if (!order.id) {
+      message.error('معرف الطلب غير موجود');
+      return;
+    }
+
+    // إنشاء رابط صفحة التأكيد
+    const confirmationUrl = `${window.location.origin}/installation/confirm/${order.id}`;
+    
+    // نص الرسالة
+    const messageText = `السيد / ${order.customerName}
+السلام عليكم ورحمة الله وبركاته
+
+لديكم طلب تركيب برجاء تحديد التاريخ المناسب لسيادتكم لإجراء عملية التركيب
+
+رقم الطلب: ${order.orderNumber}
+رقم المستند: ${order.documentNumber}
+
+للتأكيد وتحديد موعد التركيب، الرجاء الضغط على الرابط التالي:
+${confirmationUrl}
+
+شكراً لكم`;
+
+    // تحويل النص لصيغة URL
+    const encodedMessage = encodeURIComponent(messageText);
+    
+    // رقم الهاتف بدون الصفر الأول وإضافة كود الدولة (966 للسعودية)
+    const phoneNumber = order.phone.startsWith('0') 
+      ? '966' + order.phone.slice(1) 
+      : '966' + order.phone;
+    
+    // فتح واتساب
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
+    window.open(whatsappUrl, '_blank');
+    
+    message.success('تم فتح واتساب لإرسال الإشعار');
+  };
+
   // Confirm order
   const confirmOrder = async (orderId: string) => {
     try {
@@ -537,6 +576,23 @@ const InstallationOrders: React.FC = () => {
       }
     },
     {
+      title: 'إشعار العميل',
+      key: 'whatsapp',
+      width: 150,
+      align: 'center' as const,
+      render: (_text: unknown, record: InstallationOrder) => (
+        <Button
+          type="primary"
+          style={{ backgroundColor: '#25D366', borderColor: '#25D366' }}
+          icon={<BellOutlined />}
+          onClick={() => sendWhatsAppNotification(record)}
+          size="middle"
+        >
+          إرسال واتساب
+        </Button>
+      ),
+    },
+    {
       title: 'الإجراءات',
       key: 'actions',
       fixed: 'right' as const,
@@ -661,7 +717,7 @@ const InstallationOrders: React.FC = () => {
             dataSource={filteredOrders}
             rowKey="id"
             loading={loading}
-            scroll={{ x: 2000, y: 600 }}
+            scroll={{ x: 2200, y: 600 }}
             pagination={{
               pageSize: 10,
               showSizeChanger: true,
