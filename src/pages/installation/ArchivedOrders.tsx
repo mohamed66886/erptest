@@ -32,6 +32,33 @@ dayjs.locale('ar');
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 
+// Interfaces for Firebase data
+interface Technician {
+  id: string;
+  name: string;
+  nameAr?: string;
+  phone?: string;
+  specialization?: string;
+  status?: string;
+}
+
+interface District {
+  id: string;
+  name: string;
+  regionId?: string;
+}
+
+interface Region {
+  id: string;
+  name: string;
+  governorateId?: string;
+}
+
+interface Governorate {
+  id: string;
+  name: string;
+}
+
 interface InstallationOrder {
   id: string;
   orderNumber: string;
@@ -65,7 +92,7 @@ const ArchivedOrders: React.FC = () => {
   const [searchText, setSearchText] = useState("");
   const [selectedDateRange, setSelectedDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
   const [selectedTechnician, setSelectedTechnician] = useState<string>("");
-  const [technicians, setTechnicians] = useState<string[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<InstallationOrder | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -82,18 +109,135 @@ const ArchivedOrders: React.FC = () => {
   const [searchInstallationDate, setSearchInstallationDate] = useState<dayjs.Dayjs | null>(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
 
-  // Location data
-  const districts = ['حي النهضة', 'حي الملك فهد', 'حي الروضة', 'حي العليا', 'حي السليمانية'];
-  const regions = ['الشمال', 'الجنوب', 'الشرق', 'الغرب', 'الوسط'];
-  const governorates = ['الرياض', 'جدة', 'الدمام', 'مكة المكرمة', 'المدينة المنورة', 'الخبر', 'الطائف'];
+  // Location data from Firebase
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [governorates, setGovernorates] = useState<Governorate[]>([]);
 
   // جلب البيانات
   useEffect(() => {
     if (currentFinancialYear) {
       fetchArchivedOrders();
     }
+    fetchTechnicians();
+    fetchGovernorates();
+    fetchRegions();
+    fetchDistricts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFinancialYear]);
+
+  // Fetch technicians from Firebase
+  const fetchTechnicians = async () => {
+    try {
+      const techniciansRef = collection(db, "technicians");
+      const querySnapshot = await getDocs(techniciansRef);
+      const techData: Technician[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        // Only include active technicians
+        if (data.status === 'active' || data.status === 'نشط') {
+          techData.push({
+            id: doc.id,
+            name: data.name,
+            nameAr: data.nameAr,
+            phone: data.phone,
+            specialization: data.specialization,
+            status: data.status
+          });
+        }
+      });
+      
+      setTechnicians(techData);
+    } catch (error) {
+      console.error("Error fetching technicians:", error);
+      // Fallback data
+      setTechnicians([
+        { id: '1', name: 'Ahmed', nameAr: 'أحمد', phone: '0501234567' },
+        { id: '2', name: 'Mohammed', nameAr: 'محمد', phone: '0507654321' }
+      ]);
+    }
+  };
+
+  // Fetch governorates from Firebase
+  const fetchGovernorates = async () => {
+    try {
+      const governoratesRef = collection(db, "governorates");
+      const querySnapshot = await getDocs(governoratesRef);
+      const govData: Governorate[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        govData.push({
+          id: doc.id,
+          name: doc.data().name
+        });
+      });
+      
+      setGovernorates(govData);
+    } catch (error) {
+      console.error("Error fetching governorates:", error);
+      // Fallback data
+      setGovernorates([
+        { id: '1', name: 'الرياض' },
+        { id: '2', name: 'جدة' },
+        { id: '3', name: 'الدمام' }
+      ]);
+    }
+  };
+
+  // Fetch regions from Firebase
+  const fetchRegions = async () => {
+    try {
+      const regionsRef = collection(db, "regions");
+      const querySnapshot = await getDocs(regionsRef);
+      const regData: Region[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        regData.push({
+          id: doc.id,
+          name: doc.data().name,
+          governorateId: doc.data().governorateId
+        });
+      });
+      
+      setRegions(regData);
+    } catch (error) {
+      console.error("Error fetching regions:", error);
+      // Fallback data
+      setRegions([
+        { id: '1', name: 'الشمال' },
+        { id: '2', name: 'الجنوب' },
+        { id: '3', name: 'الشرق' }
+      ]);
+    }
+  };
+
+  // Fetch districts from Firebase
+  const fetchDistricts = async () => {
+    try {
+      const districtsRef = collection(db, "districts");
+      const querySnapshot = await getDocs(districtsRef);
+      const distData: District[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        distData.push({
+          id: doc.id,
+          name: doc.data().name,
+          regionId: doc.data().regionId
+        });
+      });
+      
+      setDistricts(distData);
+    } catch (error) {
+      console.error("Error fetching districts:", error);
+      // Fallback data
+      setDistricts([
+        { id: '1', name: 'حي النهضة' },
+        { id: '2', name: 'حي الملك فهد' },
+        { id: '3', name: 'حي الروضة' }
+      ]);
+    }
+  };
 
   const fetchArchivedOrders = async () => {
     if (!currentFinancialYear) return;
@@ -110,7 +254,6 @@ const ArchivedOrders: React.FC = () => {
 
       const querySnapshot = await getDocs(q);
       const ordersData: InstallationOrder[] = [];
-      const techniciansList: Set<string> = new Set();
 
       querySnapshot.forEach((doc) => {
         const data = doc.data();
@@ -124,10 +267,6 @@ const ArchivedOrders: React.FC = () => {
         
         if (matchesFinancialYear) {
           ordersData.push(order);
-          
-          if (data.technicianName) {
-            techniciansList.add(data.technicianName);
-          }
         }
       });
 
@@ -140,7 +279,6 @@ const ArchivedOrders: React.FC = () => {
 
       setOrders(ordersData);
       setFilteredOrders(ordersData);
-      setTechnicians(Array.from(techniciansList));
       
       console.log('📦 Archived orders loaded:', ordersData.length);
     } catch (error) {
@@ -606,7 +744,7 @@ const ArchivedOrders: React.FC = () => {
         <Breadcrumb
           items={[
             { label: "الرئيسية", to: "/" },
-            { label: "إدارة التركيب", to: "/installation" },
+            { label: "إدارة التركيب", to: "/management/installation" },
             { label: "الطلبات المؤرشفة" },
           ]}
         />
@@ -696,8 +834,8 @@ const ArchivedOrders: React.FC = () => {
                 }
               >
                 {technicians.map(tech => (
-                  <Option key={tech} value={tech}>
-                    {tech}
+                  <Option key={tech.id} value={tech.nameAr || tech.name}>
+                    {tech.nameAr || tech.name} {tech.phone && `- ${tech.phone}`}
                   </Option>
                 ))}
               </Select>
@@ -718,8 +856,8 @@ const ArchivedOrders: React.FC = () => {
                 }
               >
                 {governorates.map(gov => (
-                  <Option key={gov} value={gov}>
-                    {gov}
+                  <Option key={gov.id} value={gov.name}>
+                    {gov.name}
                   </Option>
                 ))}
               </Select>
@@ -740,8 +878,8 @@ const ArchivedOrders: React.FC = () => {
                 }
               >
                 {regions.map(region => (
-                  <Option key={region} value={region}>
-                    {region}
+                  <Option key={region.id} value={region.name}>
+                    {region.name}
                   </Option>
                 ))}
               </Select>
@@ -762,8 +900,8 @@ const ArchivedOrders: React.FC = () => {
                 }
               >
                 {districts.map(district => (
-                  <Option key={district} value={district}>
-                    {district}
+                  <Option key={district.id} value={district.name}>
+                    {district.name}
                   </Option>
                 ))}
               </Select>

@@ -64,6 +64,31 @@ interface Branch {
   address?: string;
 }
 
+interface Technician {
+  id: string;
+  name: string;
+  phone: string;
+  specialization?: string;
+  status?: string;
+}
+
+interface District {
+  id: string;
+  name: string;
+  regionId?: string;
+}
+
+interface Region {
+  id: string;
+  name: string;
+  governorateId?: string;
+}
+
+interface Governorate {
+  id: string;
+  name: string;
+}
+
 interface FormValues {
   orderNumber: string;
   date: dayjs.Dayjs;
@@ -136,11 +161,10 @@ const InstallationOrders: React.FC = () => {
   const [form] = Form.useForm();
   const [searchText, setSearchText] = useState('');
   const [branches, setBranches] = useState<Branch[]>([]);
-
-  // Districts, Regions, Governorates data
-  const districts = ['حي النهضة', 'حي الملك فهد', 'حي الروضة', 'حي العليا', 'حي السليمانية'];
-  const regions = ['الشمال', 'الجنوب', 'الشرق', 'الغرب', 'الوسط'];
-  const governorates = ['الرياض', 'جدة', 'الدمام', 'مكة المكرمة', 'المدينة المنورة', 'الخبر', 'الطائف'];
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [governorates, setGovernorates] = useState<Governorate[]>([]);
 
   // Search filters
   const [searchOrderNumber, setSearchOrderNumber] = useState('');
@@ -152,12 +176,15 @@ const InstallationOrders: React.FC = () => {
   const [searchRegion, setSearchRegion] = useState('');
   const [searchGovernorate, setSearchGovernorate] = useState('');
   const [searchInstallationDate, setSearchInstallationDate] = useState<dayjs.Dayjs | null>(null);
-  const [searchStatus, setSearchStatus] = useState<string>('');
   const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   useEffect(() => {
     fetchOrders();
     fetchBranches();
+    fetchTechnicians();
+    fetchGovernorates();
+    fetchRegions();
+    fetchDistricts();
     fetchAndCreateInstallationOrdersFromDelivery();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -176,6 +203,95 @@ const InstallationOrders: React.FC = () => {
     } catch (error) {
       console.error('Error fetching branches:', error);
       message.error('حدث خطأ في جلب بيانات الفروع');
+    }
+  };
+
+  // Fetch technicians
+  const fetchTechnicians = async () => {
+    try {
+      const techniciansSnapshot = await getDocs(collection(db, 'technicians'));
+      const techniciansData = techniciansSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || '',
+        phone: (doc.data() as { phone?: string }).phone || '',
+        specialization: (doc.data() as { specialization?: string }).specialization,
+        status: (doc.data() as { status?: string }).status
+      }));
+      setTechnicians(techniciansData.filter(t => !t.status || t.status === 'active' || t.status === 'نشط'));
+    } catch (error) {
+      console.error('Error fetching technicians:', error);
+      // إذا لم تكن هناك مجموعة فنيين، نستخدم قائمة افتراضية
+      setTechnicians([]);
+    }
+  };
+
+  // Fetch governorates
+  const fetchGovernorates = async () => {
+    try {
+      const governoratesSnapshot = await getDocs(collection(db, 'governorates'));
+      const governoratesData = governoratesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || ''
+      }));
+      setGovernorates(governoratesData);
+    } catch (error) {
+      console.error('Error fetching governorates:', error);
+      // قائمة افتراضية
+      setGovernorates([
+        { id: '1', name: 'الرياض' },
+        { id: '2', name: 'جدة' },
+        { id: '3', name: 'الدمام' },
+        { id: '4', name: 'مكة المكرمة' },
+        { id: '5', name: 'المدينة المنورة' },
+        { id: '6', name: 'الخبر' },
+        { id: '7', name: 'الطائف' }
+      ]);
+    }
+  };
+
+  // Fetch regions
+  const fetchRegions = async () => {
+    try {
+      const regionsSnapshot = await getDocs(collection(db, 'regions'));
+      const regionsData = regionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || '',
+        governorateId: (doc.data() as { governorateId?: string }).governorateId
+      }));
+      setRegions(regionsData);
+    } catch (error) {
+      console.error('Error fetching regions:', error);
+      // قائمة افتراضية
+      setRegions([
+        { id: '1', name: 'الشمال' },
+        { id: '2', name: 'الجنوب' },
+        { id: '3', name: 'الشرق' },
+        { id: '4', name: 'الغرب' },
+        { id: '5', name: 'الوسط' }
+      ]);
+    }
+  };
+
+  // Fetch districts
+  const fetchDistricts = async () => {
+    try {
+      const districtsSnapshot = await getDocs(collection(db, 'districts'));
+      const districtsData = districtsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || '',
+        regionId: (doc.data() as { regionId?: string }).regionId
+      }));
+      setDistricts(districtsData);
+    } catch (error) {
+      console.error('Error fetching districts:', error);
+      // قائمة افتراضية
+      setDistricts([
+        { id: '1', name: 'حي النهضة' },
+        { id: '2', name: 'حي الملك فهد' },
+        { id: '3', name: 'حي الروضة' },
+        { id: '4', name: 'حي العليا' },
+        { id: '5', name: 'حي السليمانية' }
+      ]);
     }
   };
 
@@ -483,13 +599,6 @@ ${confirmationUrl}
 
   // Filter orders with advanced filters
   const filteredOrders = orders.filter(order => {
-    // البحث العام
-    const generalSearch = !searchText || 
-      order.orderNumber.toLowerCase().includes(searchText.toLowerCase()) ||
-      order.customerName.toLowerCase().includes(searchText.toLowerCase()) ||
-      order.phone.includes(searchText) ||
-      order.documentNumber.toLowerCase().includes(searchText.toLowerCase());
-
     // البحث برقم الطلب
     const orderNumberMatch = !searchOrderNumber || 
       order.orderNumber.toLowerCase().includes(searchOrderNumber.toLowerCase());
@@ -508,7 +617,8 @@ ${confirmationUrl}
 
     // البحث بالفني
     const technicianMatch = !searchTechnician || 
-      (order.technicianName && order.technicianName.toLowerCase().includes(searchTechnician.toLowerCase()));
+      (order.technicianName && order.technicianName.toLowerCase().includes(searchTechnician.toLowerCase())) ||
+      (order.technicianPhone && order.technicianPhone.includes(searchTechnician));
 
     // البحث بالحي
     const districtMatch = !searchDistrict || 
@@ -529,13 +639,13 @@ ${confirmationUrl}
     const installationDateMatch = !searchInstallationDate || 
       (order.installationDate && dayjs(order.installationDate).isSame(searchInstallationDate, 'day'));
 
-    // البحث بحالة التركيب
-    const statusMatch = !searchStatus || 
-      (order.status || 'جديد') === searchStatus;
+    // البحث باسم العميل
+    const customerNameMatch = !searchText || 
+      order.customerName.toLowerCase().includes(searchText.toLowerCase());
 
-    return generalSearch && orderNumberMatch && documentNumberMatch && phoneMatch && 
+    return orderNumberMatch && documentNumberMatch && phoneMatch && 
            notesMatch && technicianMatch && districtMatch && regionMatch && 
-           governorateMatch && installationDateMatch && statusMatch;
+           governorateMatch && installationDateMatch && customerNameMatch;
   });
 
   // Table columns
@@ -666,6 +776,7 @@ ${confirmationUrl}
       key: 'whatsapp',
       width: 150,
       align: 'center' as const,
+      fixed: 'right' as const,
       render: (_text: unknown, record: InstallationOrder) => (
         <Button
           type="primary"
@@ -778,7 +889,7 @@ ${confirmationUrl}
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة التركيبات", to: "/installation" },
+          { label: "إدارة التركيبات", to: "/management/installation" },
           { label: "طلبات التركيب" }
         ]}
       />
@@ -832,6 +943,18 @@ ${confirmationUrl}
           </div>
           
           <div className="flex flex-col">
+            <span style={labelStyle}>اسم العميل</span>
+            <Input 
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              placeholder="ادخل اسم العميل"
+              style={largeControlStyle}
+              size="large"
+              allowClear
+            />
+          </div>
+          
+          <div className="flex flex-col">
             <span style={labelStyle}>رقم الهاتف</span>
             <Input 
               value={searchPhone}
@@ -848,7 +971,7 @@ ${confirmationUrl}
             <Input 
               value={searchNotes}
               onChange={e => setSearchNotes(e.target.value)}
-              placeholder="ادخل الملاحظات"
+              placeholder="ابحث في الملاحظات"
               style={largeControlStyle}
               size="large"
               allowClear
@@ -857,14 +980,24 @@ ${confirmationUrl}
           
           <div className="flex flex-col">
             <span style={labelStyle}>الفني</span>
-            <Input 
-              value={searchTechnician}
-              onChange={e => setSearchTechnician(e.target.value)}
-              placeholder="ادخل اسم الفني"
-              style={largeControlStyle}
+            <Select
+              value={searchTechnician || undefined}
+              onChange={setSearchTechnician}
+              placeholder="اختر الفني"
+              style={{ width: '100%', ...largeControlStyle }}
               size="large"
               allowClear
-            />
+              showSearch
+              filterOption={(input, option) =>
+                option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {technicians.map(tech => (
+                <Option key={tech.id} value={tech.name}>
+                  {tech.name} - {tech.phone}
+                </Option>
+              ))}
+            </Select>
           </div>
           
           <div className="flex flex-col">
@@ -882,8 +1015,8 @@ ${confirmationUrl}
               }
             >
               {governorates.map(gov => (
-                <Option key={gov} value={gov}>
-                  {gov}
+                <Option key={gov.id} value={gov.name}>
+                  {gov.name}
                 </Option>
               ))}
             </Select>
@@ -904,8 +1037,8 @@ ${confirmationUrl}
               }
             >
               {regions.map(region => (
-                <Option key={region} value={region}>
-                  {region}
+                <Option key={region.id} value={region.name}>
+                  {region.name}
                 </Option>
               ))}
             </Select>
@@ -926,8 +1059,8 @@ ${confirmationUrl}
               }
             >
               {districts.map(district => (
-                <Option key={district} value={district}>
-                  {district}
+                <Option key={district.id} value={district.name}>
+                  {district.name}
                 </Option>
               ))}
             </Select>
@@ -953,23 +1086,6 @@ ${confirmationUrl}
                   size="large"
                   format="YYYY-MM-DD"
                 />
-              </div>
-              
-              <div className="flex flex-col">
-                <span style={labelStyle}>حالة التركيب</span>
-                <Select
-                  value={searchStatus || undefined}
-                  onChange={setSearchStatus}
-                  placeholder="اختر الحالة"
-                  style={{ width: '100%', ...largeControlStyle }}
-                  size="large"
-                  allowClear
-                >
-                  <Option value="جديد">جديد</Option>
-                  <Option value="مؤكد">مؤكد</Option>
-                  <Option value="ملغي">ملغي</Option>
-                  <Option value="مكتمل">مكتمل</Option>
-                </Select>
               </div>
             </motion.div>
           )}
@@ -1061,7 +1177,6 @@ ${confirmationUrl}
                 setSearchRegion('');
                 setSearchGovernorate('');
                 setSearchInstallationDate(null);
-                setSearchStatus('');
               }}
               size="large"
               style={{ 
@@ -1087,9 +1202,6 @@ ${confirmationUrl}
 
       {/* Table Card */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-
-      {/* Table Card */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-700">قائمة طلبات التركيب</h3>
         </div>
@@ -1108,7 +1220,6 @@ ${confirmationUrl}
           bordered
         />
       </div>
-    </div>
 
         {/* Edit Modal */}
         <Modal
@@ -1257,7 +1368,7 @@ ${confirmationUrl}
                 >
                   <Select placeholder="اختر الحي" size="large" showSearch>
                     {districts.map(district => (
-                      <Option key={district} value={district}>{district}</Option>
+                      <Option key={district.id} value={district.name}>{district.name}</Option>
                     ))}
                   </Select>
                 </Form.Item>
@@ -1270,7 +1381,7 @@ ${confirmationUrl}
                 >
                   <Select placeholder="اختر المنطقة" size="large" showSearch>
                     {regions.map(region => (
-                      <Option key={region} value={region}>{region}</Option>
+                      <Option key={region.id} value={region.name}>{region.name}</Option>
                     ))}
                   </Select>
                 </Form.Item>
@@ -1283,7 +1394,7 @@ ${confirmationUrl}
                 >
                   <Select placeholder="اختر المحافظة" size="large" showSearch>
                     {governorates.map(gov => (
-                      <Option key={gov} value={gov}>{gov}</Option>
+                      <Option key={gov.id} value={gov.name}>{gov.name}</Option>
                     ))}
                   </Select>
                 </Form.Item>
@@ -1298,11 +1409,31 @@ ${confirmationUrl}
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item
-                  label="اسم الفني"
+                  label="الفني"
                   name="technicianName"
-                  rules={[{ required: true, message: 'الرجاء إدخال اسم الفني' }]}
+                  rules={[{ required: true, message: 'الرجاء اختيار الفني' }]}
                 >
-                  <Input placeholder="اسم الفني" size="large" />
+                  <Select 
+                    placeholder="اختر الفني" 
+                    size="large" 
+                    showSearch
+                    onChange={(value) => {
+                      const selectedTech = technicians.find(t => t.name === value);
+                      if (selectedTech) {
+                        form.setFieldsValue({ technicianPhone: selectedTech.phone });
+                      }
+                    }}
+                    filterOption={(input, option) =>
+                      option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                    }
+                  >
+                    {technicians.map(tech => (
+                      <Option key={tech.id} value={tech.name}>
+                        {tech.name} - {tech.phone}
+                        {tech.specialization && ` (${tech.specialization})`}
+                      </Option>
+                    ))}
+                  </Select>
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -1406,28 +1537,7 @@ ${confirmationUrl}
           footer={[
             <Button key="close" onClick={() => setIsViewModalVisible(false)}>
               إغلاق
-            </Button>,
-            <Button
-              key="notify"
-              type="default"
-              icon={<BellOutlined />}
-              onClick={() => viewingOrder && sendCustomerNotification(viewingOrder)}
-            >
-              إشعار العميل
-            </Button>,
-            <Button
-              key="confirm"
-              type="primary"
-              icon={<CheckCircleOutlined />}
-              onClick={() => {
-                if (viewingOrder?.id) {
-                  confirmOrder(viewingOrder.id);
-                  setIsViewModalVisible(false);
-                }
-              }}
-            >
-              تأكيد الطلب
-            </Button>,
+            </Button>
           ]}
           width={700}
         >

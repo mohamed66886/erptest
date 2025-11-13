@@ -48,6 +48,32 @@ import * as XLSX from 'xlsx';
 const { Title, Text } = Typography;
 
 // Types
+interface Technician {
+  id: string;
+  name: string;
+  nameAr?: string;
+  phone?: string;
+  specialization?: string;
+  status?: string;
+}
+
+interface District {
+  id: string;
+  name: string;
+  regionId?: string;
+}
+
+interface Region {
+  id: string;
+  name: string;
+  governorateId?: string;
+}
+
+interface Governorate {
+  id: string;
+  name: string;
+}
+
 interface InstallationOrder {
   id?: string;
   orderNumber: string;
@@ -80,7 +106,10 @@ const ConfirmedOrders: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [assignTechnicianMode, setAssignTechnicianMode] = useState(false);
-  const [technicians, setTechnicians] = useState<{id: string; name: string; nameAr?: string; phone?: string}[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [governorates, setGovernorates] = useState<Governorate[]>([]);
   
   // States for confirmation modal
   const [confirmationModalVisible, setConfirmationModalVisible] = useState(false);
@@ -100,14 +129,12 @@ const ConfirmedOrders: React.FC = () => {
   const [searchInstallationDate, setSearchInstallationDate] = useState<dayjs.Dayjs | null>(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
 
-  // Districts, Regions, Governorates data
-  const districts = ['حي النهضة', 'حي الملك فهد', 'حي الروضة', 'حي العليا', 'حي السليمانية'];
-  const regions = ['الشمال', 'الجنوب', 'الشرق', 'الغرب', 'الوسط'];
-  const governorates = ['الرياض', 'جدة', 'الدمام', 'مكة المكرمة', 'المدينة المنورة', 'الخبر', 'الطائف'];
-
   useEffect(() => {
     fetchConfirmedOrders();
     fetchTechnicians();
+    fetchGovernorates();
+    fetchRegions();
+    fetchDistricts();
   }, []);
 
   // Fetch confirmed orders
@@ -150,12 +177,81 @@ const ConfirmedOrders: React.FC = () => {
         id: doc.id,
         name: doc.data().name || doc.data().nameAr || '',
         nameAr: doc.data().nameAr || doc.data().name || '',
-        phone: doc.data().phone || doc.data().mobile || ''
+        phone: doc.data().phone || doc.data().mobile || '',
+        specialization: doc.data().specialization,
+        status: doc.data().status
       }));
-      setTechnicians(techniciansData);
+      setTechnicians(techniciansData.filter(t => !t.status || t.status === 'active' || t.status === 'نشط'));
     } catch (error) {
       console.error('Error fetching technicians:', error);
-      message.error('حدث خطأ في جلب قائمة الفنيين');
+      setTechnicians([]);
+    }
+  };
+
+  // Fetch governorates
+  const fetchGovernorates = async () => {
+    try {
+      const governoratesSnapshot = await getDocs(collection(db, 'governorates'));
+      const governoratesData = governoratesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || ''
+      }));
+      setGovernorates(governoratesData);
+    } catch (error) {
+      console.error('Error fetching governorates:', error);
+      setGovernorates([
+        { id: '1', name: 'الرياض' },
+        { id: '2', name: 'جدة' },
+        { id: '3', name: 'الدمام' },
+        { id: '4', name: 'مكة المكرمة' },
+        { id: '5', name: 'المدينة المنورة' },
+        { id: '6', name: 'الخبر' },
+        { id: '7', name: 'الطائف' }
+      ]);
+    }
+  };
+
+  // Fetch regions
+  const fetchRegions = async () => {
+    try {
+      const regionsSnapshot = await getDocs(collection(db, 'regions'));
+      const regionsData = regionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || '',
+        governorateId: (doc.data() as { governorateId?: string }).governorateId
+      }));
+      setRegions(regionsData);
+    } catch (error) {
+      console.error('Error fetching regions:', error);
+      setRegions([
+        { id: '1', name: 'الشمال' },
+        { id: '2', name: 'الجنوب' },
+        { id: '3', name: 'الشرق' },
+        { id: '4', name: 'الغرب' },
+        { id: '5', name: 'الوسط' }
+      ]);
+    }
+  };
+
+  // Fetch districts
+  const fetchDistricts = async () => {
+    try {
+      const districtsSnapshot = await getDocs(collection(db, 'districts'));
+      const districtsData = districtsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || '',
+        regionId: (doc.data() as { regionId?: string }).regionId
+      }));
+      setDistricts(districtsData);
+    } catch (error) {
+      console.error('Error fetching districts:', error);
+      setDistricts([
+        { id: '1', name: 'حي النهضة' },
+        { id: '2', name: 'حي الملك فهد' },
+        { id: '3', name: 'حي الروضة' },
+        { id: '4', name: 'حي العليا' },
+        { id: '5', name: 'حي السليمانية' }
+      ]);
     }
   };
 
@@ -665,7 +761,7 @@ const ConfirmedOrders: React.FC = () => {
         <Breadcrumb
           items={[
             { label: "الرئيسية", to: "/" },
-            { label: "إدارة التركيبات", to: "/installation" },
+            { label: "إدارة التركيبات", to: "/management/installation" },
             { label: "الطلبات المؤكدة" }
           ]}
         />
@@ -744,14 +840,24 @@ const ConfirmedOrders: React.FC = () => {
             
             <div className="flex flex-col">
               <span style={labelStyle}>الفني</span>
-              <Input 
-                value={searchTechnician}
-                onChange={e => setSearchTechnician(e.target.value)}
-                placeholder="ادخل اسم الفني"
-                style={largeControlStyle}
+              <Select
+                value={searchTechnician || undefined}
+                onChange={setSearchTechnician}
+                placeholder="اختر الفني"
+                style={{ width: '100%', ...largeControlStyle }}
                 size="large"
                 allowClear
-              />
+                showSearch
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase())
+                }
+              >
+                {technicians.map(tech => (
+                  <Option key={tech.id} value={tech.name}>
+                    {tech.nameAr || tech.name} - {tech.phone}
+                  </Option>
+                ))}
+              </Select>
             </div>
             
             <div className="flex flex-col">
@@ -769,8 +875,8 @@ const ConfirmedOrders: React.FC = () => {
                 }
               >
                 {governorates.map(gov => (
-                  <Option key={gov} value={gov}>
-                    {gov}
+                  <Option key={gov.id} value={gov.name}>
+                    {gov.name}
                   </Option>
                 ))}
               </Select>
@@ -791,8 +897,8 @@ const ConfirmedOrders: React.FC = () => {
                 }
               >
                 {regions.map(region => (
-                  <Option key={region} value={region}>
-                    {region}
+                  <Option key={region.id} value={region.name}>
+                    {region.name}
                   </Option>
                 ))}
               </Select>
@@ -813,8 +919,8 @@ const ConfirmedOrders: React.FC = () => {
                 }
               >
                 {districts.map(district => (
-                  <Option key={district} value={district}>
-                    {district}
+                  <Option key={district.id} value={district.name}>
+                    {district.name}
                   </Option>
                 ))}
               </Select>
@@ -1096,8 +1202,34 @@ const ConfirmedOrders: React.FC = () => {
             rowSelection={{
               type: 'checkbox',
               selectedRowKeys: selectedOrderIds,
-              onChange: (selectedKeys) => {
+              onChange: (selectedKeys, selectedRows) => {
+                // التحقق من أن جميع الطلبات المحددة لنفس الفني
+                if (selectedRows.length > 0) {
+                  const firstTechnician = selectedRows[0].technicianName;
+                  const allSameTechnician = selectedRows.every(
+                    (order) => order.technicianName === firstTechnician
+                  );
+                  
+                  if (!allSameTechnician) {
+                    message.warning('يجب تحديد طلبات لنفس الفني فقط');
+                    return;
+                  }
+                }
                 setSelectedOrderIds(selectedKeys);
+              },
+              getCheckboxProps: (record) => {
+                // إذا كان هناك طلبات محددة بالفعل، تحقق من أن الفني نفسه
+                if (selectedOrderIds.length > 0) {
+                  const firstSelectedOrder = filteredOrdersByTechnician.find(
+                    (order) => order.id === selectedOrderIds[0]
+                  );
+                  if (firstSelectedOrder && firstSelectedOrder.technicianName !== record.technicianName) {
+                    return {
+                      disabled: true,
+                    };
+                  }
+                }
+                return {};
               },
               selections: [
                 {

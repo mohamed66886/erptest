@@ -31,6 +31,32 @@ dayjs.locale('ar');
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 
+interface Technician {
+  id: string;
+  name: string;
+  nameAr?: string;
+  phone?: string;
+  specialization?: string;
+  status?: string;
+}
+
+interface District {
+  id: string;
+  name: string;
+  regionId?: string;
+}
+
+interface Region {
+  id: string;
+  name: string;
+  governorateId?: string;
+}
+
+interface Governorate {
+  id: string;
+  name: string;
+}
+
 interface InstallationOrder {
   id: string;
   orderNumber: string;
@@ -63,7 +89,10 @@ const CompletedOrders: React.FC = () => {
   const [searchText, setSearchText] = useState("");
   const [selectedDateRange, setSelectedDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
   const [selectedTechnician, setSelectedTechnician] = useState<string>("");
-  const [technicians, setTechnicians] = useState<string[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [governorates, setGovernorates] = useState<Governorate[]>([]);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<InstallationOrder | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -80,18 +109,103 @@ const CompletedOrders: React.FC = () => {
   const [searchInstallationDate, setSearchInstallationDate] = useState<dayjs.Dayjs | null>(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
 
-  // Location data
-  const districts = ['حي النهضة', 'حي الملك فهد', 'حي الروضة', 'حي العليا', 'حي السليمانية'];
-  const regions = ['الشمال', 'الجنوب', 'الشرق', 'الغرب', 'الوسط'];
-  const governorates = ['الرياض', 'جدة', 'الدمام', 'مكة المكرمة', 'المدينة المنورة', 'الخبر', 'الطائف'];
-
   // جلب البيانات
   useEffect(() => {
     if (currentFinancialYear) {
       fetchCompletedOrders();
+      fetchTechnicians();
+      fetchGovernorates();
+      fetchRegions();
+      fetchDistricts();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFinancialYear]);
+
+  // Fetch technicians
+  const fetchTechnicians = async () => {
+    try {
+      const techniciansSnapshot = await getDocs(collection(db, 'technicians'));
+      const techniciansData = techniciansSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name || doc.data().nameAr || '',
+        nameAr: doc.data().nameAr || doc.data().name || '',
+        phone: doc.data().phone || doc.data().mobile || '',
+        specialization: doc.data().specialization,
+        status: doc.data().status
+      }));
+      setTechnicians(techniciansData.filter(t => !t.status || t.status === 'active' || t.status === 'نشط'));
+    } catch (error) {
+      console.error('Error fetching technicians:', error);
+      setTechnicians([]);
+    }
+  };
+
+  // Fetch governorates
+  const fetchGovernorates = async () => {
+    try {
+      const governoratesSnapshot = await getDocs(collection(db, 'governorates'));
+      const governoratesData = governoratesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || ''
+      }));
+      setGovernorates(governoratesData);
+    } catch (error) {
+      console.error('Error fetching governorates:', error);
+      setGovernorates([
+        { id: '1', name: 'الرياض' },
+        { id: '2', name: 'جدة' },
+        { id: '3', name: 'الدمام' },
+        { id: '4', name: 'مكة المكرمة' },
+        { id: '5', name: 'المدينة المنورة' },
+        { id: '6', name: 'الخبر' },
+        { id: '7', name: 'الطائف' }
+      ]);
+    }
+  };
+
+  // Fetch regions
+  const fetchRegions = async () => {
+    try {
+      const regionsSnapshot = await getDocs(collection(db, 'regions'));
+      const regionsData = regionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || '',
+        governorateId: (doc.data() as { governorateId?: string }).governorateId
+      }));
+      setRegions(regionsData);
+    } catch (error) {
+      console.error('Error fetching regions:', error);
+      setRegions([
+        { id: '1', name: 'الشمال' },
+        { id: '2', name: 'الجنوب' },
+        { id: '3', name: 'الشرق' },
+        { id: '4', name: 'الغرب' },
+        { id: '5', name: 'الوسط' }
+      ]);
+    }
+  };
+
+  // Fetch districts
+  const fetchDistricts = async () => {
+    try {
+      const districtsSnapshot = await getDocs(collection(db, 'districts'));
+      const districtsData = districtsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: (doc.data() as { name?: string }).name || '',
+        regionId: (doc.data() as { regionId?: string }).regionId
+      }));
+      setDistricts(districtsData);
+    } catch (error) {
+      console.error('Error fetching districts:', error);
+      setDistricts([
+        { id: '1', name: 'حي النهضة' },
+        { id: '2', name: 'حي الملك فهد' },
+        { id: '3', name: 'حي الروضة' },
+        { id: '4', name: 'حي العليا' },
+        { id: '5', name: 'حي السليمانية' }
+      ]);
+    }
+  };
 
   const fetchCompletedOrders = async () => {
     if (!currentFinancialYear) return;
@@ -109,7 +223,6 @@ const CompletedOrders: React.FC = () => {
 
       const querySnapshot = await getDocs(q);
       const ordersData: InstallationOrder[] = [];
-      const techniciansList: Set<string> = new Set();
 
       querySnapshot.forEach((doc) => {
         const data = doc.data();
@@ -124,10 +237,6 @@ const CompletedOrders: React.FC = () => {
         
         if (order.beforeImageUrl && order.afterImageUrl && matchesFinancialYear) {
           ordersData.push(order);
-          
-          if (data.technicianName) {
-            techniciansList.add(data.technicianName);
-          }
         }
       });
 
@@ -140,7 +249,6 @@ const CompletedOrders: React.FC = () => {
 
       setOrders(ordersData);
       setFilteredOrders(ordersData);
-      setTechnicians(Array.from(techniciansList));
       
       console.log('✅ Completed orders loaded:', ordersData.length);
     } catch (error) {
@@ -542,7 +650,7 @@ const CompletedOrders: React.FC = () => {
         <Breadcrumb
           items={[
             { label: "الرئيسية", to: "/" },
-            { label: "إدارة التركيب", to: "/installation" },
+            { label: "إدارة التركيب", to: "/management/installation" },
             { label: "الطلبات المكتملة" },
           ]}
         />
@@ -632,8 +740,8 @@ const CompletedOrders: React.FC = () => {
                 }
               >
                 {technicians.map(tech => (
-                  <Option key={tech} value={tech}>
-                    {tech}
+                  <Option key={tech.id} value={tech.nameAr || tech.name}>
+                    {tech.nameAr || tech.name} {tech.phone && `- ${tech.phone}`}
                   </Option>
                 ))}
               </Select>
@@ -654,8 +762,8 @@ const CompletedOrders: React.FC = () => {
                 }
               >
                 {governorates.map(gov => (
-                  <Option key={gov} value={gov}>
-                    {gov}
+                  <Option key={gov.id} value={gov.name}>
+                    {gov.name}
                   </Option>
                 ))}
               </Select>
@@ -676,8 +784,8 @@ const CompletedOrders: React.FC = () => {
                 }
               >
                 {regions.map(region => (
-                  <Option key={region} value={region}>
-                    {region}
+                  <Option key={region.id} value={region.name}>
+                    {region.name}
                   </Option>
                 ))}
               </Select>
@@ -698,8 +806,8 @@ const CompletedOrders: React.FC = () => {
                 }
               >
                 {districts.map(district => (
-                  <Option key={district} value={district}>
-                    {district}
+                  <Option key={district.id} value={district.name}>
+                    {district.name}
                   </Option>
                 ))}
               </Select>

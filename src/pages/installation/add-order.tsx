@@ -431,7 +431,7 @@ const AddInstallationOrder: React.FC = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة التركيبات", to: "/installation" },
+          { label: "إدارة التركيبات", to: "/management/installation" },
           { label: "طلبات التركيب", to: "/installation/orders" },
           { label: "إضافة طلب جديد" }
         ]}
