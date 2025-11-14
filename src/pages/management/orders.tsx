@@ -1983,6 +1983,7 @@ const handlePrintTable = () => {
               <th style="width: 120px;">اسم العميل</th>
               <th style="width: 85px;">هاتف العميل</th>
               <th style="width: 80px;">السائق</th>
+              <th style="width: 70px;">المنطقة</th>
               <th style="width: 70px;">الحي</th>
               <th style="width: 100px;">الملاحظات</th>
               <th style="width: 50px;">التركيب</th>
@@ -2032,6 +2033,7 @@ const handlePrintTable = () => {
                 '<td>' + (order.customerName || '-') + '</td>' +
                 '<td>' + (order.customerPhone || '-') + '</td>' +
                 '<td>' + (order.driverName || 'غير محدد') + '</td>' +
+                '<td>' + (order.regionName || '-') + '</td>' +
                 '<td>' + (order.districtName || '-') + '</td>' +
                 '<td>' + (order.notes || '-') + '</td>' +
                 '<td>' + (order.requiresInstallation ? 'نعم' : 'لا') + '</td>' +
@@ -2743,6 +2745,18 @@ const handlePrintTable = () => {
                 }
                 return record.driverName || '-';
               },
+            },
+            {
+              title: 'المنطقة',
+              dataIndex: 'region',
+              key: 'region',
+              minWidth: 120,
+              sorter: (a: DeliveryOrder, b: DeliveryOrder) => {
+                const regionA = a.regionName || '';
+                const regionB = b.regionName || '';
+                return regionA.localeCompare(regionB, 'ar');
+              },
+              render: (text: string, record: DeliveryOrder) => record.regionName || '-',
             },
             {
               title: 'الحي',

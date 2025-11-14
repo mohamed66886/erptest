@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useFinancialYear } from "@/hooks/useFinancialYear";
-import { DatePicker, Table, Card, Statistic, Row, Col } from 'antd';
+import { DatePicker, Table, Card, Statistic, Row, Col, Radio } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import Breadcrumb from "@/components/Breadcrumb";
 import { Helmet } from "react-helmet";
@@ -11,7 +11,8 @@ import {
   TrendingUp,
   FileBarChart,
   Truck,
-  DollarSign
+  DollarSign,
+  Filter
 } from 'lucide-react';
 import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -57,6 +58,7 @@ const ComprehensiveReports: React.FC = () => {
   const [completedOrders, setCompletedOrders] = useState(0);
   const [inProgressOrders, setInProgressOrders] = useState(0);
   const [driversData, setDriversData] = useState<DriverReportData[]>([]);
+  const [branchFilter, setBranchFilter] = useState<'withAmount' | 'all'>('withAmount'); // فلتر الفروع
 
   // بيانات المستخدم الحالي من localStorage
   const [currentUser, setCurrentUser] = useState<{
@@ -119,6 +121,17 @@ const ComprehensiveReports: React.FC = () => {
         console.log('🏪 Filtering orders for branch:', currentUser.branchId, 'Orders count:', filteredOrders.length);
       }
 
+      // فلترة الطلبات حسب وجود مبلغ في الفرع
+      if (branchFilter === 'withAmount') {
+        filteredOrders = filteredOrders.filter(order => {
+          const branchBalance = typeof order.branchBalance === 'number' 
+            ? order.branchBalance 
+            : parseFloat(order.branchBalance || '0');
+          return branchBalance > 0;
+        });
+        console.log('💰 Filtering orders with branch amount:', filteredOrders.length);
+      }
+
       // حساب الإحصائيات العامة
       const total = filteredOrders.length;
       // المكتملة تشمل: المكتملة + المؤرشفة
@@ -165,11 +178,14 @@ const ComprehensiveReports: React.FC = () => {
 
         const driverData = driversMap.get(driverName)!;
         driverData.totalOrders += 1;
-        driverData.deliveryAmount += deliveryAmount;
 
         // المكتملة تشمل: المكتملة + المؤرشفة
-        if (order.status === 'completed' || order.status === 'مكتمل' || order.status === 'مؤرشف') {
+        const isCompleted = order.status === 'completed' || order.status === 'مكتمل' || order.status === 'مؤرشف';
+        
+        if (isCompleted) {
           driverData.completedOrders += 1;
+          // إضافة مبلغ التوصيل فقط للطلبات المكتملة
+          driverData.deliveryAmount += deliveryAmount;
         } else if (order.status === 'in-progress' || order.status === 'قيد التنفيذ' || order.status === 'قيد الانتظار') {
           driverData.inProgressOrders += 1;
         }
@@ -202,7 +218,7 @@ const ComprehensiveReports: React.FC = () => {
       fetchReportData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange, currentUser]);
+  }, [dateRange, currentUser, branchFilter]);
 
   // حساب الإجماليات
   const totals = driversData.reduce(
@@ -316,21 +332,44 @@ const ComprehensiveReports: React.FC = () => {
         ]}
       />
 
-      {/* فلتر التاريخ */}
+      {/* فلتر التاريخ والفروع */}
       <Card className="shadow-sm">
-        <div className="flex items-center gap-4">
-          <label className="text-base font-medium text-gray-700">الفترة الزمنية:</label>
-          <RangePicker
-            value={dateRange}
-            onChange={(dates) => {
-              if (dates) {
-                setDateRange([dates[0]!, dates[1]!]);
-              }
-            }}
-            format="YYYY-MM-DD"
-            className="w-80"
-            placeholder={['من تاريخ', 'إلى تاريخ']}
-          />
+        <div className="space-y-4">
+          {/* فلتر التاريخ */}
+          <div className="flex items-center gap-4">
+            <label className="text-base font-medium text-gray-700">الفترة الزمنية:</label>
+            <RangePicker
+              value={dateRange}
+              onChange={(dates) => {
+                if (dates) {
+                  setDateRange([dates[0]!, dates[1]!]);
+                }
+              }}
+              format="YYYY-MM-DD"
+              className="w-80"
+              placeholder={['من تاريخ', 'إلى تاريخ']}
+            />
+          </div>
+
+          {/* فلتر الفروع */}
+          <div className="flex items-center gap-4">
+            <label className="text-base font-medium text-gray-700 flex items-center gap-2">
+              <Filter className="h-4 w-4 text-purple-600" />
+              عرض الطلبات:
+            </label>
+            <Radio.Group 
+              value={branchFilter} 
+              onChange={(e) => setBranchFilter(e.target.value)}
+              buttonStyle="solid"
+            >
+              <Radio.Button value="withAmount" className="text-base">
+                الفروع ذات المبالغ فقط 
+              </Radio.Button>
+              <Radio.Button value="all" className="text-base">
+                جميع الفروع 
+              </Radio.Button>
+            </Radio.Group>
+          </div>
         </div>
       </Card>
 
