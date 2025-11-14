@@ -44,7 +44,7 @@ import { getStorage, ref, listAll, getMetadata, StorageReference } from 'firebas
 const { Title, Text } = Typography;
 
 interface DeliverySettingsData {
-  maxOrdersPerRegion: number;
+  maxOrdersPerDay: number; // تم تغييره من maxOrdersPerRegion إلى maxOrdersPerDay
   allowZeroLimit: boolean;
   allowBranchNumberEdit: boolean;
   requireBranchApproval: boolean;
@@ -72,7 +72,7 @@ const DeliverySettings: React.FC = () => {
   const [hasChanges, setHasChanges] = useState(false);
 
   const [settings, setSettings] = useState<DeliverySettingsData>({
-    maxOrdersPerRegion: 50,
+    maxOrdersPerDay: 50,
     allowZeroLimit: true,
     allowBranchNumberEdit: false,
     requireBranchApproval: true,
@@ -83,13 +83,269 @@ const DeliverySettings: React.FC = () => {
   });
 
   const [storageStats, setStorageStats] = useState<StorageStats>({
-    totalSpace: 10240, // 10 GB in MB
-    usedSpace: 0,   
-    remainingSpace: 10240,
+    totalSpace: 5240, // 10 GB in MB
+    usedSpace: 0,
+    remainingSpace: 5240,
     usagePercentage: 0
   });
 
   const [loadingStorage, setLoadingStorage] = useState(false);
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const [uploadingBackup, setUploadingBackup] = useState(false);
+
+  // استعادة نسخة احتياطية من ملف JSON
+  const restoreBackupFromFile = async (file: File) => {
+    if (!currentFinancialYear) {
+      message.error('يرجى اختيار السنة المالية');
+      return;
+    }
+
+    setUploadingBackup(true);
+    try {
+      message.loading({ content: 'جاري قراءة ملف النسخة الاحتياطية...', key: 'restore', duration: 0 });
+
+      const fileContent = await file.text();
+      const backupData = JSON.parse(fileContent);
+
+      if (!backupData.metadata || !backupData.data) {
+        throw new Error('ملف النسخة الاحتياطية غير صالح');
+      }
+
+      message.loading({ 
+        content: 'جاري استعادة البيانات...', 
+        key: 'restore', 
+        duration: 0 
+      });
+
+      let totalRestored = 0;
+      const collections = Object.keys(backupData.data);
+
+      for (const collectionName of collections) {
+        const documents = backupData.data[collectionName];
+        
+        if (!Array.isArray(documents) || documents.length === 0) {
+          continue;
+        }
+
+        message.loading({ 
+          content: `جاري استعادة ${collectionName}... (${documents.length} مستند)`, 
+          key: 'restore', 
+          duration: 0 
+        });
+
+        for (const docData of documents) {
+          try {
+            const { id, ...data } = docData;
+            
+            // تحويل التواريخ من النص إلى Timestamp
+            const convertedData = JSON.parse(
+              JSON.stringify(data),
+              (key, value) => {
+                if (value && typeof value === 'object' && '_firebaseTimestamp' in value) {
+                  return new Date(value._firebaseTimestamp);
+                }
+                return value;
+              }
+            );
+
+            const docRef = doc(
+              db, 
+              `financialYears/${currentFinancialYear.id}/${collectionName}`,
+              id
+            );
+            
+            await setDoc(docRef, convertedData, { merge: true });
+            totalRestored++;
+            
+          } catch (error) {
+            console.error(`Error restoring document in ${collectionName}:`, error);
+          }
+        }
+      }
+
+      message.success({ 
+        content: `تم استعادة النسخة الاحتياطية بنجاح! (${totalRestored} مستند)`, 
+        key: 'restore', 
+        duration: 5 
+      });
+
+    } catch (error) {
+      console.error('Error restoring backup:', error);
+      message.error({ 
+        content: 'حدث خطأ أثناء استعادة النسخة الاحتياطية', 
+        key: 'restore' 
+      });
+    } finally {
+      setUploadingBackup(false);
+    }
+  };
+
+  // معالج اختيار الملف
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith('.json')) {
+        message.error('يرجى اختيار ملف JSON فقط');
+        return;
+      }
+
+      if (window.confirm(
+        'تحذير: ستقوم هذه العملية باستبدال البيانات الحالية بالبيانات من النسخة الاحتياطية. هل أنت متأكد؟'
+      )) {
+        restoreBackupFromFile(file);
+      }
+    }
+    // إعادة تعيين قيمة الإدخال للسماح باختيار نفس الملف مرة أخرى
+    event.target.value = '';
+  };
+
+  // تنزيل نسخة احتياطية كاملة من قاعدة البيانات
+  const downloadCompleteBackup = async () => {
+    if (!currentFinancialYear) {
+      message.error('يرجى اختيار السنة المالية');
+      return;
+    }
+
+    setDownloadingBackup(true);
+    try {
+      message.loading({ content: 'جاري تجهيز النسخة الاحتياطية...', key: 'backup', duration: 0 });
+
+      const backupData: {
+        metadata: {
+          exportDate: string;
+          financialYear: number | string;
+          financialYearId: string;
+          version: string;
+          appName: string;
+        };
+        data: Record<string, unknown[]>;
+      } = {
+        metadata: {
+          exportDate: new Date().toISOString(),
+          financialYear: currentFinancialYear.year,
+          financialYearId: currentFinancialYear.id,
+          version: '1.0',
+          appName: 'ERP90'
+        },
+        data: {}
+      };
+
+      // قائمة المجموعات المراد نسخها احتياطياً
+      const collections = [
+        'customers',
+        'items',
+        'invoices',
+        'outputs',
+        'purchases',
+        'salesRepresentatives',
+        'drivers',
+        'branches',
+        'warehouses',
+        'accounts',
+        'cashbox',
+        'expenses',
+        'settings',
+        'regions',
+        'deliveryOrders'
+      ];
+
+      let totalDocuments = 0;
+
+      // جلب البيانات من كل مجموعة
+      for (const collectionName of collections) {
+        try {
+          message.loading({ 
+            content: `جاري نسخ ${collectionName}...`, 
+            key: 'backup', 
+            duration: 0 
+          });
+
+          const collectionRef = collection(
+            db, 
+            `financialYears/${currentFinancialYear.id}/${collectionName}`
+          );
+          const snapshot = await getDocs(collectionRef);
+          
+          backupData.data[collectionName] = [];
+          
+          snapshot.forEach(doc => {
+            const docData = doc.data();
+            
+            // تحويل التواريخ إلى نص قابل للتخزين
+            const convertedData = JSON.parse(
+              JSON.stringify(docData, (key, value) => {
+                if (value && typeof value === 'object' && 'toDate' in value) {
+                  return { _firebaseTimestamp: value.toDate().toISOString() };
+                }
+                return value;
+              })
+            );
+            
+            backupData.data[collectionName].push({
+              id: doc.id,
+              ...convertedData
+            });
+          });
+          
+          totalDocuments += snapshot.size;
+          
+          message.loading({ 
+            content: `تم نسخ ${snapshot.size} مستند من ${collectionName}`, 
+            key: 'backup', 
+            duration: 0 
+          });
+          
+        } catch (error) {
+          console.error(`Error backing up ${collectionName}:`, error);
+          backupData.data[collectionName] = [];
+        }
+      }
+
+      // إنشاء ملف JSON وتنزيله
+      const jsonString = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      const fileName = `ERP90_Backup_${currentFinancialYear.year}_${new Date().toISOString().split('T')[0]}.json`;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // حفظ تاريخ آخر نسخة احتياطية
+      const settingsRef = doc(db, `financialYears/${currentFinancialYear.id}/settings`, 'delivery');
+      await setDoc(settingsRef, {
+        ...settings,
+        lastBackupDate: serverTimestamp(),
+        lastUpdated: serverTimestamp(),
+        updatedBy: 'admin',
+      }, { merge: true });
+
+      message.success({ 
+        content: `تم تنزيل النسخة الاحتياطية بنجاح! (${totalDocuments} مستند)`, 
+        key: 'backup', 
+        duration: 5 
+      });
+
+      // إعادة تحميل الإعدادات لتحديث تاريخ آخر نسخة احتياطية
+      const updatedSettings = await getDoc(settingsRef);
+      if (updatedSettings.exists()) {
+        setSettings(updatedSettings.data() as DeliverySettingsData);
+      }
+
+    } catch (error) {
+      console.error('Error creating backup:', error);
+      message.error({ 
+        content: 'حدث خطأ أثناء إنشاء النسخة الاحتياطية', 
+        key: 'backup' 
+      });
+    } finally {
+      setDownloadingBackup(false);
+    }
+  };
 
   // حساب حجم المساحة المستخدمة من Firebase
   const calculateStorageUsage = React.useCallback(async () => {
@@ -154,7 +410,7 @@ const DeliverySettings: React.FC = () => {
 
       // تحويل إلى ميجابايت
       const totalUsedMB = (totalSize + dbSize) / (1024 * 1024);
-      const totalSpaceMB = 10240; // 10 GB
+      const totalSpaceMB = 5240; // 5 GB
       const remainingMB = totalSpaceMB - totalUsedMB;
       const usagePercent = (totalUsedMB / totalSpaceMB) * 100;
 
@@ -318,18 +574,18 @@ const DeliverySettings: React.FC = () => {
           >
             <Space direction="vertical" style={{ width: '100%' }} size="large">
               <div>
-                <Text strong>الحد الأقصى للطلبات لكل منطقة في اليوم</Text>
+                <Text strong>الحد الأقصى للطلبات في اليوم الواحد</Text>
                 <div className="mt-2">
                   <InputNumber
-                    value={settings.maxOrdersPerRegion}
-                    onChange={(value) => updateSetting('maxOrdersPerRegion', value || 0)}
+                    value={settings.maxOrdersPerDay}
+                    onChange={(value) => updateSetting('maxOrdersPerDay', value || 0)}
                     min={0}
                     style={{ width: '100%' }}
                     addonAfter="طلب"
                   />
                   <div className="mt-2">
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      💡 ملاحظة: يتم حساب الحد الأقصى على مستوى المنطقة (وليس الحي) بحسب تاريخ التوصيل
+                      💡 ملاحظة: يتم حساب الحد الأقصى على مستوى التاريخ (جميع المناطق معاً)
                     </Text>
                   </div>
                 </div>
@@ -557,27 +813,41 @@ const DeliverySettings: React.FC = () => {
                     <Col xs={24} sm={12} md={6}>
                       <Button 
                         type="primary"
-                        icon={<DownloadOutlined />} 
+                        icon={downloadingBackup ? <LoadingOutlined /> : <DownloadOutlined />} 
                         block
-                        onClick={() => message.info('جاري تحميل النسخة الاحتياطية...')}
+                        onClick={downloadCompleteBackup}
+                        loading={downloadingBackup}
+                        disabled={downloadingBackup}
                       >
                         تحميل نسخة احتياطية
                       </Button>
                     </Col>
                     <Col xs={24} sm={12} md={6}>
+                      <input
+                        type="file"
+                        accept=".json"
+                        style={{ display: 'none' }}
+                        id="backup-file-input"
+                        onChange={handleFileUpload}
+                        disabled={uploadingBackup}
+                      />
                       <Button 
-                        icon={<UploadOutlined />} 
+                        icon={uploadingBackup ? <LoadingOutlined /> : <UploadOutlined />} 
                         block
-                        onClick={() => message.info('جاري استعادة النسخة الاحتياطية...')}
+                        onClick={() => document.getElementById('backup-file-input')?.click()}
+                        loading={uploadingBackup}
+                        disabled={uploadingBackup}
                       >
                         استعادة نسخة
                       </Button>
                     </Col>
                     <Col xs={24} sm={12} md={6}>
                       <Button 
-                        icon={<DatabaseOutlined />} 
+                        icon={downloadingBackup ? <LoadingOutlined /> : <DatabaseOutlined />} 
                         block
-                        onClick={() => message.success('تم إنشاء نسخة احتياطية يدوية بنجاح')}
+                        onClick={downloadCompleteBackup}
+                        disabled={downloadingBackup}
+                        loading={downloadingBackup}
                       >
                         نسخة احتياطية يدوية
                       </Button>

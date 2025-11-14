@@ -116,6 +116,7 @@ const ConfirmedOrders: React.FC = () => {
   const [selectedOrderIds, setSelectedOrderIds] = useState<React.Key[]>([]);
   const [confirmationLoading, setConfirmationLoading] = useState(false);
   const [selectedTechnicianFilter, setSelectedTechnicianFilter] = useState<string>('');
+  const [selectedCustomerNameFilter, setSelectedCustomerNameFilter] = useState<string>('');
 
   // Search filters
   const [searchOrderNumber, setSearchOrderNumber] = useState('');
@@ -372,10 +373,13 @@ const ConfirmedOrders: React.FC = () => {
     order.technicianName && order.technicianName.trim() !== ''
   );
 
-  // Filter orders by selected technician in modal
-  const filteredOrdersByTechnician = selectedTechnicianFilter 
-    ? ordersWithTechnicians.filter(order => order.technicianName === selectedTechnicianFilter)
-    : ordersWithTechnicians;
+  // Filter orders by selected technician and customer name in modal
+  const filteredOrdersByTechnician = ordersWithTechnicians.filter(order => {
+    const technicianMatch = !selectedTechnicianFilter || order.technicianName === selectedTechnicianFilter;
+    const customerNameMatch = !selectedCustomerNameFilter || 
+      order.customerName.toLowerCase().includes(selectedCustomerNameFilter.toLowerCase());
+    return technicianMatch && customerNameMatch;
+  });
 
   // Get unique technicians from orders
   const uniqueTechnicians = Array.from(new Set(ordersWithTechnicians.map(order => order.technicianName)))
@@ -389,6 +393,7 @@ const ConfirmedOrders: React.FC = () => {
       return;
     }
     setSelectedTechnicianFilter('');
+    setSelectedCustomerNameFilter('');
     setSelectedOrderIds([]);
     setConfirmationModalVisible(true);
   };
@@ -1113,6 +1118,7 @@ const ConfirmedOrders: React.FC = () => {
             setConfirmationModalVisible(false);
             setSelectedOrderIds([]);
             setSelectedTechnicianFilter('');
+            setSelectedCustomerNameFilter('');
           }}
           width={1200}
           footer={null}
@@ -1131,7 +1137,7 @@ const ConfirmedOrders: React.FC = () => {
               </Text>
             </div>
 
-            {/* Technician Filter */}
+            {/* Technician and Customer Filter */}
             <Row gutter={16} style={{ marginBottom: 16 }}>
               <Col xs={24} sm={12} md={8}>
                 <Select
@@ -1157,6 +1163,20 @@ const ConfirmedOrders: React.FC = () => {
                     </Option>
                   ))}
                 </Select>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Input
+                  placeholder="بحث باسم العميل"
+                  style={{ width: '100%' }}
+                  size="large"
+                  allowClear
+                  value={selectedCustomerNameFilter}
+                  onChange={(e) => {
+                    setSelectedCustomerNameFilter(e.target.value);
+                    setSelectedOrderIds([]); // Clear selection when filter changes
+                  }}
+                  prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+                />
               </Col>
             </Row>
 

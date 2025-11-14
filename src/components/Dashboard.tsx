@@ -64,7 +64,6 @@ const ERP90Dashboard = () => {
     { title: "إدارة المشاريع", icon: <FileText className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-purple-500 to-purple-600", hoverColor: "hover:from-purple-600 hover:to-purple-700", bgColor: "bg-purple-50", borderColor: "border-purple-200", description: "متابعة وإدارة المشاريع", route: "/management/projects" },
     { title: "إدارة المبيعات والعملاء", icon: <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-rose-500 to-rose-600", hoverColor: "hover:from-rose-600 hover:to-rose-700", bgColor: "bg-rose-50", borderColor: "border-rose-200", description: "إدارة العملاء والمبيعات", route: "/management/sales" },
     { title: "إدارة المشتريات والموردين", icon: <Truck className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-teal-500 to-teal-600", hoverColor: "hover:from-teal-600 hover:to-teal-700", bgColor: "bg-teal-50", borderColor: "border-teal-200", description: "إدارة الموردين والمشتريات", route: "/management/purchase" },
-    { title: "التركيب والصيانة", icon: <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />, color: "bg-gradient-to-br from-indigo-500 to-indigo-600", hoverColor: "hover:from-indigo-600 hover:to-indigo-700", bgColor: "bg-indigo-50", borderColor: "border-indigo-200", description: "إدارة أعمال التركيب والصيانة", route: "/management/installation" },
   ];
 
   useEffect(() => {
@@ -75,7 +74,6 @@ const ERP90Dashboard = () => {
     });
     AOS.init({ duration: 700, once: true });
     
-    // إعادة تعيين القائمة الجانبية للوضع الافتراضي في الصفحة الرئيسية
     setCurrentSection('default');
   }, [controls, setCurrentSection]);
 
@@ -185,8 +183,35 @@ const ERP90Dashboard = () => {
                 </motion.button>
               ))}
               
-              {/* Outputs Card */}
+              {/* Outputs Card - قبل التركيب */}
               <DeliveryCard onClick={() => handleQuickActionClick('/management/outputs')} />
+              
+              {/* التركيب والصيانة Card */}
+              <motion.button
+                onClick={() => handleQuickActionClick('/management/installation')}
+                className="flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 border-indigo-200 bg-indigo-50 transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] cursor-pointer hover:shadow-xl hover:scale-105"
+              >
+                {/* Background Pattern */}
+                <div className="absolute inset-0 opacity-5 transition-opacity">
+                  <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
+                  <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
+                </div>
+                
+                {/* Icon */}
+                <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-3 sm:p-4 rounded-2xl text-white shadow-lg transition-all duration-300 relative z-10">
+                  <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                
+                {/* Content */}
+                <div className="relative z-10">
+                  <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 mb-1 sm:mb-2 transition-colors leading-tight">
+                    التركيب والصيانة
+                  </h3>
+                  <p className="text-xs md:text-sm text-gray-600 leading-relaxed transition-colors">
+                    إدارة أعمال التركيب والصيانة
+                  </p>
+                </div>
+              </motion.button>
             </div>
           </div>
         </motion.div>

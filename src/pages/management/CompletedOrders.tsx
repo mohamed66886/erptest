@@ -58,6 +58,7 @@ const CompletedOrders: React.FC = () => {
   const [filterBranch, setFilterBranch] = useState<string>("");
   const [searchText, setSearchText] = useState<string>("");
   const [filterCompletedDate, setFilterCompletedDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
+  const [filterInstallation, setFilterInstallation] = useState<string>("");
   const [archiving, setArchiving] = useState(false);
 
   // بيانات المستخدم الحالي من localStorage
@@ -200,6 +201,14 @@ const CompletedOrders: React.FC = () => {
     if (filterCompletedDate && order.completedAt) {
       const orderDate = dayjs(order.completedAt).format('YYYY-MM-DD');
       matches = matches && orderDate === filterCompletedDate;
+    }
+    
+    if (filterInstallation) {
+      if (filterInstallation === 'yes') {
+        matches = matches && order.requiresInstallation === true;
+      } else if (filterInstallation === 'no') {
+        matches = matches && order.requiresInstallation === false;
+      }
     }
     
     if (searchText) {
@@ -358,6 +367,18 @@ const CompletedOrders: React.FC = () => {
       width: 120,
       sorter: (a: CompletedOrder, b: CompletedOrder) => (a.driverName || '').localeCompare(b.driverName || ''),
       render: (text: string) => text || <span className="text-gray-400">غير محدد</span>,
+    },
+    {
+      title: 'يتطلب تركيب',
+      dataIndex: 'requiresInstallation',
+      key: 'requiresInstallation',
+      width: 120,
+      sorter: (a: CompletedOrder, b: CompletedOrder) => Number(a.requiresInstallation) - Number(b.requiresInstallation),
+      render: (requires: boolean) => (
+        <Tag color={requires ? 'orange' : 'blue'} className="font-medium">
+          {requires ? 'نعم' : 'لا'}
+        </Tag>
+      ),
     },
     {
       title: 'الملف الموقع',
@@ -555,6 +576,21 @@ const CompletedOrders: React.FC = () => {
                 allowClear
                 style={largeControlStyle}
               />
+            </div>
+
+            <div className="flex flex-col">
+              <span style={labelStyle}>يتطلب تركيب</span>
+              <Select
+                value={filterInstallation || undefined}
+                onChange={setFilterInstallation}
+                placeholder="الكل"
+                allowClear
+                style={largeControlStyle}
+                size="large"
+              >
+                <Option value="yes">نعم</Option>
+                <Option value="no">لا</Option>
+              </Select>
             </div>
 
             <div className="flex flex-col">
