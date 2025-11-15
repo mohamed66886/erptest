@@ -2,23 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import Breadcrumb from "@/components/Breadcrumb";
 import { Helmet } from "react-helmet";
-import { Select, Table, Modal, Form, message, Space, Tag, Popconfirm, Input, Checkbox as AntCheckbox } from 'antd';
+import { Select, Table, Modal, Form, message, Space, Tag, Popconfirm, Input } from 'antd';
 import { 
   UserCog, 
   Plus, 
   Edit, 
-  Trash2, 
-  Eye, 
-  EyeOff,
-  Save,
-  X
+  Trash2
 } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useFinancialYear } from "@/hooks/useFinancialYear";
 
 const { Option } = Select;
 
@@ -27,15 +22,12 @@ interface User {
   username: string;
   fullName: string;
   password: string;
-  position: 'مدير عام' | 'مدير فرع' | 'مدير مستودع';
-  accessType?: 'delivery' | 'delivery_installation'; // نوع الوصول
-  branchId?: string;
-  branchName?: string;
-  warehouseId?: string;
-  warehouseName?: string;
+  position: 'مدير عام' | 'مشرف تركيب' | 'فني' | 'مدير فرع';
+  accessType?: 'installation' | 'installation_delivery'; // نوع الوصول
   permissions: string[];
-  createdAt?: any;
-  updatedAt?: any;
+  branchId?: string; // معرف الفرع لمدير الفرع
+  createdAt?: Date | { toDate: () => Date };
+  updatedAt?: Date | { toDate: () => Date };
 }
 
 interface Branch {
@@ -43,75 +35,76 @@ interface Branch {
   name: string;
 }
 
-interface Warehouse {
-  id: string;
-  name: string;
-}
-
-const UsersManagement: React.FC = () => {
+const InstallationUsersManagement: React.FC = () => {
   const navigate = useNavigate();
+  const { currentFinancialYear } = useFinancialYear();
   const [users, setUsers] = useState<User[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
-  const [selectedAccessType, setSelectedAccessType] = useState<string>('delivery');
+  const [selectedPosition, setSelectedPosition] = useState<string>('');
+  const [selectedAccessType, setSelectedAccessType] = useState<string>('installation');
   const [form] = Form.useForm();
-
-  // جميع الصفحات المتاحة في إدارة التوصيلات
-  const deliveryPages = [
-    { id: 'governorates', name: 'إدارة المحافظات', category: 'الإعدادات', system: 'delivery' },
-    { id: 'regions', name: 'إدارة المناطق', category: 'الإعدادات', system: 'delivery' },
-    { id: 'districts', name: 'إدارة الأحياء', category: 'الإعدادات', system: 'delivery' },
-    { id: 'drivers', name: 'إدارة السائقين', category: 'الإعدادات', system: 'delivery' },
-    { id: 'branch-status', name: 'حالة الفرع', category: 'الإعدادات', system: 'delivery' },
-    { id: 'delivery-warehouses', name: 'مستودعات التوصيل', category: 'الإعدادات', system: 'delivery' },
-    { id: 'link-branches', name: 'ربط الفروع', category: 'الإعدادات', system: 'delivery' },
-    { id: 'delivery-settings', name: 'إعدادات التوصيل', category: 'الإعدادات', system: 'delivery' },
-    { id: 'users', name: 'إدارة المستخدمين', category: 'الإعدادات', system: 'delivery' },
-    { id: 'delivery-orders', name: 'الطلبات', category: 'العمليات', system: 'delivery' },
-    { id: 'confirm-orders', name: 'تأكيد الطلبات', category: 'العمليات', system: 'delivery' },
-    { id: 'completed-orders', name: 'الطلبات المكتملة', category: 'العمليات', system: 'delivery' },
-    { id: 'archived-orders', name: 'الطلبات المؤرشفة', category: 'العمليات', system: 'delivery' },
-    { id: 'comprehensive-reports', name: 'التقارير الشاملة', category: 'التقارير', system: 'delivery' },
-  ];
 
   // جميع الصفحات المتاحة في إدارة التركيب
   const installationPages = [
-    { id: 'installation-settings', name: 'إعدادات التركيب', category: 'إعدادات التركيب', system: 'installation' },
-    { id: 'technicians', name: 'إدارة الفنيين', category: 'إعدادات التركيب', system: 'installation' },
-    { id: 'users-management', name: 'إدارة مستخدمي التركيب', category: 'إعدادات التركيب', system: 'installation' },
-    { id: 'installation-orders', name: 'طلبات التركيب', category: 'عمليات التركيب', system: 'installation' },
-    { id: 'installation-confirmed-orders', name: 'طلبات التركيب المؤكدة', category: 'عمليات التركيب', system: 'installation' },
-    { id: 'installation-completed-orders', name: 'طلبات التركيب المكتملة', category: 'عمليات التركيب', system: 'installation' },
-    { id: 'installation-archived-orders', name: 'طلبات التركيب المؤرشفة', category: 'عمليات التركيب', system: 'installation' },
+    { id: 'installation-settings', name: 'إعدادات التركيب', category: 'الإعدادات', system: 'installation' },
+    { id: 'technicians', name: 'إدارة الفنيين', category: 'الإعدادات', system: 'installation' },
+    { id: 'users-management', name: 'إدارة المستخدمين', category: 'الإعدادات', system: 'installation' },
+    { id: 'installation-orders', name: 'الطلبات', category: 'العمليات', system: 'installation' },
+    { id: 'installation-confirmed-orders', name: 'الطلبات المؤكدة', category: 'العمليات', system: 'installation' },
+    { id: 'installation-completed-orders', name: 'الطلبات المكتملة', category: 'العمليات', system: 'installation' },
+    { id: 'installation-archived-orders', name: 'الطلبات المؤرشفة', category: 'العمليات', system: 'installation' },
+  ];
+
+  // جميع الصفحات المتاحة في إدارة التوصيلات
+  const deliveryPages = [
+    { id: 'governorates', name: 'إدارة المحافظات', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'regions', name: 'إدارة المناطق', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'districts', name: 'إدارة الأحياء', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'drivers', name: 'إدارة السائقين', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'branch-status', name: 'حالة الفرع', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'delivery-warehouses', name: 'مستودعات التوصيل', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'link-branches', name: 'ربط الفروع', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'delivery-settings', name: 'إعدادات التوصيل', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'delivery-users', name: 'إدارة مستخدمي التوصيل', category: 'إعدادات التوصيل', system: 'delivery' },
+    { id: 'delivery-orders', name: 'طلبات التوصيل', category: 'عمليات التوصيل', system: 'delivery' },
+    { id: 'confirm-orders', name: 'تأكيد طلبات التوصيل', category: 'عمليات التوصيل', system: 'delivery' },
+    { id: 'completed-orders', name: 'طلبات التوصيل المكتملة', category: 'عمليات التوصيل', system: 'delivery' },
+    { id: 'archived-orders', name: 'طلبات التوصيل المؤرشفة', category: 'عمليات التوصيل', system: 'delivery' },
+    { id: 'comprehensive-reports', name: 'تقارير التوصيل الشاملة', category: 'تقارير التوصيل', system: 'delivery' },
   ];
 
   // دمج الصفحات حسب نوع الوصول
   const getAvailablePages = () => {
-    if (selectedAccessType === 'delivery_installation') {
-      return [...deliveryPages, ...installationPages];
+    if (selectedAccessType === 'installation_delivery') {
+      return [...installationPages, ...deliveryPages];
     }
-    return deliveryPages;
+    return installationPages;
   };
 
   const availablePages = getAvailablePages();
 
   // تحميل البيانات عند بدء الصفحة
   useEffect(() => {
-    fetchUsers();
+    if (currentFinancialYear) {
+      fetchUsers();
+    }
     fetchBranches();
-    fetchWarehouses();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFinancialYear]);
 
   // تحميل المستخدمين
   const fetchUsers = async () => {
+    if (!currentFinancialYear) return;
+    
     setLoading(true);
     try {
-      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersSnapshot = await getDocs(
+        collection(db, `financial_years/${currentFinancialYear.id}/installation_users`)
+      );
       const usersData = usersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -136,20 +129,7 @@ const UsersManagement: React.FC = () => {
       setBranches(branchesData);
     } catch (error) {
       console.error('Error fetching branches:', error);
-    }
-  };
-
-  // تحميل مستودعات التوصيل
-  const fetchWarehouses = async () => {
-    try {
-      const warehousesSnapshot = await getDocs(collection(db, 'delivery_warehouses'));
-      const warehousesData = warehousesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name
-      })) as Warehouse[];
-      setWarehouses(warehousesData);
-    } catch (error) {
-      console.error('Error fetching delivery warehouses:', error);
+      message.error('خطأ في تحميل الفروع');
     }
   };
 
@@ -158,7 +138,8 @@ const UsersManagement: React.FC = () => {
     setEditingUser(null);
     form.resetFields();
     setSelectedPermissions([]);
-    setSelectedAccessType('delivery');
+    setSelectedPosition('');
+    setSelectedAccessType('installation');
     setIsModalVisible(true);
   };
 
@@ -166,8 +147,9 @@ const UsersManagement: React.FC = () => {
   const handleEdit = (user: User) => {
     setEditingUser(user);
     const permissions = user.permissions || [];
-    const accessType = user.accessType || 'delivery';
+    const accessType = user.accessType || 'installation';
     setSelectedPermissions(permissions);
+    setSelectedPosition(user.position);
     setSelectedAccessType(accessType);
     form.setFieldsValue({
       username: user.username,
@@ -176,7 +158,6 @@ const UsersManagement: React.FC = () => {
       position: user.position,
       accessType: accessType,
       branchId: user.branchId,
-      warehouseId: user.warehouseId,
       permissions: permissions
     });
     setIsModalVisible(true);
@@ -184,8 +165,10 @@ const UsersManagement: React.FC = () => {
 
   // حذف مستخدم
   const handleDelete = async (userId: string) => {
+    if (!currentFinancialYear) return;
+    
     try {
-      await deleteDoc(doc(db, 'users', userId));
+      await deleteDoc(doc(db, `financial_years/${currentFinancialYear.id}/installation_users`, userId));
       message.success('تم حذف المستخدم بنجاح');
       fetchUsers();
     } catch (error) {
@@ -195,58 +178,59 @@ const UsersManagement: React.FC = () => {
   };
 
   // حفظ المستخدم
-  const handleSave = async (values: any) => {
+  const handleSave = async (values: Partial<User>) => {
+    if (!currentFinancialYear) {
+      message.error('يرجى اختيار السنة المالية');
+      return;
+    }
+
+    // التحقق من اختيار الفرع لمدير الفرع
+    if (values.position === 'مدير فرع' && !values.branchId) {
+      message.error('يرجى اختيار الفرع لمدير الفرع');
+      return;
+    }
+
     try {
       setLoading(true);
       
-      console.log('💾 Saving user with permissions:', selectedPermissions);
-      
-      const userData: any = {
+      const userData: Partial<User> = {
         username: values.username,
         fullName: values.fullName,
         password: values.password,
         position: values.position,
-        accessType: values.accessType || 'delivery',
+        accessType: values.accessType || 'installation',
         permissions: selectedPermissions,
         updatedAt: new Date()
       };
 
-      console.log('📦 User data to save:', userData);
-
-      // إضافة الفرع إذا كان مدير فرع
-      if (values.position === 'مدير فرع' && values.branchId) {
-        const selectedBranch = branches.find(b => b.id === values.branchId);
+      // إضافة معرف الفرع إذا كان مدير فرع
+      if (values.position === 'مدير فرع') {
         userData.branchId = values.branchId;
-        userData.branchName = selectedBranch?.name;
-      }
-
-      // إضافة المستودع إذا كان مدير مستودع
-      if (values.position === 'مدير مستودع' && values.warehouseId) {
-        const selectedWarehouse = warehouses.find(w => w.id === values.warehouseId);
-        userData.warehouseId = values.warehouseId;
-        userData.warehouseName = selectedWarehouse?.name;
       }
 
       if (editingUser?.id) {
         // تحديث مستخدم موجود
-        await updateDoc(doc(db, 'users', editingUser.id), userData);
+        await updateDoc(
+          doc(db, `financial_years/${currentFinancialYear.id}/installation_users`, editingUser.id),
+          userData
+        );
         message.success('تم تحديث المستخدم بنجاح');
         
         // تحديث localStorage إذا كان المستخدم الحالي هو الذي يتم تعديله
         const currentUserData = localStorage.getItem('currentUser');
         if (currentUserData) {
           const currentUser = JSON.parse(currentUserData);
-          if (currentUser.id === editingUser.id) {
+          if (currentUser.id === editingUser.id && currentUser.userType === 'installation') {
             const updatedUser = {
               id: editingUser.id,
               username: userData.username,
               fullName: userData.fullName,
               position: userData.position,
               branchId: userData.branchId,
-              branchName: userData.branchName,
-              warehouseId: userData.warehouseId,
-              warehouseName: userData.warehouseName,
-              permissions: userData.permissions
+              permissions: userData.permissions,
+              accessType: userData.accessType,
+              userType: 'installation',
+              financialYearId: currentFinancialYear.id
             };
             console.log('🔄 Updating currentUser in localStorage:', updatedUser);
             localStorage.setItem('currentUser', JSON.stringify(updatedUser));
@@ -259,15 +243,21 @@ const UsersManagement: React.FC = () => {
         }
       } else {
         // إضافة مستخدم جديد
-        userData.createdAt = new Date();
-        await addDoc(collection(db, 'users'), userData);
+        await addDoc(
+          collection(db, `financial_years/${currentFinancialYear.id}/installation_users`),
+          {
+            ...userData,
+            createdAt: new Date()
+          }
+        );
         message.success('تم إضافة المستخدم بنجاح');
       }
 
       setIsModalVisible(false);
       form.resetFields();
       setSelectedPermissions([]);
-      setSelectedAccessType('delivery');
+      setSelectedPosition('');
+      setSelectedAccessType('installation');
       fetchUsers();
     } catch (error) {
       console.error('Error saving user:', error);
@@ -297,10 +287,11 @@ const UsersManagement: React.FC = () => {
       key: 'position',
       width: 150,
       render: (position: string) => {
-        const colors: any = {
+        const colors: Record<string, string> = {
           'مدير عام': 'blue',
-          'مدير فرع': 'green',
-          'مدير مستودع': 'orange'
+          'مشرف تركيب': 'green',
+          'فني': 'orange',
+          'مدير فرع': 'purple'
         };
         return <Tag color={colors[position]}>{position}</Tag>;
       }
@@ -311,33 +302,30 @@ const UsersManagement: React.FC = () => {
       key: 'accessType',
       width: 150,
       render: (accessType: string) => {
-        const type = accessType || 'delivery';
+        const type = accessType || 'installation';
         return (
-          <Tag color={type === 'delivery_installation' ? 'cyan' : 'geekblue'}>
-            {type === 'delivery_installation' ? 'توصيل وتركيب' : 'توصيل فقط'}
+          <Tag color={type === 'installation_delivery' ? 'cyan' : 'geekblue'}>
+            {type === 'installation_delivery' ? 'تركيب وتوصيل' : 'تركيب فقط'}
           </Tag>
         );
       }
     },
     {
-      title: 'الفرع/المستودع',
-      key: 'location',
+      title: 'الفرع',
+      dataIndex: 'branchId',
+      key: 'branchId',
       width: 150,
-      render: (_: any, record: User) => {
-        if (record.position === 'مدير فرع') {
-          return <span>{record.branchName || '-'}</span>;
-        }
-        if (record.position === 'مدير مستودع') {
-          return <span>{record.warehouseName || '-'}</span>;
-        }
-        return '-';
+      render: (branchId: string) => {
+        if (!branchId) return '-';
+        const branch = branches.find(b => b.id === branchId);
+        return branch ? branch.name : branchId;
       }
     },
     {
       title: 'عدد الصلاحيات',
       key: 'permissionsCount',
       width: 120,
-      render: (_: any, record: User) => (
+      render: (_: unknown, record: User) => (
         <Tag color="purple">{record.permissions?.length || 0} صفحة</Tag>
       )
     },
@@ -346,7 +334,7 @@ const UsersManagement: React.FC = () => {
       key: 'actions',
       width: 150,
       fixed: 'right' as const,
-      render: (_: any, record: User) => (
+      render: (_: unknown, record: User) => (
         <Space size="small">
           <Button
             size="sm"
@@ -373,19 +361,28 @@ const UsersManagement: React.FC = () => {
     }
   ];
 
+  // تجميع الصلاحيات حسب الفئة
+  const groupedPermissions = availablePages.reduce((acc, page) => {
+    if (!acc[page.category]) {
+      acc[page.category] = [];
+    }
+    acc[page.category].push(page);
+    return acc;
+  }, {} as Record<string, typeof availablePages>);
+
   return (
     <div className="w-full p-4 sm:p-6 space-y-8 min-h-screen" dir="rtl">
       <Helmet>
         <title>إدارة المستخدمين | ERP90 Dashboard</title>
-        <meta name="description" content="إدارة المستخدمين والصلاحيات" />
+        <meta name="description" content="إدارة مستخدمي نظام التركيب والصلاحيات" />
       </Helmet>
 
       {/* Header */}
       <div className="p-6 font-['Tajawal'] bg-white dark:bg-gray-800 mb-6 rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.1)] relative overflow-hidden border border-gray-100 dark:border-gray-700">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-6">
-            <div className="p-2 bg-violet-100 dark:bg-violet-900 rounded-lg">
-              <UserCog className="h-8 w-8 text-violet-600 dark:text-violet-300" />
+            <div className="p-2 bg-amber-100 dark:bg-amber-900 rounded-lg">
+              <UserCog className="h-8 w-8 text-amber-600 dark:text-amber-300" />
             </div>
             <div className="flex flex-col">
               <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-1">إدارة المستخدمين</h1>
@@ -395,20 +392,20 @@ const UsersManagement: React.FC = () => {
           
           <Button
             onClick={handleAdd}
-            className="bg-violet-600 hover:bg-violet-700"
+            className="bg-amber-600 hover:bg-amber-700"
           >
             <Plus className="h-5 w-5 ml-2" />
             إضافة مستخدم جديد
           </Button>
         </div>
-        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-violet-400 to-purple-500"></div>
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 to-orange-500"></div>
       </div>
 
       {/* Breadcrumb */}
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة التوصيلات", to: "/management/outputs" },
+          { label: "إدارة التركيب", to: "/installation" },
           { label: "إدارة المستخدمين" },
         ]}
       />
@@ -442,7 +439,7 @@ const UsersManagement: React.FC = () => {
           setIsModalVisible(false);
           form.resetFields();
           setSelectedPermissions([]);
-          setSelectedAccessType('delivery');
+          setSelectedPosition('');
         }}
         footer={null}
         width={800}
@@ -493,13 +490,12 @@ const UsersManagement: React.FC = () => {
             >
               <Select 
                 placeholder="اختر المنصب"
-                onChange={() => {
-                  form.setFieldsValue({ branchId: undefined, warehouseId: undefined });
-                }}
+                onChange={(value) => setSelectedPosition(value)}
               >
                 <Option value="مدير عام">مدير عام</Option>
+                <Option value="مشرف تركيب">مشرف تركيب</Option>
+                <Option value="فني">فني</Option>
                 <Option value="مدير فرع">مدير فرع</Option>
-                <Option value="مدير مستودع">مدير مستودع</Option>
               </Select>
             </Form.Item>
           </div>
@@ -509,7 +505,7 @@ const UsersManagement: React.FC = () => {
             name="accessType"
             label="نوع الوصول"
             rules={[{ required: true, message: 'يرجى اختيار نوع الوصول' }]}
-            initialValue="delivery"
+            initialValue="installation"
           >
             <Select 
               placeholder="اختر نوع الوصول"
@@ -519,116 +515,107 @@ const UsersManagement: React.FC = () => {
                 setSelectedPermissions([]);
               }}
             >
-              <Option value="delivery">توصيل فقط</Option>
-              <Option value="delivery_installation">توصيل وتركيب</Option>
+              <Option value="installation">تركيب فقط</Option>
+              <Option value="installation_delivery">تركيب وتوصيل</Option>
             </Select>
           </Form.Item>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* اختيار الفرع (يظهر فقط لمدير الفرع) */}
+          {/* اختيار الفرع (يظهر فقط لمدير الفرع) */}
+          {selectedPosition === 'مدير فرع' && (
             <Form.Item
-              noStyle
-              shouldUpdate={(prevValues, currentValues) => 
-                prevValues.position !== currentValues.position
-              }
+              name="branchId"
+              label="الفرع"
+              rules={[{ required: true, message: 'يرجى اختيار الفرع' }]}
             >
-              {({ getFieldValue }) =>
-                getFieldValue('position') === 'مدير فرع' ? (
-                  <Form.Item
-                    name="branchId"
-                    label="الفرع"
-                    rules={[{ required: true, message: 'يرجى اختيار الفرع' }]}
-                  >
-                    <Select placeholder="اختر الفرع">
-                      {branches.map(branch => (
-                        <Option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                ) : null
-              }
+              <Select placeholder="اختر الفرع">
+                {branches.map(branch => (
+                  <Option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </Option>
+                ))}
+              </Select>
             </Form.Item>
-
-            {/* اختيار المستودع (يظهر فقط لمدير المستودع) */}
-            <Form.Item
-              noStyle
-              shouldUpdate={(prevValues, currentValues) => 
-                prevValues.position !== currentValues.position
-              }
-            >
-              {({ getFieldValue }) =>
-                getFieldValue('position') === 'مدير مستودع' ? (
-                  <Form.Item
-                    name="warehouseId"
-                    label="مستودع التوصيل"
-                    rules={[{ required: true, message: 'يرجى اختيار مستودع التوصيل' }]}
-                  >
-                    <Select placeholder="اختر مستودع التوصيل">
-                      {warehouses.map(warehouse => (
-                        <Option key={warehouse.id} value={warehouse.id}>
-                          {warehouse.name}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                ) : null
-              }
-            </Form.Item>
-          </div>
+          )}
 
           {/* الصلاحيات */}
           <Form.Item
-            label={`الصلاحيات - ${selectedAccessType === 'delivery_installation' ? 'توصيل وتركيب' : 'توصيل فقط'}`}
+            label={`الصلاحيات - ${selectedAccessType === 'installation_delivery' ? 'تركيب وتوصيل' : 'تركيب فقط'}`}
+            className="mt-4"
           >
-            <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
-              {selectedAccessType === 'delivery_installation' && (
+            <div className="space-y-4 border rounded-lg p-4 max-h-96 overflow-y-auto">
+              {selectedAccessType === 'installation_delivery' && (
                 <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-sm text-blue-800 font-medium">
-                    💡 تم تفعيل صلاحيات التوصيل والتركيب - يمكن للمستخدم الوصول إلى كلا النظامين
+                    💡 تم تفعيل صلاحيات التركيب والتوصيل - يمكن للمستخدم الوصول إلى كلا النظامين
                   </p>
                 </div>
               )}
-              <div className="space-y-4">
-                {['الإعدادات', 'العمليات', 'التقارير', 'إعدادات التركيب', 'عمليات التركيب'].map(category => {
-                  const categoryPages = availablePages.filter(page => page.category === category);
-                  if (categoryPages.length === 0) return null;
-                  
-                  return (
-                  <div key={category}>
-                    <h4 className="font-semibold text-gray-700 mb-2 text-base flex items-center gap-2">
+              {Object.entries(groupedPermissions).map(([category, pages]) => (
+                <div key={category} className="space-y-2">
+                  <div className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                    <h4 className="font-semibold text-gray-700 flex items-center gap-2">
                       {category}
-                      {category.includes('التركيب') && (
-                        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">تركيب</span>
+                      {category.includes('التوصيل') && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">توصيل</span>
                       )}
                     </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {categoryPages.map(page => (
-                          <div key={page.id} className="mb-2">
-                            <AntCheckbox
-                              checked={selectedPermissions.includes(page.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  const newPermissions = [...selectedPermissions, page.id];
-                                  setSelectedPermissions(newPermissions);
-                                  form.setFieldsValue({ permissions: newPermissions });
-                                } else {
-                                  const newPermissions = selectedPermissions.filter(p => p !== page.id);
-                                  setSelectedPermissions(newPermissions);
-                                  form.setFieldsValue({ permissions: newPermissions });
-                                }
-                              }}
-                            >
-                              {page.name}
-                            </AntCheckbox>
-                          </div>
-                        ))}
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const categoryPageIds = pages.map(p => p.id);
+                          setSelectedPermissions(prev => {
+                            const newPerms = new Set([...prev, ...categoryPageIds]);
+                            return Array.from(newPerms);
+                          });
+                        }}
+                      >
+                        تحديد الكل
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const categoryPageIds = pages.map(p => p.id);
+                          setSelectedPermissions(prev => 
+                            prev.filter(p => !categoryPageIds.includes(p))
+                          );
+                        }}
+                      >
+                        إلغاء الكل
+                      </Button>
                     </div>
                   </div>
-                  );
-                })}
-              </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pr-4">
+                    {pages.map((page) => (
+                      <div key={page.id} className="flex items-center space-x-2 space-x-reverse">
+                        <input
+                          type="checkbox"
+                          id={page.id}
+                          checked={selectedPermissions.includes(page.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPermissions([...selectedPermissions, page.id]);
+                            } else {
+                              setSelectedPermissions(selectedPermissions.filter(p => p !== page.id));
+                            }
+                          }}
+                          className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                        />
+                        <label htmlFor={page.id} className="text-sm text-gray-700 cursor-pointer">
+                          {page.name}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 text-sm text-gray-500">
+              تم تحديد {selectedPermissions.length} من {availablePages.length} صفحة
             </div>
           </Form.Item>
 
@@ -641,19 +628,18 @@ const UsersManagement: React.FC = () => {
                 setIsModalVisible(false);
                 form.resetFields();
                 setSelectedPermissions([]);
-                setSelectedAccessType('delivery');
+                setSelectedPosition('');
+                setSelectedAccessType('installation');
               }}
             >
-              <X className="h-4 w-4 ml-2" />
               إلغاء
             </Button>
             <Button
               type="submit"
-              className="bg-violet-600 hover:bg-violet-700"
+              className="bg-amber-600 hover:bg-amber-700"
               disabled={loading}
             >
-              <Save className="h-4 w-4 ml-2" />
-              {editingUser ? 'تحديث' : 'حفظ'}
+              {loading ? 'جاري الحفظ...' : editingUser ? 'تحديث' : 'إضافة'}
             </Button>
           </div>
         </Form>
@@ -662,4 +648,4 @@ const UsersManagement: React.FC = () => {
   );
 };
 
-export default UsersManagement;
+export default InstallationUsersManagement;

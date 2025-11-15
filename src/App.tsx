@@ -47,6 +47,12 @@ const App = () => (
                 {/* صفحة رفع صور التركيب */}
                 <Route path="/installation/upload-images" element={<UploadInstallationImages />} />
                 
+
+                
+
+                
+
+                
                 {/* صفحة طباعة طلبات المستودع */}
      
                 

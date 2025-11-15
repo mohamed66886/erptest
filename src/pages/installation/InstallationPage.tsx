@@ -57,6 +57,28 @@ const InstallationPage: React.FC = () => {
 
   const settingsCards = [
     {
+      title: "إعدادات عامة",
+      description: "إعدادات النظام العامة",
+      icon: <Settings className="h-6 w-6" />,
+      color: "bg-indigo-500",
+      permissionId: "installation-settings",
+      onClick: () => {
+        navigate('/installation/settings');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
+      title: "المستخدمين",
+      description: "إدارة مستخدمي النظام",
+      icon: <UserCog className="h-6 w-6" />,
+      color: "bg-amber-500",
+      permissionId: "users-management",
+      onClick: () => {
+        navigate('/installation/users');
+        window.scrollTo(0, 0);
+      }
+    },
+    {
       title: "إدارة الفنيين",
       description: "إضافة وتعديل بيانات الفنيين",
       icon: <Users className="h-6 w-6" />,
@@ -117,19 +139,7 @@ const InstallationPage: React.FC = () => {
     }
   ];
 
-  const reportsCards = [
-    {
-      title: "التقارير الشاملة",
-      description: "تقارير شاملة عن جميع عمليات التركيب",
-      icon: <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6" />,
-      color: "bg-blue-700",
-      permissionId: "installation-comprehensive-reports",
-      onClick: () => {
-        navigate('/reports/installation-comprehensive-reports');
-        window.scrollTo(0, 0);
-      }
-    }
-  ];
+
 
   interface CardType {
     title: string;
@@ -279,24 +289,7 @@ const InstallationPage: React.FC = () => {
         </div>
       </div>
 
-      {/* التقارير Section */}
-      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <div className="p-2 bg-purple-100 rounded-lg">
-            <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">التقارير</h2>
-            <p className="text-sm sm:text-base text-gray-600">تقارير التركيب والفنيين والطلبات</p>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {reportsCards.map((card, index) => (
-            <CardComponent key={`reports-${index}`} card={card} index={index} />
-          ))}
-        </div>
-      </div>
+
     </div>
   );
 };

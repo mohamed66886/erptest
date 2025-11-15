@@ -1,0 +1,615 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useFinancialYear } from "@/hooks/useFinancialYear";
+import { 
+  Card, 
+  Button, 
+  InputNumber, 
+  Switch, 
+  Alert,
+  Spin,
+  Typography,
+  Space,
+  Divider,
+  Select,
+  Tag,
+  message,
+  Row,
+  Col
+} from 'antd';
+import Breadcrumb from "@/components/Breadcrumb";
+import { Helmet } from "react-helmet";
+import { 
+  SettingOutlined,
+  SaveOutlined,
+  ReloadOutlined,
+  ToolOutlined,
+  InboxOutlined,
+  CheckCircleOutlined,
+  UserOutlined,
+  LoadingOutlined,
+  WarningOutlined,
+  DatabaseOutlined,
+  CloudServerOutlined,
+  HddOutlined,
+  DownloadOutlined,
+  UploadOutlined,
+  SafetyOutlined,
+  ClockCircleOutlined
+} from '@ant-design/icons';
+import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { getStorage, ref, listAll, getMetadata, StorageReference } from 'firebase/storage';
+
+const { Title, Text } = Typography;
+
+interface InstallationSettingsData {
+  maxOrdersPerDay: number; // الحد الأقصى للطلبات في اليوم الواحد
+  allowZeroLimit: boolean;
+  requireTechnicianApproval: boolean;
+  autoBackupEnabled: boolean;
+  backupFrequency: 'daily' | 'weekly' | 'monthly';
+  backupRetentionDays: number;
+  totalStorageGB: number; // المساحة الكلية المتاحة بالجيجابايت
+  lastBackupDate?: Date | { toDate: () => Date };
+  lastUpdated?: Date | { toDate: () => Date };
+  updatedBy?: string;
+}
+
+interface StorageStats {
+  totalSpace: number;
+  usedSpace: number;
+  remainingSpace: number;
+  usagePercentage: number;
+}
+
+const InstallationSettings: React.FC = () => {
+  const navigate = useNavigate();
+  const { currentFinancialYear } = useFinancialYear();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  const [settings, setSettings] = useState<InstallationSettingsData>({
+    maxOrdersPerDay: 30,
+    allowZeroLimit: true,
+    requireTechnicianApproval: true,
+    autoBackupEnabled: true,
+    backupFrequency: 'daily',
+    backupRetentionDays: 30,
+    totalStorageGB: 10, // القيمة الافتراضية 10 GB
+  });
+
+  const [storageStats, setStorageStats] = useState<StorageStats>({
+    totalSpace: 10240, // 10 GB in MB
+    usedSpace: 0,
+    remainingSpace: 10240,
+    usagePercentage: 0
+  });
+
+  const [loadingStorage, setLoadingStorage] = useState(false);
+  const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const [uploadingBackup, setUploadingBackup] = useState(false);
+
+  // تحميل الإعدادات من Firestore
+  const loadSettings = async () => {
+    if (!currentFinancialYear) return;
+    
+    setLoading(true);
+    try {
+      const docRef = doc(db, `financial_years/${currentFinancialYear.id}/installation_settings/config`);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        setSettings(docSnap.data() as InstallationSettingsData);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      message.error('حدث خطأ أثناء تحميل الإعدادات');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // حفظ الإعدادات
+  const saveSettings = async () => {
+    if (!currentFinancialYear) {
+      message.error('يرجى اختيار السنة المالية');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const docRef = doc(db, `financial_years/${currentFinancialYear.id}/installation_settings/config`);
+      
+      await setDoc(docRef, {
+        ...settings,
+        lastUpdated: serverTimestamp(),
+        updatedBy: 'admin' // يمكن استبداله بمعرف المستخدم الحالي
+      }, { merge: true });
+
+      message.success('تم حفظ الإعدادات بنجاح');
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      message.error('حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // حساب المساحة التخزينية المستخدمة
+  const calculateStorageUsage = async () => {
+    if (!currentFinancialYear) {
+      message.error('يرجى اختيار السنة المالية');
+      return;
+    }
+
+    setLoadingStorage(true);
+    try {
+      const storage = getStorage();
+      const storageRef = ref(storage, `installation/${currentFinancialYear.year}`);
+      
+      let totalSize = 0;
+      
+      // حساب حجم جميع الملفات
+      const listResult = await listAll(storageRef);
+      
+      for (const itemRef of listResult.items) {
+        try {
+          const metadata = await getMetadata(itemRef);
+          totalSize += metadata.size || 0;
+        } catch (error) {
+          console.error('Error getting file metadata:', error);
+        }
+      }
+      
+      // التحقق من المجلدات الفرعية
+      for (const folderRef of listResult.prefixes) {
+        const subListResult = await listAll(folderRef);
+        for (const itemRef of subListResult.items) {
+          try {
+            const metadata = await getMetadata(itemRef);
+            totalSize += metadata.size || 0;
+          } catch (error) {
+            console.error('Error getting file metadata:', error);
+          }
+        }
+      }
+      
+      const totalSizeInMB = totalSize / (1024 * 1024);
+      const totalSpaceInMB = settings.totalStorageGB * 1024;
+      const remainingSpaceInMB = totalSpaceInMB - totalSizeInMB;
+      const usagePercentage = (totalSizeInMB / totalSpaceInMB) * 100;
+      
+      setStorageStats({
+        totalSpace: totalSpaceInMB,
+        usedSpace: totalSizeInMB,
+        remainingSpace: remainingSpaceInMB,
+        usagePercentage: usagePercentage
+      });
+      
+      message.success('تم تحديث إحصائيات المساحة');
+    } catch (error) {
+      console.error('Error calculating storage:', error);
+      message.error('حدث خطأ أثناء حساب المساحة المستخدمة');
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
+
+  // إنشاء نسخة احتياطية
+  const createBackup = async () => {
+    if (!currentFinancialYear) {
+      message.error('يرجى اختيار السنة المالية');
+      return;
+    }
+
+    setDownloadingBackup(true);
+    try {
+      // جمع جميع البيانات من المجموعات المختلفة
+      const backupData: Record<string, unknown> = {
+        timestamp: new Date().toISOString(),
+        financialYear: currentFinancialYear.year,
+        settings: settings,
+      };
+
+      // جمع طلبات التركيب
+      const ordersRef = collection(db, `financial_years/${currentFinancialYear.id}/installation_orders`);
+      const ordersSnapshot = await getDocs(ordersRef);
+      backupData.orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // جمع الفنيين
+      const techniciansRef = collection(db, `financial_years/${currentFinancialYear.id}/technicians`);
+      const techniciansSnapshot = await getDocs(techniciansRef);
+      backupData.technicians = techniciansSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // تحويل البيانات إلى JSON وتحميلها
+      const dataStr = JSON.stringify(backupData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `installation_backup_${currentFinancialYear.year}_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // تحديث تاريخ آخر نسخة احتياطية
+      await setDoc(doc(db, `financial_years/${currentFinancialYear.id}/installation_settings/config`), {
+        lastBackupDate: serverTimestamp()
+      }, { merge: true });
+
+      message.success('تم إنشاء النسخة الاحتياطية وتحميلها بنجاح');
+    } catch (error) {
+      console.error('Error creating backup:', error);
+      message.error('حدث خطأ أثناء إنشاء النسخة الاحتياطية');
+    } finally {
+      setDownloadingBackup(false);
+    }
+  };
+
+  // تحديث إعداد واحد
+  const updateSetting = <K extends keyof InstallationSettingsData>(
+    key: K,
+    value: InstallationSettingsData[K]
+  ) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+    setHasChanges(true);
+  };
+
+  // تحميل الإعدادات عند تحميل الصفحة
+  useEffect(() => {
+    if (currentFinancialYear) {
+      loadSettings();
+      calculateStorageUsage();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFinancialYear]);
+
+  if (!currentFinancialYear) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full p-4 sm:p-6 space-y-6 min-h-screen" dir="rtl">
+      <Helmet>
+        <title>إعدادات التركيب | ERP90 Dashboard</title>
+        <meta name="description" content="إعدادات نظام التركيب ERP90 Dashboard" />
+      </Helmet>
+
+      {/* Header */}
+      <Card className="shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <Space size="large">
+            <div className="p-3 bg-indigo-100 rounded-lg">
+              <SettingOutlined className="text-2xl text-indigo-600" />
+            </div>
+            <div>
+              <Title level={2} className="!mb-0">إعدادات التركيب</Title>
+              <Text type="secondary">إدارة إعدادات نظام التركيب العامة</Text>
+            </div>
+          </Space>
+
+          <Space>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={loadSettings}
+              disabled={loading}
+            >
+              إعادة تحميل
+            </Button>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              onClick={saveSettings}
+              loading={saving}
+              disabled={!hasChanges}
+            >
+              حفظ التغييرات
+            </Button>
+          </Space>
+        </div>
+      </Card>
+
+      <Breadcrumb
+        items={[
+          { label: "الرئيسية", to: "/" },
+          { label: "إدارة التركيب", to: "/installation" },
+          { label: "إعدادات التركيب" },
+        ]}
+      />
+
+      {loading ? (
+        <div className="flex justify-center items-center py-20">
+          <Spin size="large" tip="جاري تحميل الإعدادات..." />
+        </div>
+      ) : (
+        <Row gutter={[16, 16]}>
+          
+          {/* إعدادات الحد الأقصى */}
+          <Col xs={24} lg={12}>
+            <Card 
+              title={
+                <Space>
+                  <InboxOutlined style={{ color: '#1890ff' }} />
+                  <span>إعدادات الحد الأقصى للطلبات</span>
+                </Space>
+              }
+              className="h-full"
+            >
+              <Space direction="vertical" style={{ width: '100%' }} size="large">
+                <div>
+                  <Text strong>الحد الأقصى للطلبات في اليوم الواحد</Text>
+                  <div className="mt-2">
+                    <InputNumber
+                      value={settings.maxOrdersPerDay}
+                      onChange={(value) => updateSetting('maxOrdersPerDay', value || 0)}
+                      min={0}
+                      style={{ width: '100%' }}
+                      addonAfter="طلب"
+                    />
+                    <div className="mt-2">
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        💡 ملاحظة: يتم حساب الحد الأقصى على مستوى التاريخ (جميع طلبات التركيب معاً)
+                      </Text>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Text strong>السماح بحد أقصى صفر</Text>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        إمكانية تعيين الحد الأقصى إلى صفر لإيقاف الطلبات مؤقتاً
+                      </Text>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={settings.allowZeroLimit}
+                    onChange={(checked) => updateSetting('allowZeroLimit', checked)}
+                  />
+                </div>
+              </Space>
+            </Card>
+          </Col>
+
+          {/* إعدادات الفنيين */}
+          <Col xs={24} lg={12}>
+            <Card 
+              title={
+                <Space>
+                  <ToolOutlined style={{ color: '#722ed1' }} />
+                  <span>إعدادات الفنيين</span>
+                </Space>
+              }
+              className="h-full"
+            >
+              <Space direction="vertical" style={{ width: '100%' }} size="large">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Text strong>طلب موافقة الفني</Text>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        تتطلب موافقة من الفني على طلبات التركيب
+                      </Text>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={settings.requireTechnicianApproval}
+                    onChange={(checked) => updateSetting('requireTechnicianApproval', checked)}
+                  />
+                </div>
+
+                <Alert
+                  message="معلومات هامة"
+                  description="عند تفعيل موافقة الفني، سيتم إرسال إشعار للفني قبل بدء أي طلب تركيب"
+                  type="info"
+                  showIcon
+                />
+              </Space>
+            </Card>
+          </Col>
+
+          {/* المساحة التخزينية والنسخ الاحتياطي */}
+          <Col xs={24}>
+            <Card 
+              title={
+                <Space>
+                  <DatabaseOutlined style={{ color: '#2f54eb' }} />
+                  <span>المساحة التخزينية والنسخ الاحتياطي</span>
+                </Space>
+              }
+            >
+              <Row gutter={[16, 16]}>
+                {/* Storage Statistics */}
+                <Col xs={24} md={12}>
+                  <Card 
+                    type="inner" 
+                    title={<Space><HddOutlined /> إحصائيات المساحة</Space>}
+                    extra={
+                      <Button 
+                        size="small"
+                        icon={<ReloadOutlined spin={loadingStorage} />}
+                        onClick={calculateStorageUsage}
+                        disabled={loadingStorage}
+                      >
+                        تحديث
+                      </Button>
+                    }
+                  >
+                    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <Text type="secondary">المساحة الكلية:</Text>
+                          <Text strong>{(storageStats.totalSpace / 1024).toFixed(2)} GB</Text>
+                        </div>
+                        <div className="flex justify-between items-center mb-2">
+                          <Text type="secondary">المساحة المستخدمة:</Text>
+                          <Text strong style={{ color: '#1890ff' }}>
+                            {storageStats.usedSpace.toFixed(2)} MB
+                            {loadingStorage && <LoadingOutlined style={{ marginRight: 8 }} />}
+                          </Text>
+                        </div>
+                        <div className="flex justify-between items-center mb-2">
+                          <Text type="secondary">المساحة المتبقية:</Text>
+                          <Text strong style={{ color: '#52c41a' }}>
+                            {(storageStats.remainingSpace / 1024).toFixed(2)} GB
+                          </Text>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <Text type="secondary">نسبة الاستخدام:</Text>
+                          <Text strong style={{ 
+                            color: storageStats.usagePercentage > 80 ? '#ff4d4f' : 
+                                   storageStats.usagePercentage > 60 ? '#fa8c16' : '#52c41a' 
+                          }}>
+                            {storageStats.usagePercentage.toFixed(1)}%
+                          </Text>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                          <div 
+                            className="h-3 rounded-full transition-all duration-300"
+                            style={{ 
+                              width: `${storageStats.usagePercentage}%`,
+                              backgroundColor: storageStats.usagePercentage > 80 ? '#ff4d4f' : 
+                                             storageStats.usagePercentage > 60 ? '#fa8c16' : '#52c41a'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {storageStats.usagePercentage > 80 && (
+                        <Alert
+                          message="تحذير: المساحة المتاحة منخفضة"
+                          description="يرجى حذف الملفات غير الضرورية أو الترقية لزيادة المساحة"
+                          type="warning"
+                          showIcon
+                          closable
+                        />
+                      )}
+                    </Space>
+                  </Card>
+                </Col>
+
+                {/* Backup Settings */}
+                <Col xs={24} md={12}>
+                  <Card type="inner" title={<Space><SafetyOutlined /> إعدادات النسخ الاحتياطي</Space>}>
+                    <Space direction="vertical" style={{ width: '100%' }} size="large">
+                      <div className="flex items-center justify-between">
+                        <Text strong>تفعيل النسخ الاحتياطي التلقائي</Text>
+                        <Switch
+                          checked={settings.autoBackupEnabled}
+                          onChange={(checked) => updateSetting('autoBackupEnabled', checked)}
+                        />
+                      </div>
+
+                      <div>
+                        <Text strong>تكرار النسخ الاحتياطي</Text>
+                        <div className="mt-2">
+                          <Select
+                            value={settings.backupFrequency}
+                            onChange={(value) => updateSetting('backupFrequency', value)}
+                            style={{ width: '100%' }}
+                            disabled={!settings.autoBackupEnabled}
+                          >
+                            <Select.Option value="daily">
+                              <Space><ClockCircleOutlined /> يومي</Space>
+                            </Select.Option>
+                            <Select.Option value="weekly">
+                              <Space><ClockCircleOutlined /> أسبوعي</Space>
+                            </Select.Option>
+                            <Select.Option value="monthly">
+                              <Space><ClockCircleOutlined /> شهري</Space>
+                            </Select.Option>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <Text strong>مدة الاحتفاظ بالنسخ الاحتياطية</Text>
+                        <div className="mt-2">
+                          <InputNumber
+                            value={settings.backupRetentionDays}
+                            onChange={(value) => updateSetting('backupRetentionDays', value || 7)}
+                            min={7}
+                            max={365}
+                            style={{ width: '100%' }}
+                            addonAfter="يوم"
+                            disabled={!settings.autoBackupEnabled}
+                          />
+                        </div>
+                      </div>
+
+                      {settings.lastBackupDate && (
+                        <Alert
+                          message={
+                            <Space>
+                              <CheckCircleOutlined />
+                              <Text>
+                                آخر نسخة احتياطية: {
+                                  typeof settings.lastBackupDate === 'object' && 'toDate' in settings.lastBackupDate
+                                    ? new Date(settings.lastBackupDate.toDate()).toLocaleString('ar-EG')
+                                    : new Date(settings.lastBackupDate).toLocaleString('ar-EG')
+                                }
+                              </Text>
+                            </Space>
+                          }
+                          type="success"
+                          showIcon
+                        />
+                      )}
+
+                      <Divider />
+
+                      <div>
+                        <Text strong>إجراءات النسخ الاحتياطي</Text>
+                        <div className="mt-3 flex flex-col gap-2">
+                          <Button
+                            type="primary"
+                            icon={<DownloadOutlined />}
+                            onClick={createBackup}
+                            loading={downloadingBackup}
+                            block
+                          >
+                            إنشاء نسخة احتياطية الآن
+                          </Button>
+                          <Text type="secondary" style={{ fontSize: 12, textAlign: 'center' }}>
+                            سيتم تحميل ملف JSON يحتوي على جميع بيانات نظام التركيب
+                          </Text>
+                        </div>
+                      </div>
+                    </Space>
+                  </Card>
+                </Col>
+              </Row>
+            </Card>
+          </Col>
+
+        </Row>
+      )}
+
+      {hasChanges && (
+        <Alert
+          message="لديك تغييرات غير محفوظة"
+          description="يرجى حفظ التغييرات قبل مغادرة الصفحة"
+          type="warning"
+          showIcon
+          closable
+          className="fixed bottom-4 left-4 right-4 z-50 shadow-lg"
+          style={{ maxWidth: '500px', margin: '0 auto' }}
+        />
+      )}
+    </div>
+  );
+};
+
+export default InstallationSettings;

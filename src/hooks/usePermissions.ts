@@ -6,6 +6,13 @@ interface CurrentUser {
   fullName: string;
   position: string;
   permissions?: string[];
+  userType?: 'delivery' | 'installation';
+  financialYearId?: string;
+  accessType?: string;
+  branchId?: string;
+  branchName?: string;
+  warehouseId?: string;
+  warehouseName?: string;
 }
 
 // دالة مساعدة لتحديث localStorage وإطلاق حدث

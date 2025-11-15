@@ -128,6 +128,10 @@ import AddInstallationOrder from "./installation/add-order";
 import ConfirmedOrders from "./installation/confirmed-orders";
 import CompletedInstallationOrders from "./installation/CompletedOrders";
 import ArchivedInstallationOrders from "./installation/ArchivedOrders";
+import InstallationSettings from "./installation/InstallationSettings";
+import InstallationUsersManagement from "./installation/UsersManagement";
+
+
 
 type AppState = "login" | "data-completion" | "dashboard";
 
@@ -372,6 +376,7 @@ const Index = () => {
                   <ConfirmedOrders />
                 </ProtectedRoute>
               } />
+                             <Route path="/installation/users" element={<InstallationUsersManagement />} />
               <Route path="/installation/completed-orders" element={
                 <ProtectedRoute requiredPermission="installation-completed-orders">
                   <CompletedInstallationOrders />
@@ -387,6 +392,12 @@ const Index = () => {
                   <AddInstallationOrder />
                 </ProtectedRoute>
               } />
+              <Route path="/installation/settings" element={
+                <ProtectedRoute requiredPermission="installation-settings">
+                  <InstallationSettings />
+                </ProtectedRoute>
+              } />
+
               <Route path="/management/discounts-offers" element={<DiscountsOffers />} />
               <Route path="/management/add-sales-accounts" element={<AddSalesAccounts />} />
               <Route path="/management/tax-settings" element={<TaxSettings />} />

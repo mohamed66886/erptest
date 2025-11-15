@@ -19,6 +19,7 @@ interface LoginPageProps {
 
 interface SystemUser {
   id: string;
+  originalId?: string; // المعرف الأصلي لمستخدمي التركيب
   username: string;
   fullName: string;
   password: string;
@@ -28,6 +29,10 @@ interface SystemUser {
   warehouseId?: string;
   warehouseName?: string;
   permissions?: string[];
+  accessType?: string;
+  userType?: 'delivery' | 'installation';
+  financialYearId?: string;
+  financialYear?: number; // رقم السنة المالية
 }
 
 const LoginPage = ({ onLogin }: LoginPageProps) => {
@@ -47,8 +52,12 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
     const fetchUsers = async () => {
       try {
         setLoadingUsers(true);
+        
+        console.log('🚀 Starting to fetch users...');
+        
+        // جلب مستخدمي التوصيل من مجموعة users
         const usersSnapshot = await getDocs(collection(db, 'users'));
-        const usersData = usersSnapshot.docs.map(doc => ({
+        const deliveryUsers = usersSnapshot.docs.map(doc => ({
           id: doc.id,
           username: doc.data().username,
           fullName: doc.data().fullName,
@@ -58,9 +67,93 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           branchName: doc.data().branchName,
           warehouseId: doc.data().warehouseId,
           warehouseName: doc.data().warehouseName,
-          permissions: doc.data().permissions
+          permissions: doc.data().permissions,
+          accessType: doc.data().accessType || 'delivery',
+          userType: 'delivery' // تمييز نوع المستخدم
         })) as SystemUser[];
-        setUsers(usersData);
+        
+        console.log(`✅ Loaded ${deliveryUsers.length} delivery users`);
+
+        // جلب السنوات المالية النشطة فقط للوصول إلى مستخدمي التركيب
+        console.log('📅 Fetching financial years...');
+        const financialYearsSnapshot = await getDocs(collection(db, 'financialYears')); // تغيير من financial_years إلى financialYears
+        console.log(`📊 Found ${financialYearsSnapshot.size} financial years`);
+        
+        const installationUsers: SystemUser[] = [];
+        const installationUserIds = new Set<string>(); // لتجنب التكرار
+        
+        for (const yearDoc of financialYearsSnapshot.docs) {
+          const yearData = yearDoc.data();
+          
+          console.log(`📋 Year ${yearData.year}:`, {
+            id: yearDoc.id,
+            activeStatus: yearData.activeStatus,
+            startDate: yearData.startDate,
+            endDate: yearData.endDate
+          });
+          
+          // فقط السنوات المالية النشطة
+          if (yearData.activeStatus !== 'نشطة') {
+            console.log(`⏭️ Skipping inactive year: ${yearData.year}`);
+            continue;
+          }
+          
+          console.log(`🔍 Checking financial year: ${yearData.year} (${yearDoc.id})`);
+          
+          try {
+            const installationUsersPath = `financialYears/${yearDoc.id}/installation_users`; // تغيير من financial_years
+            console.log(`📂 Path: ${installationUsersPath}`);
+            
+            const installationUsersSnapshot = await getDocs(
+              collection(db, installationUsersPath)
+            );
+            
+            console.log(`📋 Found ${installationUsersSnapshot.size} installation users in year ${yearData.year}`);
+            
+            if (installationUsersSnapshot.size > 0) {
+              installationUsersSnapshot.docs.forEach(doc => {
+                console.log(`👤 User document:`, doc.id, doc.data());
+                
+                const userId = `${doc.id}-${yearDoc.id}`; // معرف فريد يجمع بين ID المستخدم والسنة
+                
+                // تجنب التكرار
+                if (!installationUserIds.has(userId)) {
+                  installationUserIds.add(userId);
+                  
+                  const userData = {
+                    id: userId, // استخدام المعرف الفريد
+                    originalId: doc.id, // حفظ المعرف الأصلي
+                    username: doc.data().username,
+                    fullName: doc.data().fullName,
+                    password: doc.data().password,
+                    position: doc.data().position,
+                    branchId: doc.data().branchId,
+                    permissions: doc.data().permissions,
+                    accessType: doc.data().accessType || 'installation',
+                    userType: 'installation' as const,
+                    financialYearId: yearDoc.id,
+                    financialYear: yearData.year
+                  };
+                  
+                  installationUsers.push(userData);
+                  console.log(`✅ Added installation user: ${userData.fullName} (${userData.position})`);
+                }
+              });
+            } else {
+              console.log(`⚠️ No users found in ${installationUsersPath}`);
+            }
+          } catch (error) {
+            console.error(`❌ Error loading users from year ${yearData.year}:`, error);
+          }
+        }
+
+        // دمج المستخدمين
+        const allUsers = [...deliveryUsers, ...installationUsers];
+        setUsers(allUsers);
+        
+        console.log('📊 Total users loaded:', allUsers.length);
+        console.log('🚚 Delivery users:', deliveryUsers.length);
+        console.log('🔧 Installation users:', installationUsers.length);
       } catch (error) {
         console.error('Error fetching users:', error);
         toast.error('خطأ في تحميل المستخدمين');
@@ -120,7 +213,7 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
         toast.success('تم تسجيل الدخول بنجاح!');
         
         const userData = {
-          id: user.id,
+          id: user.originalId || user.id, // استخدام المعرف الأصلي لمستخدمي التركيب
           username: user.username,
           fullName: user.fullName,
           position: user.position,
@@ -128,10 +221,15 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           branchName: user.branchName,
           warehouseId: user.warehouseId,
           warehouseName: user.warehouseName,
-          permissions: user.permissions || []
+          permissions: user.permissions || [],
+          accessType: user.accessType,
+          userType: user.userType,
+          financialYearId: user.financialYearId
         };
         
         console.log('💾 Saving user to localStorage:', userData);
+        console.log('👤 User type:', user.userType);
+        console.log('📅 Financial year:', user.financialYear);
         
         localStorage.setItem('currentUser', JSON.stringify(userData));
         
@@ -230,7 +328,25 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
                     {users.map(user => (
                       <Option key={user.id} value={user.id}>
                         <div className="flex flex-col">
-                          <span className="font-semibold">{user.fullName}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{user.fullName}</span>
+                            {user.userType && (
+                              <span 
+                                className={`text-xs px-2 py-0.5 rounded ${
+                                  user.userType === 'installation' 
+                                    ? 'bg-amber-100 text-amber-700' 
+                                    : 'bg-violet-100 text-violet-700'
+                                }`}
+                              >
+                                {user.userType === 'installation' ? 'تركيب' : 'توصيل'}
+                              </span>
+                            )}
+                            {user.financialYear && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                                {user.financialYear}
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs text-gray-500">{user.position}</span>
                         </div>
                       </Option>
