@@ -97,7 +97,7 @@ const InstallationSettings: React.FC = () => {
     
     setLoading(true);
     try {
-      const docRef = doc(db, `financial_years/${currentFinancialYear.id}/installation_settings/config`);
+      const docRef = doc(db, `financialYears/${currentFinancialYear.id}/installation_settings/config`);
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
@@ -120,7 +120,7 @@ const InstallationSettings: React.FC = () => {
 
     setSaving(true);
     try {
-      const docRef = doc(db, `financial_years/${currentFinancialYear.id}/installation_settings/config`);
+      const docRef = doc(db, `financialYears/${currentFinancialYear.id}/installation_settings/config`);
       
       await setDoc(docRef, {
         ...settings,
@@ -215,12 +215,12 @@ const InstallationSettings: React.FC = () => {
       };
 
       // جمع طلبات التركيب
-      const ordersRef = collection(db, `financial_years/${currentFinancialYear.id}/installation_orders`);
+      const ordersRef = collection(db, `financialYears/${currentFinancialYear.id}/installation_orders`);
       const ordersSnapshot = await getDocs(ordersRef);
       backupData.orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // جمع الفنيين
-      const techniciansRef = collection(db, `financial_years/${currentFinancialYear.id}/technicians`);
+      const techniciansRef = collection(db, `financialYears/${currentFinancialYear.id}/technicians`);
       const techniciansSnapshot = await getDocs(techniciansRef);
       backupData.technicians = techniciansSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
@@ -237,7 +237,7 @@ const InstallationSettings: React.FC = () => {
       URL.revokeObjectURL(url);
 
       // تحديث تاريخ آخر نسخة احتياطية
-      await setDoc(doc(db, `financial_years/${currentFinancialYear.id}/installation_settings/config`), {
+      await setDoc(doc(db, `financialYears/${currentFinancialYear.id}/installation_settings/config`), {
         lastBackupDate: serverTimestamp()
       }, { merge: true });
 

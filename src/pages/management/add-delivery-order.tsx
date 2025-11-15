@@ -84,6 +84,7 @@ interface District {
 
 interface DeliverySettings {
   maxOrdersPerDay: number; // تم تغييره من maxOrdersPerRegion إلى maxOrdersPerDay
+  selectedDate?: string; // التاريخ المحدد لتطبيق الحد الأقصى
   allowZeroLimit: boolean;
   [key: string]: unknown;
 }
@@ -410,24 +411,30 @@ const AddDeliveryOrder: React.FC = () => {
     const formattedDate = deliveryDate.format('YYYY-MM-DD');
     const nextDay = deliveryDate.add(1, 'day');
     const nextDayFormatted = nextDay.format('YYYY-MM-DD');
+    
+    // التحقق إذا كان التاريخ المحدد هو نفس التاريخ في الإعدادات
+    const isSettingsDateMatch = deliverySettings.selectedDate === formattedDate;
 
     let modalContent = '';
-    if (maxOrders === 0) {
-      modalContent = `النظام مغلق حالياً ولا يمكن إضافة أي طلبات توصيل في هذا التاريخ.
+    if (isSettingsDateMatch && maxOrders === 0) {
+      modalContent = `التاريخ ${formattedDate} مُغلق ولا يمكن إضافة أي طلبات توصيل فيه.
 
-هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة؟
+هذا التاريخ تم تحديده في إعدادات النظام كتاريخ مغلق.
 
-ملاحظة: قد يكون النظام مفتوحاً في تاريخ آخر حسب إعدادات النظام.`;
-    } else {
+هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة؟`;
+    } else if (isSettingsDateMatch && maxOrders > 0) {
       modalContent = `تم الوصول للحد الأقصى للطلبات بتاريخ ${formattedDate}.
       
 الوضع الحالي: ${currentCount} من ${maxOrders} طلب
+تم تحديد هذا الحد الأقصى في إعدادات النظام لهذا التاريخ.
 
 هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة؟`;
+    } else {
+      return; // لا حاجة لعرض رسالة إذا لم يكن التاريخ محدداً في الإعدادات
     }
 
     Modal.confirm({
-      title: maxOrders === 0 ? '🔒 النظام مغلق حالياً' : '⚠️ تجاوز الحد الأقصى للطلبات',
+      title: maxOrders === 0 ? '🔒 التاريخ المحدد مُغلق' : '⚠️ تجاوز الحد الأقصى للطلبات',
       content: modalContent,
       icon: <ExclamationCircleOutlined style={{ color: maxOrders === 0 ? '#ef4444' : '#faad14' }} />,
       okText: 'نعم، تغيير التاريخ والمتابعة',
@@ -444,10 +451,15 @@ const AddDeliveryOrder: React.FC = () => {
     });
   }, [deliveryDate, deliverySettings]);
 
-  // عند تغيير التاريخ، إعادة تعيين الحد الأقصى إذا كان النظام مغلق
+  // عند تغيير التاريخ، إعادة تعيين الحد الأقصى إذا كان التاريخ المحدد مغلق
   useEffect(() => {
-    if (deliveryDate && deliverySettings?.maxOrdersPerDay === 0) {
-      setMaxOrdersReached(true);
+    if (deliveryDate && deliverySettings) {
+      const selectedDate = deliveryDate.format('YYYY-MM-DD');
+      const isSettingsDateMatch = deliverySettings.selectedDate === selectedDate;
+      
+      if (isSettingsDateMatch && deliverySettings.maxOrdersPerDay === 0) {
+        setMaxOrdersReached(true);
+      }
     }
   }, [deliveryDate, deliverySettings]);
 
@@ -458,6 +470,19 @@ const AddDeliveryOrder: React.FC = () => {
 
       try {
         const selectedDate = deliveryDate.format('YYYY-MM-DD');
+        
+        // التحقق إذا كان التاريخ المحدد في الإعدادات يطابق تاريخ التسليم
+        const isSelectedDateClosed = deliverySettings.selectedDate && 
+                                     deliverySettings.selectedDate === selectedDate && 
+                                     deliverySettings.maxOrdersPerDay === 0;
+
+        if (isSelectedDateClosed) {
+          // التاريخ المحدد مقفول (الحد الأقصى = 0)
+          setMaxOrdersReached(true);
+          setCurrentOrdersCount(0);
+          showMaxOrdersConfirmation(0);
+          return;
+        }
 
         const ordersQuery = query(
           collection(db, 'delivery_orders'),
@@ -468,22 +493,23 @@ const AddDeliveryOrder: React.FC = () => {
         const count = ordersSnapshot.size;
         setCurrentOrdersCount(count);
 
-        // التحقق من الوصول للحد الأقصى
-        if (deliverySettings.maxOrdersPerDay === 0) {
-          // الحد الأقصى = 0 يعني أن النظام مغلق تماماً
+        // التحقق من الوصول للحد الأقصى - فقط إذا كان التاريخ هو نفس التاريخ المحدد في الإعدادات
+        const isSettingsDateMatch = deliverySettings.selectedDate === selectedDate;
+        
+        if (isSettingsDateMatch && deliverySettings.maxOrdersPerDay === 0) {
+          // الحد الأقصى = 0 يعني أن هذا التاريخ مغلق
           setMaxOrdersReached(true);
-          // عرض رسالة تأكيد للمستخدم
           showMaxOrdersConfirmation(count);
-        } else if (deliverySettings.maxOrdersPerDay > 0) {
+        } else if (isSettingsDateMatch && deliverySettings.maxOrdersPerDay > 0) {
           if (count >= deliverySettings.maxOrdersPerDay) {
             setMaxOrdersReached(true);
-            // عرض رسالة تأكيد للمستخدم
             showMaxOrdersConfirmation(count);
           } else {
             setMaxOrdersReached(false);
             setShouldAutoAdjustDate(false);
           }
         } else {
+          // التاريخ المختار ليس هو التاريخ المحدد في الإعدادات - السماح بالإضافة
           setMaxOrdersReached(false);
           setShouldAutoAdjustDate(false);
         }
@@ -603,6 +629,7 @@ const AddDeliveryOrder: React.FC = () => {
   // دالة الحفظ
   const handleSave = async (overrideDate?: dayjs.Dayjs) => {
     const currentDeliveryDate = overrideDate || deliveryDate;
+    
     // التحقق من الحقول المطلوبة
     if (!branchId) {
       message.error('يرجى اختيار الفرع');
@@ -624,20 +651,37 @@ const AddDeliveryOrder: React.FC = () => {
       message.error('يرجى إدخال رقم هاتف صحيح (10 أرقام)');
       return;
     }
-    if (!districtId) {
-      if (deliverySettings?.maxOrdersPerDay === 0) {
-        message.error('النظام مغلق في هذا التاريخ - يرجى اختيار تاريخ آخر');
-      } else {
-        message.error('يرجى اختيار الحي');
+    if (!currentDeliveryDate) {
+      message.error('يرجى تحديد تاريخ التسليم');
+      return;
+    }
+    
+    // التحقق من التاريخ المغلق - منع الحفظ تمامًا
+    if (currentDeliveryDate && deliverySettings) {
+      const selectedDate = currentDeliveryDate.format('YYYY-MM-DD');
+      const isSettingsDateMatch = deliverySettings.selectedDate === selectedDate;
+      
+      if (isSettingsDateMatch && deliverySettings.maxOrdersPerDay === 0) {
+        Modal.error({
+          title: '🔒 التاريخ المحدد مُغلق',
+          content: `التاريخ ${selectedDate} مُغلق ولا يمكن إضافة أي طلبات توصيل فيه.
+
+هذا التاريخ تم تحديده في إعدادات النظام كتاريخ مغلق.
+
+يرجى اختيار تاريخ آخر للمتابعة.`,
+          okText: 'حسنًا',
+          centered: true,
+        });
+        return;
       }
+    }
+    
+    if (!districtId) {
+      message.error('يرجى اختيار الحي');
       return;
     }
     if (!warehouseId) {
       message.error('يرجى اختيار المستودع');
-      return;
-    }
-    if (!currentDeliveryDate) {
-      message.error('يرجى تحديد تاريخ التسليم');
       return;
     }
     if (fileList.length === 0) {
@@ -647,47 +691,60 @@ const AddDeliveryOrder: React.FC = () => {
 
     // التحقق من الحد الأقصى للطلبات في التاريخ مع إعطاء خيار للمستخدم
     if (maxOrdersReached) {
-      const formattedDate = deliveryDate.format('YYYY-MM-DD');
-      const nextDay = deliveryDate.add(1, 'day');
+      const formattedDate = currentDeliveryDate.format('YYYY-MM-DD');
+      const nextDay = currentDeliveryDate.add(1, 'day');
       const nextDayFormatted = nextDay.format('YYYY-MM-DD');
       
-      let modalContent = '';
-      if (deliverySettings?.maxOrdersPerDay === 0) {
-        modalContent = `النظام مغلق حالياً ولا يمكن إضافة أي طلبات توصيل في هذا التاريخ.
-        
-هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة مع الحفظ؟
+      // التحقق إذا كان التاريخ المحدد هو نفس التاريخ في الإعدادات
+      const isSettingsDateMatch = deliverySettings?.selectedDate === formattedDate;
+      
+      // إذا كان التاريخ مغلقًا (الحد الأقصى = 0)، منع الحفظ تمامًا
+      if (isSettingsDateMatch && deliverySettings?.maxOrdersPerDay === 0) {
+        Modal.error({
+          title: '🔒 التاريخ المحدد مُغلق',
+          content: `التاريخ ${formattedDate} مُغلق ولا يمكن إضافة أي طلبات توصيل فيه.
 
-ملاحظة: قد يكون النظام مفتوحاً في تاريخ آخر حسب إعدادات النظام.`;
-      } else {
-        modalContent = `تم الوصول للحد الأقصى للطلبات بتاريخ ${formattedDate}.
+هذا التاريخ تم تحديده في إعدادات النظام كتاريخ مغلق.
+
+يرجى اختيار تاريخ آخر للمتابعة.`,
+          okText: 'حسنًا',
+          centered: true,
+        });
+        return;
+      }
+      
+      // إذا كان الحد الأقصى > 0 وتم الوصول إليه
+      if (isSettingsDateMatch && deliverySettings && deliverySettings.maxOrdersPerDay > 0) {
+        const modalContent = `تم الوصول للحد الأقصى للطلبات بتاريخ ${formattedDate}.
         
-الوضع الحالي: ${currentOrdersCount} من ${deliverySettings?.maxOrdersPerDay} طلب
+الوضع الحالي: ${currentOrdersCount} من ${deliverySettings.maxOrdersPerDay} طلب
+تم تحديد هذا الحد الأقصى في إعدادات النظام لهذا التاريخ.
 
 هل تريد تغيير التاريخ إلى اليوم التالي (${nextDayFormatted}) والمتابعة مع الحفظ؟`;
-      }
 
-      Modal.confirm({
-        title: deliverySettings?.maxOrdersPerDay === 0 ? '🔒 النظام مغلق حالياً' : '⚠️ تجاوز الحد الأقصى للطلبات',
-        content: modalContent,
-        icon: <ExclamationCircleOutlined style={{ color: deliverySettings?.maxOrdersPerDay === 0 ? '#ef4444' : '#faad14' }} />,
-        okText: 'نعم، تغيير التاريخ والحفظ',
-        cancelText: 'إلغاء',
-        centered: true,
-        onOk() {
-          // تغيير التاريخ إلى اليوم التالي والمتابعة مع الحفظ
-          setDeliveryDate(nextDay);
-          setMaxOrdersReached(false);
-          
-          // استدعاء دالة الحفظ مع التاريخ الجديد
-          setTimeout(() => {
-            handleSave(nextDay);
-          }, 100);
-        },
-        onCancel() {
-          return; // إلغاء العملية
-        },
-      });
-      return;
+        Modal.confirm({
+          title: '⚠️ تجاوز الحد الأقصى للطلبات',
+          content: modalContent,
+          icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+          okText: 'نعم، تغيير التاريخ والحفظ',
+          cancelText: 'إلغاء',
+          centered: true,
+          onOk() {
+            // تغيير التاريخ إلى اليوم التالي والمتابعة مع الحفظ
+            setDeliveryDate(nextDay);
+            setMaxOrdersReached(false);
+            
+            // استدعاء دالة الحفظ مع التاريخ الجديد
+            setTimeout(() => {
+              handleSave(nextDay);
+            }, 100);
+          },
+          onCancel() {
+            return; // إلغاء العملية
+          },
+        });
+        return;
+      }
     }
 
     setSaving(true);
@@ -993,18 +1050,22 @@ const AddDeliveryOrder: React.FC = () => {
             <Select
               value={districtId || undefined}
               onChange={setDistrictId}
-              placeholder={deliveryDate && deliverySettings?.maxOrdersPerDay === 0 ? "النظام مغلق - اختر تاريخاً آخر" : "اختر الحي"}
+              placeholder={
+                deliveryDate && deliverySettings?.selectedDate === deliveryDate.format('YYYY-MM-DD') && deliverySettings?.maxOrdersPerDay === 0 
+                  ? "التاريخ المحدد مغلق - اختر تاريخاً آخر" 
+                  : "اختر الحي"
+              }
               style={{
                 ...largeControlStyle,
-                backgroundColor: deliveryDate && deliverySettings?.maxOrdersPerDay === 0 ? '#f5f5f5' : '#fff',
-                cursor: deliveryDate && deliverySettings?.maxOrdersPerDay === 0 ? 'not-allowed' : 'pointer',
-                color: deliveryDate && deliverySettings?.maxOrdersPerDay === 0 ? '#999' : '#000'
+                backgroundColor: deliveryDate && deliverySettings?.selectedDate === deliveryDate.format('YYYY-MM-DD') && deliverySettings?.maxOrdersPerDay === 0 ? '#f5f5f5' : '#fff',
+                cursor: deliveryDate && deliverySettings?.selectedDate === deliveryDate.format('YYYY-MM-DD') && deliverySettings?.maxOrdersPerDay === 0 ? 'not-allowed' : 'pointer',
+                color: deliveryDate && deliverySettings?.selectedDate === deliveryDate.format('YYYY-MM-DD') && deliverySettings?.maxOrdersPerDay === 0 ? '#999' : '#000'
               }}
               size="large"
               className={styles.noAntBorder}
               showSearch
               allowClear
-              disabled={deliveryDate && deliverySettings?.maxOrdersPerDay === 0}
+              disabled={deliveryDate && deliverySettings?.selectedDate === deliveryDate.format('YYYY-MM-DD') && deliverySettings?.maxOrdersPerDay === 0}
               filterOption={(input, option) =>
                 option?.children?.toString().toLowerCase().includes(input.toLowerCase())
               }
@@ -1016,21 +1077,30 @@ const AddDeliveryOrder: React.FC = () => {
               ))}
             </Select>
             
-            {/* رسالة تحذيرية عندما يكون الحد الأقصى = 0 */}
-            {deliveryDate && deliverySettings?.maxOrdersPerDay === 0 && (
+            {/* رسالة تحذيرية عندما يكون التاريخ المحدد مغلق */}
+            {deliveryDate && deliverySettings?.selectedDate === deliveryDate.format('YYYY-MM-DD') && deliverySettings?.maxOrdersPerDay === 0 && (
               <div className="mt-2 p-3 rounded bg-red-50 border border-red-200">
                 <span className="text-sm text-red-600 font-medium">
-                  🔒 النظام مغلق في هذا التاريخ - يرجى اختيار تاريخ آخر
+                  🔒 التاريخ {deliveryDate.format('YYYY-MM-DD')} مُغلق - يرجى اختيار تاريخاً آخر
                 </span>
               </div>
             )}
             
             {/* عرض عدد الطلبات الحالية في التاريخ */}
-            {deliveryDate && deliverySettings && deliverySettings.maxOrdersPerDay > 0 && (
+            {deliveryDate && deliverySettings && deliverySettings.selectedDate === deliveryDate.format('YYYY-MM-DD') && deliverySettings.maxOrdersPerDay > 0 && (
               <div className={`mt-2 p-2 rounded ${maxOrdersReached ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'}`}>
                 <span className={`text-sm ${maxOrdersReached ? 'text-red-600' : 'text-blue-600'}`}>
-                  عدد الطلبات في هذا التاريخ: {currentOrdersCount} / {deliverySettings.maxOrdersPerDay}
+                  عدد الطلبات في {deliveryDate.format('YYYY-MM-DD')}: {currentOrdersCount} / {deliverySettings.maxOrdersPerDay}
                   {maxOrdersReached && ' (تم الوصول للحد الأقصى)'}
+                </span>
+              </div>
+            )}
+            
+            {/* رسالة عندما لا يكون التاريخ محدداً في الإعدادات */}
+            {deliveryDate && deliverySettings && deliverySettings.selectedDate && deliverySettings.selectedDate !== deliveryDate.format('YYYY-MM-DD') && (
+              <div className="mt-2 p-2 rounded bg-green-50 border border-green-200">
+                <span className="text-sm text-green-600">
+                  ✓ التاريخ متاح - لا توجد قيود على هذا التاريخ
                 </span>
               </div>
             )}

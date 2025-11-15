@@ -87,18 +87,21 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           
           console.log(`📋 Year ${yearData.year}:`, {
             id: yearDoc.id,
+            status: yearData.status,
             activeStatus: yearData.activeStatus,
             startDate: yearData.startDate,
             endDate: yearData.endDate
           });
           
-          // فقط السنوات المالية النشطة
-          if (yearData.activeStatus !== 'نشطة') {
-            console.log(`⏭️ Skipping inactive year: ${yearData.year}`);
+          // فقط السنوات المالية النشطة (تحقق من status أو activeStatus)
+          const isActive = yearData.activeStatus === 'نشطة' || yearData.status === 'مفتوحة';
+          
+          if (!isActive) {
+            console.log(`⏭️ Skipping inactive year: ${yearData.year} (status: ${yearData.status || yearData.activeStatus})`);
             continue;
           }
           
-          console.log(`🔍 Checking financial year: ${yearData.year} (${yearDoc.id})`);
+          console.log(`🔍 Checking financial year: ${yearData.year} (${yearDoc.id}) - ACTIVE ✅`);
           
           try {
             const installationUsersPath = `financialYears/${yearDoc.id}/installation_users`; // تغيير من financial_years
@@ -128,6 +131,7 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
                     password: doc.data().password,
                     position: doc.data().position,
                     branchId: doc.data().branchId,
+                    branchName: doc.data().branchName, // ✅ إضافة branchName
                     permissions: doc.data().permissions,
                     accessType: doc.data().accessType || 'installation',
                     userType: 'installation' as const,
@@ -151,9 +155,16 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
         const allUsers = [...deliveryUsers, ...installationUsers];
         setUsers(allUsers);
         
+        console.log('📊 ============ FINAL SUMMARY ============');
         console.log('📊 Total users loaded:', allUsers.length);
         console.log('🚚 Delivery users:', deliveryUsers.length);
         console.log('🔧 Installation users:', installationUsers.length);
+        console.log('📋 All users:', allUsers.map(u => ({
+          name: u.fullName,
+          type: u.userType,
+          year: u.financialYear
+        })));
+        console.log('========================================');
       } catch (error) {
         console.error('Error fetching users:', error);
         toast.error('خطأ في تحميل المستخدمين');
@@ -313,7 +324,7 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
                   </Label>
                   <Select
                     id="user"
-                    placeholder="اختر اسم المستخدم"
+                    placeholder="ابحث واختر اسم المستخدم"
                     value={selectedUser || undefined}
                     onChange={(value) => setSelectedUser(value)}
                     loading={loadingUsers}
@@ -324,6 +335,19 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
                     popupMatchSelectWidth={true}
                     showSearch
                     optionFilterProp="children"
+                    filterOption={(input, option) => {
+                      const searchText = input.toLowerCase();
+                      const user = users.find(u => u.id === option?.value);
+                      if (!user) return false;
+                      
+                      return (
+                        user.fullName.toLowerCase().includes(searchText) ||
+                        user.position.toLowerCase().includes(searchText) ||
+                        user.username.toLowerCase().includes(searchText) ||
+                        (user.userType === 'installation' ? 'تركيب' : 'توصيل').includes(searchText) ||
+                        (user.financialYear?.toString() || '').includes(searchText)
+                      );
+                    }}
                   >
                     {users.map(user => (
                       <Option key={user.id} value={user.id}>

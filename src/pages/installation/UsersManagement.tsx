@@ -26,6 +26,7 @@ interface User {
   accessType?: 'installation' | 'installation_delivery'; // نوع الوصول
   permissions: string[];
   branchId?: string; // معرف الفرع لمدير الفرع
+  branchName?: string; // اسم الفرع لمدير الفرع
   createdAt?: Date | { toDate: () => Date };
   updatedAt?: Date | { toDate: () => Date };
 }
@@ -103,7 +104,7 @@ const InstallationUsersManagement: React.FC = () => {
     setLoading(true);
     try {
       const usersSnapshot = await getDocs(
-        collection(db, `financial_years/${currentFinancialYear.id}/installation_users`)
+        collection(db, `financialYears/${currentFinancialYear.id}/installation_users`)
       );
       const usersData = usersSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -168,7 +169,7 @@ const InstallationUsersManagement: React.FC = () => {
     if (!currentFinancialYear) return;
     
     try {
-      await deleteDoc(doc(db, `financial_years/${currentFinancialYear.id}/installation_users`, userId));
+      await deleteDoc(doc(db, `financialYears/${currentFinancialYear.id}/installation_users`, userId));
       message.success('تم حذف المستخدم بنجاح');
       fetchUsers();
     } catch (error) {
@@ -203,15 +204,20 @@ const InstallationUsersManagement: React.FC = () => {
         updatedAt: new Date()
       };
 
-      // إضافة معرف الفرع إذا كان مدير فرع
-      if (values.position === 'مدير فرع') {
+      // إضافة معرف الفرع واسم الفرع إذا كان مدير فرع
+      if (values.position === 'مدير فرع' && values.branchId) {
         userData.branchId = values.branchId;
+        // إضافة اسم الفرع أيضاً
+        const selectedBranch = branches.find(b => b.id === values.branchId);
+        if (selectedBranch) {
+          userData.branchName = selectedBranch.name;
+        }
       }
 
       if (editingUser?.id) {
         // تحديث مستخدم موجود
         await updateDoc(
-          doc(db, `financial_years/${currentFinancialYear.id}/installation_users`, editingUser.id),
+          doc(db, `financialYears/${currentFinancialYear.id}/installation_users`, editingUser.id),
           userData
         );
         message.success('تم تحديث المستخدم بنجاح');
@@ -227,6 +233,7 @@ const InstallationUsersManagement: React.FC = () => {
               fullName: userData.fullName,
               position: userData.position,
               branchId: userData.branchId,
+              branchName: userData.branchName,
               permissions: userData.permissions,
               accessType: userData.accessType,
               userType: 'installation',
@@ -244,7 +251,7 @@ const InstallationUsersManagement: React.FC = () => {
       } else {
         // إضافة مستخدم جديد
         await addDoc(
-          collection(db, `financial_years/${currentFinancialYear.id}/installation_users`),
+          collection(db, `financialYears/${currentFinancialYear.id}/installation_users`),
           {
             ...userData,
             createdAt: new Date()
@@ -315,10 +322,13 @@ const InstallationUsersManagement: React.FC = () => {
       dataIndex: 'branchId',
       key: 'branchId',
       width: 150,
-      render: (branchId: string) => {
-        if (!branchId) return '-';
-        const branch = branches.find(b => b.id === branchId);
-        return branch ? branch.name : branchId;
+      render: (_: unknown, record: User) => {
+        if (!record.branchId) return '-';
+        // أولاً: استخدام branchName المحفوظ
+        if (record.branchName) return record.branchName;
+        // ثانياً: البحث في قائمة الفروع
+        const branch = branches.find(b => b.id === record.branchId);
+        return branch ? branch.name : record.branchId;
       }
     },
     {

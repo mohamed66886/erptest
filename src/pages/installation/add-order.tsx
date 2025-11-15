@@ -85,6 +85,17 @@ const AddInstallationOrder: React.FC = () => {
   const [regions, setRegions] = useState<Region[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   
+  // بيانات المستخدم الحالي من localStorage
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    username: string;
+    fullName: string;
+    position: string;
+    branchId?: string;
+    branchName?: string;
+    permissions?: string[];
+  } | null>(null);
+  
   // Form states
   const [orderNumber, setOrderNumber] = useState<string>("");
   const [date, setDate] = useState<dayjs.Dayjs | null>(dayjs());
@@ -148,6 +159,50 @@ const AddInstallationOrder: React.FC = () => {
     fetchGovernorates();
     fetchRegions();
     fetchDistricts();
+  }, []);
+
+  // تحميل بيانات المستخدم الحالي من localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('currentUser');
+    console.log('📦 Raw localStorage data:', storedUser);
+    
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        console.log('👤 Parsed Current User:', user);
+        console.log('👤 Position:', user.position);
+        console.log('👤 branchId:', user.branchId);
+        console.log('👤 branchName:', user.branchName);
+        
+        // إذا كان مدير فرع، تعيين الفرع تلقائياً
+        if (user.position === 'مدير فرع') {
+          console.log('✅ User is مدير فرع');
+          
+          if (user.branchId) {
+            console.log('✅ branchId exists:', user.branchId);
+            
+            // استخدام branchName إذا كان موجوداً
+            if (user.branchName) {
+              console.log('✅ branchName exists:', user.branchName);
+              setResponsibleEntity(user.branchName);
+              console.log('✅ Set responsibleEntity to:', user.branchName);
+            } else {
+              console.warn('⚠️ branchName is missing! User needs to be updated in database.');
+              console.warn('⚠️ Please go to /installation/users, edit this user, and re-select the branch.');
+            }
+          } else {
+            console.warn('⚠️ branchId is missing!');
+          }
+        } else {
+          console.log('ℹ️ User is not مدير فرع. Position:', user.position);
+        }
+      } catch (error) {
+        console.error('❌ Error parsing user from localStorage:', error);
+      }
+    } else {
+      console.warn('⚠️ No user found in localStorage');
+    }
   }, []);
 
   useEffect(() => {
@@ -534,6 +589,7 @@ const AddInstallationOrder: React.FC = () => {
               size="large"
               showSearch
               optionFilterProp="children"
+              disabled={currentUser?.position === 'مدير فرع' && currentUser?.branchName !== undefined}
             >
               {branches.map(branch => (
                 <Option key={branch.id} value={branch.name}>
@@ -541,6 +597,11 @@ const AddInstallationOrder: React.FC = () => {
                 </Option>
               ))}
             </Select>
+            {currentUser?.position === 'مدير فرع' && currentUser?.branchName && (
+              <span className="text-xs text-gray-500 mt-1">
+                🔒 الفرع محدد تلقائياً حسب صلاحياتك
+              </span>
+            )}
           </div>
         </div>
 

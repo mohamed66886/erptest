@@ -15,7 +15,8 @@ import {
   Tag,
   message,
   Row,
-  Col
+  Col,
+  DatePicker
 } from 'antd';
 import Breadcrumb from "@/components/Breadcrumb";
 import { Helmet } from "react-helmet";
@@ -40,11 +41,13 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { getStorage, ref, listAll, getMetadata, StorageReference } from 'firebase/storage';
+import dayjs, { Dayjs } from 'dayjs';
 
 const { Title, Text } = Typography;
 
 interface DeliverySettingsData {
   maxOrdersPerDay: number; // تم تغييره من maxOrdersPerRegion إلى maxOrdersPerDay
+  selectedDate?: string; // التاريخ المحدد لتطبيق الحد الأقصى
   allowZeroLimit: boolean;
   allowBranchNumberEdit: boolean;
   requireBranchApproval: boolean;
@@ -73,6 +76,7 @@ const DeliverySettings: React.FC = () => {
 
   const [settings, setSettings] = useState<DeliverySettingsData>({
     maxOrdersPerDay: 50,
+    selectedDate: dayjs().format('YYYY-MM-DD'), // التاريخ الحالي كقيمة افتراضية
     allowZeroLimit: true,
     allowBranchNumberEdit: false,
     requireBranchApproval: true,
@@ -574,7 +578,26 @@ const DeliverySettings: React.FC = () => {
           >
             <Space direction="vertical" style={{ width: '100%' }} size="large">
               <div>
-                <Text strong>الحد الأقصى للطلبات في اليوم الواحد</Text>
+                <Text strong>التاريخ المحدد</Text>
+                <div className="mt-2">
+                  <DatePicker
+                    value={settings.selectedDate ? dayjs(settings.selectedDate) : null}
+                    onChange={(date) => updateSetting('selectedDate', date ? date.format('YYYY-MM-DD') : undefined)}
+                    style={{ width: '100%' }}
+                    format="YYYY-MM-DD"
+                    placeholder="اختر التاريخ"
+                    allowClear={false}
+                  />
+                  <div className="mt-2">
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      📅 التاريخ الذي سيتم تطبيق الحد الأقصى للطلبات عليه
+                    </Text>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <Text strong>الحد الأقصى للطلبات في التاريخ المحدد</Text>
                 <div className="mt-2">
                   <InputNumber
                     value={settings.maxOrdersPerDay}
@@ -585,7 +608,7 @@ const DeliverySettings: React.FC = () => {
                   />
                   <div className="mt-2">
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      💡 ملاحظة: يتم حساب الحد الأقصى على مستوى التاريخ (جميع المناطق معاً)
+                      💡 ملاحظة: يتم حساب الحد الأقصى على مستوى التاريخ المحدد أعلاه (جميع المناطق معاً)
                     </Text>
                   </div>
                 </div>
