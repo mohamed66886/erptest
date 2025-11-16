@@ -341,11 +341,12 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
                       if (!user) return false;
                       
                       return (
-                        user.fullName.toLowerCase().includes(searchText) ||
-                        user.position.toLowerCase().includes(searchText) ||
-                        user.username.toLowerCase().includes(searchText) ||
+                        (user.fullName?.toLowerCase() || '').includes(searchText) ||
+                        (user.position?.toLowerCase() || '').includes(searchText) ||
+                        (user.username?.toLowerCase() || '').includes(searchText) ||
                         (user.userType === 'installation' ? 'تركيب' : 'توصيل').includes(searchText) ||
-                        (user.financialYear?.toString() || '').includes(searchText)
+                        (user.financialYear?.toString() || '').includes(searchText) ||
+                        (user.branchName?.toLowerCase() || '').includes(searchText)
                       );
                     }}
                   >
