@@ -452,7 +452,7 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
               className="text-center pb-4"
             >
               <p className="text-xs text-gray-400 font-arabic">
-                © {new Date().getFullYear()} كودكسا. جميع الحقوق محفوظة.
+                © {new Date().getFullYear()} فُلك. جميع الحقوق محفوظة.
               </p>
             </motion.div>
           </Card>

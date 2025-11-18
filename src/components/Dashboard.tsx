@@ -21,12 +21,44 @@ const ERP90Dashboard = () => {
   // السنة المالية من السياق العام
   const { currentFinancialYear, activeYears, setCurrentFinancialYear } = useFinancialYear();
   const [fiscalYear, setFiscalYear] = useState<string>("");
+  const [currentUser, setCurrentUser] = useState<{userType?: string; accessType?: string} | null>(null);
 
   useEffect(() => {
     if (currentFinancialYear) {
       setFiscalYear(currentFinancialYear.year.toString());
     }
   }, [currentFinancialYear]);
+
+  // تحميل بيانات المستخدم الحالي
+  useEffect(() => {
+    const loadUserData = () => {
+      const userData = localStorage.getItem('currentUser');
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          setCurrentUser(user);
+        } catch (error) {
+          console.error('Error parsing user data:', error);
+        }
+      }
+    };
+
+    // تحميل البيانات عند بدء التشغيل
+    loadUserData();
+
+    // الاستماع للتغييرات في localStorage
+    const handleStorageChange = () => {
+      loadUserData();
+    };
+
+    window.addEventListener('localStorageUpdated', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('localStorageUpdated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
   const handleFiscalYearChange = (value: string) => {
     setFiscalYear(value);
@@ -151,67 +183,135 @@ const ERP90Dashboard = () => {
         >
           <div className="bg-white p-4 sm:p-5 md:p-6 rounded-xl shadow-sm border border-gray-100">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
-              {quickActions.map((action, index) => (
-                <motion.button
-                  key={index}
-                  disabled={action.route !== '/management/installation'}
-                  onClick={() => action.route === '/management/installation' && handleQuickActionClick(action.route)}
-                  className={`flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] ${action.route === '/management/installation' ? 'cursor-pointer hover:shadow-xl hover:scale-105' : 'cursor-not-allowed opacity-50'}`}
-                >
-                  {/* Background Pattern */}
-                  <div className="absolute inset-0 opacity-5 transition-opacity">
-                    <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
-                    <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
-                  </div>
-                  
-                  {/* Icon */}
-                  <div 
-                    className={`${action.color} p-3 sm:p-4 rounded-2xl text-white shadow-lg transition-all duration-300 relative z-10`}
+              {/* إذا كان مستخدم تركيب فقط، اعرض كارت التركيب فقط */}
+              {currentUser?.userType === 'installation' && currentUser?.accessType === 'installation' ? (
+                <>
+                  {/* التركيب والصيانة Card */}
+                  <motion.button
+                    onClick={() => handleQuickActionClick('/management/installation')}
+                    className="flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 border-indigo-200 bg-indigo-50 transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] cursor-pointer hover:shadow-xl hover:scale-105"
                   >
-                    {action.icon}
-                  </div>
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 opacity-5 transition-opacity">
+                      <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
+                      <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
+                    </div>
+                    
+                    {/* Icon */}
+                    <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-3 sm:p-4 rounded-2xl text-white shadow-lg transition-all duration-300 relative z-10">
+                      <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="relative z-10">
+                      <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 mb-1 sm:mb-2 transition-colors leading-tight">
+                        التركيب والصيانة
+                      </h3>
+                      <p className="text-xs md:text-sm text-gray-600 leading-relaxed transition-colors">
+                        إدارة أعمال التركيب والصيانة
+                      </p>
+                    </div>
+                  </motion.button>
+                </>
+              ) : currentUser?.userType === 'installation' && currentUser?.accessType === 'installation_delivery' ? (
+                <>
+                  {/* للمستخدمين الذين لديهم صلاحية تركيب وتوصيل */}
+                  {/* Outputs Card */}
+                  <DeliveryCard onClick={() => handleQuickActionClick('/management/outputs')} />
                   
-                  {/* Content */}
-                  <div className="relative z-10">
-                    <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 mb-1 sm:mb-2 transition-colors leading-tight">
-                      {action.title}
-                    </h3>
-                    <p className="text-xs md:text-sm text-gray-600 leading-relaxed transition-colors">
-                      {action.description}
-                    </p>
-                  </div>
-                </motion.button>
-              ))}
-              
-              {/* Outputs Card - قبل التركيب */}
-              <DeliveryCard onClick={() => handleQuickActionClick('/management/outputs')} />
-              
-              {/* التركيب والصيانة Card */}
-              <motion.button
-                onClick={() => handleQuickActionClick('/management/installation')}
-                className="flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 border-indigo-200 bg-indigo-50 transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] cursor-pointer hover:shadow-xl hover:scale-105"
-              >
-                {/* Background Pattern */}
-                <div className="absolute inset-0 opacity-5 transition-opacity">
-                  <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
-                  <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
-                </div>
-                
-                {/* Icon */}
-                <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-3 sm:p-4 rounded-2xl text-white shadow-lg transition-all duration-300 relative z-10">
-                  <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-                
-                {/* Content */}
-                <div className="relative z-10">
-                  <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 mb-1 sm:mb-2 transition-colors leading-tight">
-                    التركيب والصيانة
-                  </h3>
-                  <p className="text-xs md:text-sm text-gray-600 leading-relaxed transition-colors">
-                    إدارة أعمال التركيب والصيانة
-                  </p>
-                </div>
-              </motion.button>
+                  {/* التركيب والصيانة Card */}
+                  <motion.button
+                    onClick={() => handleQuickActionClick('/management/installation')}
+                    className="flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 border-indigo-200 bg-indigo-50 transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] cursor-pointer hover:shadow-xl hover:scale-105"
+                  >
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 opacity-5 transition-opacity">
+                      <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
+                      <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
+                    </div>
+                    
+                    {/* Icon */}
+                    <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-3 sm:p-4 rounded-2xl text-white shadow-lg transition-all duration-300 relative z-10">
+                      <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="relative z-10">
+                      <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 mb-1 sm:mb-2 transition-colors leading-tight">
+                        التركيب والصيانة
+                      </h3>
+                      <p className="text-xs md:text-sm text-gray-600 leading-relaxed transition-colors">
+                        إدارة أعمال التركيب والصيانة
+                      </p>
+                    </div>
+                  </motion.button>
+                </>
+              ) : (
+                <>
+                  {/* لباقي المستخدمين (الإداريين) - اعرض جميع الكروت */}
+                  {quickActions.map((action, index) => (
+                    <motion.button
+                      key={index}
+                      disabled={action.route !== '/management/installation'}
+                      onClick={() => action.route === '/management/installation' && handleQuickActionClick(action.route)}
+                      className={`flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] ${action.route === '/management/installation' ? 'cursor-pointer hover:shadow-xl hover:scale-105' : 'cursor-not-allowed opacity-50'}`}
+                    >
+                      {/* Background Pattern */}
+                      <div className="absolute inset-0 opacity-5 transition-opacity">
+                        <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
+                        <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
+                      </div>
+                      
+                      {/* Icon */}
+                      <div 
+                        className={`${action.color} p-3 sm:p-4 rounded-2xl text-white shadow-lg transition-all duration-300 relative z-10`}
+                      >
+                        {action.icon}
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="relative z-10">
+                        <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 mb-1 sm:mb-2 transition-colors leading-tight">
+                          {action.title}
+                        </h3>
+                        <p className="text-xs md:text-sm text-gray-600 leading-relaxed transition-colors">
+                          {action.description}
+                        </p>
+                      </div>
+                    </motion.button>
+                  ))}
+                  
+                  {/* Outputs Card - قبل التركيب */}
+                  <DeliveryCard onClick={() => handleQuickActionClick('/management/outputs')} />
+                  
+                  {/* التركيب والصيانة Card */}
+                  <motion.button
+                    onClick={() => handleQuickActionClick('/management/installation')}
+                    className="flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 border-indigo-200 bg-indigo-50 transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] cursor-pointer hover:shadow-xl hover:scale-105"
+                  >
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 opacity-5 transition-opacity">
+                      <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-current transform translate-x-6 -translate-y-6"></div>
+                      <div className="absolute bottom-0 left-0 w-16 h-16 rounded-full bg-current transform -translate-x-4 translate-y-4"></div>
+                    </div>
+                    
+                    {/* Icon */}
+                    <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-3 sm:p-4 rounded-2xl text-white shadow-lg transition-all duration-300 relative z-10">
+                      <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="relative z-10">
+                      <h3 className="text-xs sm:text-sm md:text-base font-bold text-gray-800 mb-1 sm:mb-2 transition-colors leading-tight">
+                        التركيب والصيانة
+                      </h3>
+                      <p className="text-xs md:text-sm text-gray-600 leading-relaxed transition-colors">
+                        إدارة أعمال التركيب والصيانة
+                      </p>
+                    </div>
+                  </motion.button>
+                </>
+              )}
             </div>
           </div>
         </motion.div>

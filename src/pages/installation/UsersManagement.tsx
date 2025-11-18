@@ -415,7 +415,7 @@ const InstallationUsersManagement: React.FC = () => {
       <Breadcrumb
         items={[
           { label: "الرئيسية", to: "/" },
-          { label: "إدارة التركيب", to: "/installation" },
+          { label: "إدارة التركيب", to: "/management/installation" },
           { label: "إدارة المستخدمين" },
         ]}
       />
