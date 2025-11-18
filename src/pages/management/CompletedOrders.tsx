@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion } from "framer-motion";
-import { Table, Button, message, Tag, Checkbox, Select, Input, Modal } from "antd";
-import { SearchOutlined, ReloadOutlined, InboxOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
+import { Table, Button, message, Tag, Checkbox, Select, Input, Modal, Switch } from "antd";
+import { SearchOutlined, ReloadOutlined, InboxOutlined, DownloadOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
 import Breadcrumb from "@/components/Breadcrumb";
 import { useFinancialYear } from "@/hooks/useFinancialYear";
 import { useAuth } from "@/contexts/useAuth";
@@ -60,6 +60,7 @@ const CompletedOrders: React.FC = () => {
   const [filterCompletedDate, setFilterCompletedDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [filterInstallation, setFilterInstallation] = useState<string>("");
   const [archiving, setArchiving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   // بيانات المستخدم الحالي من localStorage
   const [currentUser, setCurrentUser] = useState<{
@@ -275,6 +276,63 @@ const CompletedOrders: React.FC = () => {
     window.open(fileUrl, '_blank');
   };
 
+  // تغيير حالة الطلب
+  const handleStatusChange = (orderId: string, newStatus: string, currentStatus: string) => {
+    if (newStatus === currentStatus) return;
+
+    let redirectMessage = '';
+    if (newStatus === 'قيد الانتظار') {
+      redirectMessage = '\n\nسيتم إعادة توجيه الطلب إلى صفحة الطلبات العادية.';
+    } else if (newStatus === 'مؤرشف') {
+      redirectMessage = '\n\nسيتم إعادة توجيه الطلب إلى صفحة الطلبات المؤرشفة.';
+    }
+
+    Modal.confirm({
+      title: 'تأكيد تغيير الحالة',
+      content: `هل أنت متأكد من تغيير حالة الطلب إلى "${newStatus}"؟${redirectMessage}`,
+      okText: 'نعم، غيّر',
+      cancelText: 'إلغاء',
+      onOk: async () => {
+        try {
+          const updateData: {
+            status: string;
+            updatedAt: string;
+            updatedBy: string;
+            archivedAt?: string;
+            archivedBy?: string;
+          } = {
+            status: newStatus,
+            updatedAt: new Date().toISOString(),
+            updatedBy: user?.uid || '',
+          };
+
+          // إضافة تاريخ الأرشفة إذا كانت الحالة مؤرشف
+          if (newStatus === 'مؤرشف') {
+            updateData.archivedAt = new Date().toISOString();
+            updateData.archivedBy = user?.uid || '';
+          }
+
+          await updateDoc(doc(db, 'delivery_orders', orderId), updateData);
+
+          message.success('تم تغيير حالة الطلب بنجاح');
+          
+          // إعادة تحميل البيانات لإزالة الطلب من القائمة الحالية
+          fetchOrders();
+          
+          // إظهار رسالة توجيهية
+          if (newStatus === 'قيد الانتظار') {
+            message.info('تم نقل الطلب إلى صفحة الطلبات العادية', 3);
+          } else if (newStatus === 'مؤرشف') {
+            message.info('تم نقل الطلب إلى صفحة الطلبات المؤرشفة', 3);
+          }
+        } catch (error) {
+          console.error('Error updating order status:', error);
+          message.error('حدث خطأ أثناء تغيير حالة الطلب');
+        }
+      },
+    });
+  };
+
   // الحصول على قائمة الفروع الفريدة
   const uniqueBranches = Array.from(new Set(orders.map(order => order.branchName))).filter(Boolean);
 
@@ -417,12 +475,39 @@ const CompletedOrders: React.FC = () => {
       title: 'الحالة',
       dataIndex: 'status',
       key: 'status',
-      width: 120,
+      width: 150,
       fixed: 'right' as const,
       sorter: (a: CompletedOrder, b: CompletedOrder) => (a.status || '').localeCompare(b.status || ''),
-      render: (status: string) => {
-        const color = 'green';
-        return <Tag color={color} className="font-medium">{status}</Tag>;
+      render: (status: string, record: CompletedOrder) => {
+        // إذا لم يكن وضع التحرير مُفعّل أو المستخدم ليس مدير عام، اعرض Tag عادي
+        if (!editMode || currentUser?.position !== 'مدير عام') {
+          const color = 'green';
+          return <Tag color={color} className="font-medium">{status}</Tag>;
+        }
+
+        // قائمة الحالات المتاحة - للمدير العام فقط
+        const statusOptions = [
+          { value: 'قيد الانتظار', label: 'قيد الانتظار', color: 'orange' },
+          { value: 'مكتمل', label: 'مكتمل', color: 'green' },
+          { value: 'مؤرشف', label: 'مؤرشف', color: 'default' },
+        ];
+
+        return (
+          <Select
+            value={status}
+            onChange={(newStatus) => handleStatusChange(record.id, newStatus, status)}
+            style={{ width: '100%', minWidth: 120 }}
+            size="small"
+          >
+            {statusOptions.map(option => (
+              <Select.Option key={option.value} value={option.value}>
+                <Tag color={option.color} className="font-medium" style={{ margin: 0 }}>
+                  {option.label}
+                </Tag>
+              </Select.Option>
+            ))}
+          </Select>
+        );
       },
     },
   ];
@@ -653,6 +738,20 @@ const CompletedOrders: React.FC = () => {
               </svg>
               الطلبات المكتملة ({filteredOrders.length} طلب)
             </h3>
+            
+            {/* وضع التحرير - يظهر للمدير العام فقط */}
+            {currentUser?.position === 'مدير عام' && (
+              <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg">
+                <EditOutlined className="text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">وضع التحرير:</span>
+                <Switch
+                  checked={editMode}
+                  onChange={setEditMode}
+                  checkedChildren="مُفعّل"
+                  unCheckedChildren="مُوقف"
+                />
+              </div>
+            )}
           </div>
           
           <Table
