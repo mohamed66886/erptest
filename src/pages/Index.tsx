@@ -130,6 +130,7 @@ import CompletedInstallationOrders from "./installation/CompletedOrders";
 import ArchivedInstallationOrders from "./installation/ArchivedOrders";
 import InstallationSettings from "./installation/InstallationSettings";
 import InstallationUsersManagement from "./installation/UsersManagement";
+import AIAssistantFloat from "@/components/AIAssistantFloat";
 
 
 
@@ -512,6 +513,9 @@ const Index = () => {
           <Footer />
         </div>
       </div>
+      
+      {/* المساعد الذكي العائم */}
+      <AIAssistantFloat />
     </div>
   );
 };

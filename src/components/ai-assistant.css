@@ -1,0 +1,156 @@
+/* تأثيرات إضافية للمساعد الذكي */
+
+/* تأثير النبضة للزر العائم */
+@keyframes ai-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.ai-float-button {
+  animation: ai-pulse 2s infinite;
+}
+
+/* تأثير ظهور الرسائل */
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+/* تأثير الكتابة */
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  30% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* تأثير ظهور النافذة */
+@keyframes chatWindowOpen {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.chat-window {
+  animation: chatWindowOpen 0.3s ease-out;
+}
+
+/* تحسين الشكل المرئي */
+.ai-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.message-bubble {
+  position: relative;
+}
+
+.message-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  width: 0;
+  height: 0;
+}
+
+.user-message::before {
+  right: -8px;
+  border-left: 8px solid #2563eb;
+  border-top: 8px solid transparent;
+}
+
+.ai-message::before {
+  left: -8px;
+  border-right: 8px solid white;
+  border-top: 8px solid transparent;
+}
+
+/* تأثير التمرير السلس */
+.chat-messages {
+  scroll-behavior: smooth;
+}
+
+/* تحسين responsiveness للشاشات الصغيرة */
+@media (max-width: 480px) {
+  .chat-window {
+    width: calc(100vw - 24px) !important;
+    left: 12px !important;
+    right: 12px !important;
+  }
+}
+
+/* تأثير hover للأزرار */
+.ai-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+/* تأثير focus للحقول */
+.ai-input:focus {
+  transform: scale(1.02);
+  transition: transform 0.2s ease;
+}
+
+/* إصلاح مشاكل النقر */
+.ai-button, .chat-window button {
+  pointer-events: auto !important;
+  z-index: 99999 !important;
+  position: relative !important;
+}
+
+.ai-float-container {
+  pointer-events: auto !important;
+  z-index: 99999 !important;
+}
+
+.chat-header-buttons {
+  pointer-events: auto !important;
+  z-index: 100000 !important;
+}
+
+.chat-header-buttons button {
+  pointer-events: auto !important;
+  z-index: 100001 !important;
+  position: relative !important;
+}
