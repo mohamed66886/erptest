@@ -78,15 +78,8 @@ const InstallationUsersManagement: React.FC = () => {
     { id: 'comprehensive-reports', name: 'تقارير التوصيل الشاملة', category: 'تقارير التوصيل', system: 'delivery' },
   ];
 
-  // دمج الصفحات حسب نوع الوصول
-  const getAvailablePages = () => {
-    if (selectedAccessType === 'installation_delivery') {
-      return [...installationPages, ...deliveryPages];
-    }
-    return installationPages;
-  };
-
-  const availablePages = getAvailablePages();
+  // في نظام إدارة التركيب، نعرض صفحات التركيب فقط
+  const availablePages = installationPages;
 
   // تحميل البيانات عند بدء الصفحة
   useEffect(() => {
@@ -140,7 +133,7 @@ const InstallationUsersManagement: React.FC = () => {
     form.resetFields();
     setSelectedPermissions([]);
     setSelectedPosition('');
-    setSelectedAccessType('installation');
+    setSelectedAccessType('installation'); // دائماً تركيب فقط
     setIsModalVisible(true);
   };
 
@@ -148,16 +141,16 @@ const InstallationUsersManagement: React.FC = () => {
   const handleEdit = (user: User) => {
     setEditingUser(user);
     const permissions = user.permissions || [];
-    const accessType = user.accessType || 'installation';
+    // دائماً تركيب فقط في نظام إدارة التركيب
     setSelectedPermissions(permissions);
     setSelectedPosition(user.position);
-    setSelectedAccessType(accessType);
+    setSelectedAccessType('installation'); // فرض نوع الوصول ليكون تركيب فقط
     form.setFieldsValue({
       username: user.username,
       fullName: user.fullName,
       password: user.password,
       position: user.position,
-      accessType: accessType,
+      accessType: 'installation', // فرض نوع الوصول
       branchId: user.branchId,
       permissions: permissions
     });
@@ -514,20 +507,21 @@ const InstallationUsersManagement: React.FC = () => {
           <Form.Item
             name="accessType"
             label="نوع الوصول"
-            rules={[{ required: true, message: 'يرجى اختيار نوع الوصول' }]}
             initialValue="installation"
           >
             <Select 
-              placeholder="اختر نوع الوصول"
-              onChange={(value) => {
-                setSelectedAccessType(value);
-                // إعادة تعيين الصلاحيات عند تغيير نوع الوصول
-                setSelectedPermissions([]);
+              value="installation"
+              disabled
+              style={{ 
+                backgroundColor: '#f5f5f5',
+                color: '#666'
               }}
             >
               <Option value="installation">تركيب فقط</Option>
-              <Option value="installation_delivery">تركيب وتوصيل</Option>
             </Select>
+            <div className="mt-1 text-xs text-gray-500">
+               نوع الوصول ثابت على "تركيب فقط" في نظام إدارة التركيب
+            </div>
           </Form.Item>
 
           {/* اختيار الفرع (يظهر فقط لمدير الفرع) */}

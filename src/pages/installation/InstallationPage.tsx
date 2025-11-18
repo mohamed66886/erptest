@@ -7,7 +7,7 @@ import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Breadcrumb from "@/components/Breadcrumb";
 import { Helmet } from "react-helmet";
-import { Tooltip } from 'antd';
+
 
 import { 
   Settings, 
@@ -156,19 +156,20 @@ const InstallationPage: React.FC = () => {
     
     console.log(`🎴 Card: ${card.title}, permissionId: ${card.permissionId}, isAllowed: ${isAllowed}`);
     
-    const cardContent = (
+    // إذا لم يكن لديه صلاحية، لا تظهر الكارت نهائياً
+    if (!isAllowed) {
+      return null;
+    }
+    
+    return (
       <Card 
         key={index}
-        className={`group transition-all duration-300 ${
-          isAllowed 
-            ? 'hover:shadow-lg cursor-pointer hover:scale-105' 
-            : 'opacity-50 cursor-not-allowed bg-gray-100'
-        }`}
-        onClick={isAllowed ? card.onClick : undefined}
+        className="group transition-all duration-300 hover:shadow-lg cursor-pointer hover:scale-105"
+        onClick={card.onClick}
       >
         <CardContent className="p-3 sm:p-4">
           <div className="flex items-center space-x-2 space-x-reverse">
-            <div className={`p-1 sm:p-2 rounded-lg ${card.color} text-white flex items-center justify-center ${!isAllowed && 'grayscale'}`}>
+            <div className={`p-1 sm:p-2 rounded-lg ${card.color} text-white flex items-center justify-center`}>
               {card.icon}
             </div>
             <CardTitle className="text-xs sm:text-sm text-right">{card.title}</CardTitle>
@@ -176,16 +177,6 @@ const InstallationPage: React.FC = () => {
         </CardContent>
       </Card>
     );
-
-    if (!isAllowed) {
-      return (
-        <Tooltip title="ليس لديك صلاحية للوصول إلى هذه الصفحة" placement="top">
-          {cardContent}
-        </Tooltip>
-      );
-    }
-
-    return cardContent;
   };
 
   return (
@@ -252,43 +243,69 @@ const InstallationPage: React.FC = () => {
       />
 
       {/* الإعدادات Section */}
-      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+      {settingsCards.filter(card => !card.permissionId || hasPermission(card.permissionId)).length > 0 && (
+        <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+          <div className="flex items-center space-x-3 space-x-reverse">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">الإعدادات</h2>
+              <p className="text-sm sm:text-base text-gray-600">إعدادات الفنيين وإدارة التركيب</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">الإعدادات</h2>
-            <p className="text-sm sm:text-base text-gray-600">إعدادات الفنيين وإدارة التركيب</p>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {settingsCards
+              .filter(card => !card.permissionId || hasPermission(card.permissionId))
+              .map((card, index) => (
+                <CardComponent key={`settings-${index}`} card={card} index={index} />
+              ))}
           </div>
         </div>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {settingsCards.map((card, index) => (
-            <CardComponent key={`settings-${index}`} card={card} index={index} />
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* العمليات Section */}
-      <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <div className="p-2 bg-green-100 rounded-lg">
-            <Package className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+      {operationsCards.filter(card => !card.permissionId || hasPermission(card.permissionId)).length > 0 && (
+        <div className="space-y-6 bg-white p-6 rounded-lg shadow-sm border">
+          <div className="flex items-center space-x-3 space-x-reverse">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <Package className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">العمليات</h2>
+              <p className="text-sm sm:text-base text-gray-600">عمليات طلبات التركيب اليومية</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg sm:text-2xl font-semibold text-gray-800">العمليات</h2>
-            <p className="text-sm sm:text-base text-gray-600">عمليات طلبات التركيب اليومية</p>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {operationsCards
+              .filter(card => !card.permissionId || hasPermission(card.permissionId))
+              .map((card, index) => (
+                <CardComponent key={`operations-${index}`} card={card} index={index} />
+              ))}
           </div>
         </div>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          {operationsCards.map((card, index) => (
-            <CardComponent key={`operations-${index}`} card={card} index={index} />
-          ))}
-        </div>
-      </div>
+      )}
 
+      {/* رسالة في حالة عدم وجود صلاحيات */}
+      {settingsCards.filter(card => !card.permissionId || hasPermission(card.permissionId)).length === 0 &&
+       operationsCards.filter(card => !card.permissionId || hasPermission(card.permissionId)).length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="p-3 bg-yellow-100 rounded-full">
+              <Settings className="h-8 w-8 text-yellow-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-yellow-800 mb-2">لا توجد صفحات متاحة</h3>
+              <p className="text-yellow-700">
+                لا تملك صلاحيات للوصول إلى أي من صفحات إدارة التركيب. 
+                يرجى التواصل مع المدير لمنحك الصلاحيات اللازمة.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
