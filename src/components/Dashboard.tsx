@@ -252,9 +252,8 @@ const ERP90Dashboard = () => {
                   {quickActions.map((action, index) => (
                     <motion.button
                       key={index}
-                      disabled={action.route !== '/management/installation'}
-                      onClick={() => action.route === '/management/installation' && handleQuickActionClick(action.route)}
-                      className={`flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] ${action.route === '/management/installation' ? 'cursor-pointer hover:shadow-xl hover:scale-105' : 'cursor-not-allowed opacity-50'}`}
+                      onClick={() => handleQuickActionClick(action.route)}
+                      className={`flex flex-col items-center justify-center text-center gap-3 sm:gap-4 p-4 sm:p-6 md:p-8 rounded-2xl border-2 ${action.borderColor} ${action.bgColor} transition-all duration-300 group relative overflow-hidden min-h-[150px] sm:min-h-[180px] cursor-pointer hover:shadow-xl hover:scale-105`}
                     >
                       {/* Background Pattern */}
                       <div className="absolute inset-0 opacity-5 transition-opacity">

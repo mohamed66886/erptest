@@ -4,13 +4,13 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD90dtZlGUTXEyUD_72ZxjXrBX7oJ1oG3g",
-  authDomain: "erp90-8a628.firebaseapp.com",
-  projectId: "erp90-8a628",
-  storageBucket: "erp90-8a628.firebasestorage.app",
-  messagingSenderId: "67289042547",
-  appId: "1:67289042547:web:55300d06c6dab5429ba406",
-  measurementId: "G-TC88Z96N92"
+  apiKey: "AIzaSyA44xMyP25x9dgJLeW1gEQGqHbLTbTyJnY",
+  authDomain: "po221-ebe22.firebaseapp.com",
+  projectId: "po221-ebe22",
+  storageBucket: "po221-ebe22.firebasestorage.app",
+  messagingSenderId: "376729413249",
+  appId: "1:376729413249:web:f0d7e9a742b0a5c0550f80",
+  measurementId: "G-D50KRD6BEJ"
 };
 
 const app = initializeApp(firebaseConfig);
