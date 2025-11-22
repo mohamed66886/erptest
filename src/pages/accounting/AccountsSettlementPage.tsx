@@ -340,8 +340,22 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
       <Card>
         <div style={{ marginBottom: 24 }}>
           <Row justify="space-between" align="middle" gutter={[16, 16]}>
-            <Col>
-              <Title level={4} style={{ margin: 0 }}>قائمة الحسابات</Title>
+            <Col span={24}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Title level={4} style={{ margin: 0 }}>قائمة الحسابات</Title>
+                <Button 
+                  type="primary"
+                  onClick={handleAddClick}
+                  icon={<PlusOutlined />}
+                  style={{
+                    background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+                    border: 'none',
+                    marginRight: 8
+                  }}
+                >
+                  إضافة حساب
+                </Button>
+              </div>
               <Space wrap style={{ marginTop: 8 }}>
                 {isLoading ? (
                   <Text type="secondary">جاري التحميل...</Text>
@@ -424,17 +438,7 @@ const AccountsSettlementPage: React.FC<AccountsSettlementPageProps> = ({
                   تصدير
                 </Button>
                 
-                <Button 
-                  type="primary"
-                  onClick={handleAddClick}
-                  icon={<PlusOutlined />}
-                  style={{
-                    background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
-                    border: 'none'
-                  }}
-                >
-                  إضافة حساب
-                </Button>
+ 
               </Space>
             </Col>
           </Row>

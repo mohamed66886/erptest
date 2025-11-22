@@ -59,8 +59,8 @@ const FinancialManagement: React.FC = () => {
   // ...existing code...
   const settingsCards = [
     {
-      title: "تصفية الحسابات",
-      description: "إدارة وتصفية الحسابات المالية",
+      title: "تصنيف الحسابات",
+      description: "إدارة تصنيف الحسابات المالية",
       icon: <FileText className="h-6 w-6" />,
       color: "bg-blue-500",
       onClick: () => navigate('/accounting/accounts-settlement'),
